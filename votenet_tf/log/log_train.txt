@@ -149,3 +149,68 @@ Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_s
 Current learning rate: 0.001000
 Current BN decay momentum: 0.500000
 2021-07-15 23:01:15.202355
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-19 11:30:34.277422
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-19 11:41:12.314180
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-19 11:43:40.413131
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-19 11:45:55.664184
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-19 11:46:57.361153
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-19 11:49:40.093697
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-19 13:20:58.526028
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-19 13:24:03.026754
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-19 13:24:27.790596
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-19 13:40:10.687894
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-19 13:41:20.446522
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-19 13:45:55.128608
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-19 13:46:17.328221

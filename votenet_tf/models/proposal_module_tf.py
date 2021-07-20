@@ -46,8 +46,8 @@ def decode_scores(net, end_points, num_class, num_heading_bin, num_size_cluster,
     end_points['heading_residuals'] = heading_residuals_normalized * (np.pi/num_heading_bin) # B x num_proposal x num_heading_bin
 
     size_scores = net[:,:,5+num_heading_bin*2:5+num_heading_bin*2+num_size_cluster]
-    size_residuals_normalized = tf.reshape(net[:,:,5 + num_heading_bin*2 + num_size_cluster : 5 + num_heading_bin*2 + num_size_cluster*4], 
-                                        shape=[batch_size, num_proposal, num_size_cluster, 3]) # B x num_proposal x num_size_cluster x 3
+    size_residuals = net[:,:,5 + num_heading_bin*2 + num_size_cluster : 5 + num_heading_bin*2 + num_size_cluster*4]
+    size_residuals_normalized = layers.Reshape((num_proposal, num_size_cluster, 3))(size_residuals) # B x num_proposal x num_size_cluster x 3
     end_points['size_scores'] = size_scores
     end_points['size_residuals_normalized'] = size_residuals_normalized
     end_points['size_residuals'] = size_residuals_normalized * tf.expand_dims(tf.expand_dims(tf.convert_to_tensor(mean_size_arr, dtype=tf.float32), axis=0), axis=0)

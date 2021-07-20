@@ -52,21 +52,23 @@ class VotingModule(layers.Layer):
         num_vote = num_seed*self.vote_factor
         net = self.relu1(self.bn1(self.conv1(seed_features))) 
         net = self.relu2(self.bn2(self.conv2(net))) 
-        net = self.conv3(net) # (batch_size, (3+out_dim)*vote_factor, num_seed)                
+        net = self.conv3(net) # (batch_size, num_seed, (3+out_dim)*vote_factor)                
         
-        print(net)
+        print("Num seed:", num_seed)
+        print("Net shape:", net)
+        # No need for transpose in Tensorflow, because it uses H,W,C indexing        
 
-        net = tf.reshape(net, shape=tf.convert_to_tensor([num_seed, self.vote_factor, 3+self.out_dim]))
+        net = tf.keras.layers.Reshape((num_seed, self.vote_factor, 3+self.out_dim))(net)
         #net = tf.expand_dims(net, axis=1)
         print(net)
 
         offset = net[:,:,:,0:3]
         vote_xyz = tf.expand_dims(seed_xyz, axis = 2) + offset
-        vote_xyz = tf.reshape(vote_xyz, shape=[batch_size, num_vote, 3])
+        vote_xyz = tf.keras.layers.Reshape((num_vote, 3))(vote_xyz)
         
         residual_features = net[:,:,:,3:] # (batch_size, num_seed, vote_factor, out_dim)        
         vote_features = tf.expand_dims(seed_features, axis=2) + residual_features
-        vote_features = tf.reshape(vote_features, shape=[batch_size, num_vote, self.out_dim])
+        vote_features = tf.keras.layers.Reshape((num_vote, self.out_dim))(vote_features)
 
         return vote_xyz, vote_features
  
