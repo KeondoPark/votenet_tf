@@ -175,7 +175,11 @@ net = votenet_tf.VoteNet(num_class=DATASET_CONFIG.num_class,
 #  # dim = 0 [30, xxx] -> [10, ...], [10, ...], [10, ...] on 3 GPUs
 #  net = nn.DataParallel(net)
 #net.to(device)
-criterion = votenet_tf.get_loss
+
+
+#criterion = votenet_tf.get_loss
+import loss_helper_tf
+criterion = loss_helper_tf.get_loss
 
 # Load the Adam optimizer # No weight decay in tf basic adam optimizer... so ignore
 optimizer = tf.keras.optimizers.Adam(learning_rate=BASE_LEARNING_RATE)

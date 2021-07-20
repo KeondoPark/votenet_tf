@@ -195,7 +195,8 @@ def compute_box_and_sem_cls_loss(end_points, config):
 
     return center_loss, heading_class_loss, heading_residual_normalized_loss, size_class_loss, size_residual_normalized_loss, sem_cls_loss
 
-def get_loss(end_points, config):
+#def get_loss(end_points, config):
+def get_loss(gt, end_points)
     """ Loss functions
 
     Args:
@@ -218,7 +219,7 @@ def get_loss(end_points, config):
         loss: pytorch scalar tensor
         end_points: dict
     """
-
+    print("========Calc loss!!!=========")
     # Vote loss
     vote_loss = compute_vote_loss(end_points)
     end_points['vote_loss'] = vote_loss
@@ -259,4 +260,5 @@ def get_loss(end_points, config):
     obj_acc = tf.reduce_sum(tf.cast(obj_pred_val==tf.cast(objectness_label, dtype=tf.int64), dtype=tf.float32)*objectness_mask)/(tf.reduce_sum(objectness_mask)+1e-6)
     end_points['obj_acc'] = obj_acc
 
+    print("loss and end points", loss, end_points)
     return loss, end_points

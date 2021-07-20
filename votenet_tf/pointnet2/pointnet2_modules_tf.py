@@ -277,8 +277,8 @@ class PointnetSAModuleVotes(layers.Layer):
             rbf = tf.math.exp(-1 * grouped_xyz.pow(2).sum(1,keepdim=False) / (self.sigma**2) / 2) # (B, npoint, nsample)
             new_features = tf.reduce_sum(new_features * rbf.unsqueeze(1), axis=-1, keepdims=True) / float(self.nsample) # (B, mlp[-1], npoint, 1)
         '''
-        new_features = tf.squeeze(new_features, axis=-2)  # (B, npoint, mlp[-1])
-
+        #new_features = tf.squeeze(new_features, axis=-2)  # (B, npoint, mlp[-1])
+        new_features = layers.Reshape((self.npoint, new_features.shape[-1]))(new_features)
         if not self.ret_unique_cnt:
             #return new_xyz, new_features, inds
             return new_xyz, new_features, inds, ball_query_idx
@@ -421,15 +421,17 @@ class PointnetFPModule(layers.Layer):
             interpolated_feats = tf.tile(known_feats, [1, tf.shape(unknow_feats)[1] / tf.shape(known_feats)[1], 1])
 
         if unknow_feats is not None:
-            new_features = tf.concat([interpolated_feats, unknow_feats],
+            new_features = layers.concatenate([interpolated_feats, unknow_feats],
                                    axis=2)  #(B, n, C2 + C1)
         else:
             new_features = interpolated_feats
 
-        new_features = tf.expand_dims(new_features, axis=-2)
+        #new_features = tf.expand_dims(new_features, axis=-2)
+        new_features = layers.Reshape((new_features.shape[1], 1, new_features.shape[2]))(new_features)
         new_features = self.mlp(new_features)
 
-        return tf.squeeze(new_features, axis=-2)      
+        #return tf.squeeze(new_features, axis=-2)   
+        return layers.Reshape((new_features.shape[1], new_features.shape[-1]))(new_features)  
 '''
 class PointnetLFPModuleMSG(nn.Module):
     """ Modified based on _PointnetSAModuleBase and PointnetSAModuleMSG
