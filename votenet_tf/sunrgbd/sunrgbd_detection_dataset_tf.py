@@ -201,22 +201,23 @@ class SunrgbdDetectionVotesDataset(keras.utils.Sequence):
         target_bboxes_semcls = np.zeros((MAX_NUM_OBJ))
         target_bboxes_semcls[0:bboxes.shape[0]] = bboxes[:,-1] # from 0 to 9
         import tensorflow as tf
-        ret_dict = {}
-        ret_dict['point_clouds'] = tf.convert_to_tensor(point_cloud, dtype=tf.float32)
-        ret_dict['center_label'] = tf.convert_to_tensor(target_bboxes[:,0:3], dtype=tf.float32)
-        ret_dict['heading_class_label'] = tf.convert_to_tensor(angle_classes, dtype=tf.int64)
-        ret_dict['heading_residual_label'] = tf.convert_to_tensor(angle_residuals, dtype=tf.float32)
-        ret_dict['size_class_label'] = tf.convert_to_tensor(size_classes, dtype=tf.int64)
-        ret_dict['size_residual_label'] = tf.convert_to_tensor(size_residuals, dtype=tf.float32)
+        input_dict = {}
+        label_dict = {}
+        input_dict['point_clouds'] = tf.convert_to_tensor(point_cloud, dtype=tf.float32)
+        label_dict['center_label'] = tf.convert_to_tensor(target_bboxes[:,0:3], dtype=tf.float32)
+        label_dict['heading_class_label'] = tf.convert_to_tensor(angle_classes, dtype=tf.int64)
+        label_dict['heading_residual_label'] = tf.convert_to_tensor(angle_residuals, dtype=tf.float32)
+        label_dict['size_class_label'] = tf.convert_to_tensor(size_classes, dtype=tf.int64)
+        label_dict['size_residual_label'] = tf.convert_to_tensor(size_residuals, dtype=tf.float32)
         target_bboxes_semcls = np.zeros((MAX_NUM_OBJ))
         target_bboxes_semcls[0:bboxes.shape[0]] = bboxes[:,-1] # from 0 to 9
-        ret_dict['sem_cls_label'] = tf.convert_to_tensor(target_bboxes_semcls, dtype=tf.int64)
-        ret_dict['box_label_mask'] = tf.convert_to_tensor(target_bboxes_mask, dtype=tf.float32)
-        ret_dict['vote_label'] = tf.convert_to_tensor(point_votes, dtype=tf.float32)
-        ret_dict['vote_label_mask'] = tf.convert_to_tensor(point_votes_mask, dtype=tf.int64)
-        ret_dict['scan_idx'] = tf.convert_to_tensor(np.array(idx), dtype=tf.int64)
-        ret_dict['max_gt_bboxes'] = tf.convert_to_tensor(max_bboxes, dtype=tf.float32)
-        return ret_dict
+        label_dict['sem_cls_label'] = tf.convert_to_tensor(target_bboxes_semcls, dtype=tf.int64)
+        label_dict['box_label_mask'] = tf.convert_to_tensor(target_bboxes_mask, dtype=tf.float32)
+        label_dict['vote_label'] = tf.convert_to_tensor(point_votes, dtype=tf.float32)
+        label_dict['vote_label_mask'] = tf.convert_to_tensor(point_votes_mask, dtype=tf.int64)
+        label_dict['scan_idx'] = tf.convert_to_tensor(np.array(idx), dtype=tf.int64)
+        label_dict['max_gt_bboxes'] = tf.convert_to_tensor(max_bboxes, dtype=tf.float32)
+        return input_dict, label_dict
 
         '''
         ret = (

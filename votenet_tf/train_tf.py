@@ -336,7 +336,8 @@ def train(start_epoch):
 
     train_ds = tf.data.Dataset.from_generator(lambda: (ret for ret in TRAIN_DATASET),
     output_types=({
-                    'point_clouds': tf.float32,
+                    'point_clouds': tf.float32
+    },{
                     'center_label': tf.float32,
                     'heading_class_label': tf.int64,
                     'heading_residual_label': tf.float32,
@@ -350,7 +351,8 @@ def train(start_epoch):
                     'max_gt_bboxes': tf.float32
                 }),
     output_shapes = ({
-        'point_clouds':tf.TensorShape((NUM_POINT,num_input_channel+3)),
+        'point_clouds':tf.TensorShape((NUM_POINT,num_input_channel+3))
+    },{
         'center_label':tf.TensorShape((64,3)),
         'heading_class_label':tf.TensorShape((64,)),
         'heading_residual_label': tf.TensorShape((64,)),
@@ -383,7 +385,8 @@ def train(start_epoch):
                 
     train_ds = train_ds.batch(BATCH_SIZE).prefetch(2)
 
-    print(list(train_ds.take(1).as_numpy_iterator())[0]['point_clouds'].shape)
+    print(list(train_ds.take(1).as_numpy_iterator())[0][0]['point_clouds'].shape)
+    print(list(train_ds.take(1).as_numpy_iterator())[0][1]['center_label'].shape)
     net.fit(train_ds, epochs=10, callbacks=callbacks)
 
 
