@@ -207,8 +207,7 @@ def get_current_lr(epoch):
 
 def adjust_learning_rate(optimizer, epoch):
     lr = get_current_lr(epoch)
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
+    optimizer.learning_rate = lr
 
 def lr_schedule(epoch, lr):
     for i,lr_decay_epoch in enumerate(LR_DECAY_STEPS):
@@ -224,6 +223,40 @@ class CustomCallback(keras.callbacks.Callback):
         log_string('Current BN decay momentum: %f'%(bnm_scheduler.lmbd(bnm_scheduler.last_epoch)))
         log_string(str(datetime.now()))
 
+train_ds = tf.data.Dataset.from_generator(lambda: (ret for ret in TRAIN_DATASET),
+    output_types=({
+                    'point_clouds': tf.float32,    
+                    'center_label': tf.float32,
+                    'heading_class_label': tf.int32,
+                    'heading_residual_label': tf.float32,
+                    'size_class_label': tf.int32,
+                    'size_residual_label': tf.float32,
+                    'sem_cls_label': tf.int32,
+                    'box_label_mask': tf.float32,
+                    'vote_label': tf.float32,
+                    'vote_label_mask': tf.int32,
+                    'scan_idx': tf.int32,
+                    'max_gt_bboxes': tf.float32
+                }),
+    output_shapes = ({
+        'point_clouds':tf.TensorShape((NUM_POINT,num_input_channel+3)),    
+        'center_label':tf.TensorShape((64,3)),
+        'heading_class_label':tf.TensorShape((64,)),
+        'heading_residual_label': tf.TensorShape((64,)),
+        'size_class_label': tf.TensorShape((64,)),
+        'size_residual_label': tf.TensorShape((64,3)),
+        'sem_cls_label': tf.TensorShape((64,)),
+        'box_label_mask': tf.TensorShape((64,)),
+        'vote_label': tf.TensorShape((NUM_POINT,9)),
+        'vote_label_mask': tf.TensorShape((NUM_POINT,)),
+        'scan_idx': tf.TensorShape(()),
+        'max_gt_bboxes': tf.TensorShape((64,8))
+    })
+    )
+                
+train_ds = train_ds.batch(BATCH_SIZE).prefetch(2)
+
+print(list(train_ds.take(1).as_numpy_iterator())[0]['point_clouds'].shape)
 
 
 # TFBoard Visualizers
@@ -242,24 +275,21 @@ CONFIG_DICT = {'remove_empty_box':False, 'use_3d_nms':True,
 def train_one_epoch():
     stat_dict = {} # collect statistics
     adjust_learning_rate(optimizer, EPOCH_CNT)
-    bnm_scheduler.step() # decay BN momentum
-    net.train() # set model to training mode
-    for batch_idx, batch_data_label in enumerate(TRAIN_DATALOADER):
-        for key in batch_data_label:
-            batch_data_label[key] = batch_data_label[key].to(device)
-
+    bnm_scheduler.step() # decay BN momentum    
+    for batch_idx, batch_data_label in enumerate(train_ds): 
         # Forward pass
-        optimizer.zero_grad()
-        inputs = {'point_clouds': batch_data_label['point_clouds']}
-        end_points = net(inputs)
-        
-        # Compute loss and gradients, update parameters.
-        for key in batch_data_label:
-            assert(key not in end_points)
-            end_points[key] = batch_data_label[key]
-        loss, end_points = criterion(end_points, DATASET_CONFIG)
-        loss.backward()
-        optimizer.step()
+        with tf.GradientTape() as tape:
+            inputs = {'point_clouds': batch_data_label['point_clouds']}
+            end_points = net(inputs, training=True)
+            # Compute loss and gradients, update parameters.
+            for key in batch_data_label:
+                assert(key not in end_points)
+                end_points[key] = batch_data_label[key]
+            loss, end_points = criterion(end_points, DATASET_CONFIG)        
+
+        grads = tape.gradient(loss, net.trainable_weights)
+
+        optimizer.apply_gradients(zip(grads, net.trainable_weights))
 
         # Accumulate statistics and print out
         for key in end_points:
@@ -271,7 +301,7 @@ def train_one_epoch():
         if (batch_idx+1) % batch_interval == 0:
             log_string(' ---- batch: %03d ----' % (batch_idx+1))
             TRAIN_VISUALIZER.log_scalars({key:stat_dict[key]/batch_interval for key in stat_dict},
-                (EPOCH_CNT*len(TRAIN_DATALOADER)+batch_idx)*BATCH_SIZE)
+                (EPOCH_CNT*len(train_ds)+batch_idx)*BATCH_SIZE)
             for key in sorted(stat_dict.keys()):
                 log_string('mean %s: %f'%(key, stat_dict[key]/batch_interval))
                 stat_dict[key] = 0
@@ -332,62 +362,18 @@ def train(start_epoch):
     callbacks = []
     callbacks.append(tf.keras.callbacks.LearningRateScheduler(lr_schedule))
     callbacks.append(CustomCallback())
-    net.compile(optimizer=optimizer, loss=criterion)
+    #net.compile(optimizer=optimizer, loss=criterion)
 
-    train_ds = tf.data.Dataset.from_generator(lambda: (ret for ret in TRAIN_DATASET),
-    output_types=({
-                    'point_clouds': tf.float32
-    },{
-                    'center_label': tf.float32,
-                    'heading_class_label': tf.int64,
-                    'heading_residual_label': tf.float32,
-                    'size_class_label': tf.int64,
-                    'size_residual_label': tf.float32,
-                    'sem_cls_label': tf.int64,
-                    'box_label_mask': tf.float32,
-                    'vote_label': tf.float32,
-                    'vote_label_mask': tf.int64,
-                    'scan_idx': tf.int64,
-                    'max_gt_bboxes': tf.float32
-                }),
-    output_shapes = ({
-        'point_clouds':tf.TensorShape((NUM_POINT,num_input_channel+3))
-    },{
-        'center_label':tf.TensorShape((64,3)),
-        'heading_class_label':tf.TensorShape((64,)),
-        'heading_residual_label': tf.TensorShape((64,)),
-        'size_class_label': tf.TensorShape((64,)),
-        'size_residual_label': tf.TensorShape((64,3)),
-        'sem_cls_label': tf.TensorShape((64,)),
-        'box_label_mask': tf.TensorShape((64,)),
-        'vote_label': tf.TensorShape((NUM_POINT,9)),
-        'vote_label_mask': tf.TensorShape((NUM_POINT,)),
-        'scan_idx': tf.TensorShape(()),
-        'max_gt_bboxes': tf.TensorShape((64,8))
-    })
-    )
+    for epoch in range(start_epoch, MAX_EPOCH):
+        EPOCH_CNT = epoch
+        log_string('**** EPOCH %03d ****' % (epoch))
+        log_string('Current learning rate: %f'%(get_current_lr(epoch)))
+        log_string('Current BN decay momentum: %f'%(bnm_scheduler.lmbd(bnm_scheduler.last_epoch)))
+        log_string(str(datetime.now()))
+        train_one_epoch()
 
-    '''
-    output_types=(
-                    tf.float32,
-                    tf.float32,
-                    tf.int64,
-                    tf.float32,
-                    tf.int64,
-                    tf.float32,
-                    tf.int64,
-                    tf.float32,
-                    tf.float32,
-                    tf.int64,
-                    tf.int64,
-                    tf.float32))
-                    '''
-                
-    train_ds = train_ds.batch(BATCH_SIZE).prefetch(2)
-
-    print(list(train_ds.take(1).as_numpy_iterator())[0][0]['point_clouds'].shape)
-    print(list(train_ds.take(1).as_numpy_iterator())[0][1]['center_label'].shape)
-    net.fit(train_ds, epochs=10, callbacks=callbacks)
+    
+    #net.fit(train_ds, epochs=10, callbacks=callbacks)
 
 
     '''

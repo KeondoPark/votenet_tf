@@ -10,6 +10,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 from nn_distance_tf import nn_distance, huber_loss
+import tensorflow as tf
+import torch
+import torch.nn as nn
 
 FAR_THRESHOLD = 0.6
 NEAR_THRESHOLD = 0.3
@@ -41,16 +44,17 @@ def compute_vote_loss(end_points):
     batch_size = end_points['seed_xyz'].shape[0]
     num_seed = end_points['seed_xyz'].shape[1] # B,num_seed,3
     vote_xyz = end_points['vote_xyz'] # B,num_seed*vote_factor,3
-    seed_inds = end_points['seed_inds'].long() # B,num_seed in [0,num_points-1]
+    seed_inds = tf.cast(end_points['seed_inds'], dtype=tf.int32) # B,num_seed in [0,num_points-1]
 
     # Get groundtruth votes for the seed points
     # vote_label_mask: Use gather to select B,num_seed from B,num_point
     #   non-object point has no GT vote mask = 0, object point has mask = 1
     # vote_label: Use gather to select B,num_seed,9 from B,num_point,9
     #   with inds in shape B,num_seed,9 and 9 = GT_VOTE_FACTOR * 3
-    seed_gt_votes_mask = tf.gather(end_points['vote_label_mask'], axis=1, indices=seed_inds) #(B, num_seed)
-    seed_inds_expand = tf.tile(tf.reshape(seed_inds, shape=[batch_size, num_seed, 1]), multiples=[1,1,3*GT_VOTE_FACTOR])
-    seed_gt_votes = tf.gather(end_points['vote_label'], axis=1, indices=seed_inds_expand)
+    seed_gt_votes_mask = tf.gather(end_points['vote_label_mask'], axis=1, indices=seed_inds, batch_dims = 1) #(B, 20000) -> (B, num_seed)
+    #seed_inds_expand = tf.tile(tf.reshape(seed_inds, shape=[batch_size, num_seed, 1]), multiples=[1,1,3*GT_VOTE_FACTOR])
+    #print("seed_inds_expand shape: ", seed_inds_expand.shape)
+    seed_gt_votes = tf.gather(end_points['vote_label'], axis=1, indices=seed_inds, batch_dims=1)
     seed_gt_votes += tf.tile(end_points['seed_xyz'], multiples=[1,1,3])
 
     # Compute the min of min of distance
@@ -58,9 +62,42 @@ def compute_vote_loss(end_points):
     seed_gt_votes_reshape = tf.reshape(seed_gt_votes, [batch_size*num_seed, GT_VOTE_FACTOR, 3]) # from (B,num_seed,3*GT_VOTE_FACTOR) to (B*num_seed,GT_VOTE_FACTOR,3)
     # A predicted vote to no where is not penalized as long as there is a good vote near the GT vote.
     dist1, _, dist2, _ = nn_distance(vote_xyz_reshape, seed_gt_votes_reshape, l1=True) # dist1: (B*num_seed, GT_VOTE_FACTOR), dist2: (B*num_seed, vote_factor)
-    votes_dist, _ = tf.reduce_min(dist2, axis=1) # (B*num_seed,vote_factor) to (B*num_seed,)
+    votes_dist= tf.reduce_min(dist2, axis=1) # (B*num_seed,vote_factor) to (B*num_seed,)
     votes_dist = tf.reshape(votes_dist, shape=[batch_size, num_seed])
     vote_loss = tf.reduce_sum(votes_dist*tf.cast(seed_gt_votes_mask, dtype=tf.float32))/(tf.reduce_sum(tf.cast(seed_gt_votes_mask, dtype=tf.float32))+1e-6)
+    
+    """
+    For validation
+    
+    seed_inds_torch = torch.tensor(seed_inds.numpy()).long()
+    seed_gt_votes_mask_torch = torch.gather(torch.tensor(end_points['vote_label_mask'].numpy()), 1, seed_inds_torch)
+    print("(Tensorflow) seed_gt_votes_mask[0]", seed_gt_votes_mask[0])
+    print("(Torch) seed_gt_votes_mask[0]", seed_gt_votes_mask_torch[0])
+    seed_inds_expand = seed_inds_torch.view(batch_size,num_seed,1).repeat(1,1,3*GT_VOTE_FACTOR)
+    vote_label_torch = torch.tensor(end_points['vote_label'].numpy())
+    seed_gt_votes_torch = torch.gather(vote_label_torch, 1, seed_inds_expand)
+    print("(Tensorflow) seed_gt_votes[0,0]", seed_gt_votes[0,0])
+    print("(Torch) seed_gt_votes[0,0]", seed_gt_votes_torch[0,0])
+    seed_xyz_torch = torch.tensor(end_points['seed_xyz'].numpy())
+    seed_gt_votes_torch += seed_xyz_torch.repeat(1,1,3)
+    print("(Tensorflow) seed_gt_votes_torch[0,0] recoverd", seed_gt_votes[0,0])
+    print("(Torch) seed_gt_votes_torch[0,0] recovered", seed_gt_votes_torch[0,0])
+
+    # Compute the min of min of distance
+    vote_xyz_torch = torch.tensor(vote_xyz.numpy())
+    vote_xyz_reshape_torch = vote_xyz_torch.view(batch_size*num_seed, -1, 3) # from B,num_seed*vote_factor,3 to B*num_seed,vote_factor,3
+    seed_gt_votes_reshape_torch = seed_gt_votes_torch.view(batch_size*num_seed, GT_VOTE_FACTOR, 3) # from B,num_seed,3*GT_VOTE_FACTOR to B*num_seed,GT_VOTE_FACTOR,3
+    # A predicted vote to no where is not penalized as long as there is a good vote near the GT vote.
+    #dist1, _, dist2, _ = nn_distance(vote_xyz_reshape_torch, seed_gt_votes_reshape_torch, l1=True)
+    dist2_torch = torch.tensor(dist2.numpy())
+    votes_dist_torch, _ = torch.min(dist2_torch, dim=1) # (B*num_seed,vote_factor) to (B*num_seed,)
+    votes_dist_torch = votes_dist_torch.view(batch_size, num_seed)
+    vote_loss_torch = torch.sum(votes_dist_torch*seed_gt_votes_mask_torch.float())/(torch.sum(seed_gt_votes_mask_torch.float())+1e-6)
+
+    print("(Tensorflow) vote loss", vote_loss)
+    print("(Torch) vote loss", vote_loss_torch)
+    """
+    
     return vote_loss
 
 def compute_objectness_loss(end_points):
@@ -77,7 +114,7 @@ def compute_objectness_loss(end_points):
             within [0,num_gt_object-1]
     """ 
     # Associate proposal and GT objects by point-to-point distances
-    aggregated_vote_xyz = end_points['aggregated_vote_xyz']
+    aggregated_vote_xyz = end_points['aggregated_vote_xyz'] #(B, K, 3)
     gt_center = end_points['center_label'][:,:,0:3] # (batch_size, MAX_NUM_OBJ, 3)
     B = gt_center.shape[0]
     K = aggregated_vote_xyz.shape[1] #num_proposal
@@ -88,16 +125,37 @@ def compute_objectness_loss(end_points):
     # objectness_label: 1 if pred object center is within NEAR_THRESHOLD of any GT object
     # objectness_mask: 0 if pred object center is in gray zone (DONOTCARE), 1 otherwise
     euclidean_dist1 = tf.math.sqrt(dist1+1e-6)
-    objectness_label = tf.zeros([B,K], dtype=tf.int64)
-    objectness_mask = torch.zeros([B,K])
-    objectness_label[euclidean_dist1<NEAR_THRESHOLD] = 1
-    objectness_mask[euclidean_dist1<NEAR_THRESHOLD] = 1
-    objectness_mask[euclidean_dist1>FAR_THRESHOLD] = 1
+    objectness_label = tf.zeros([B,K], dtype=tf.int32)
+    objectness_mask = tf.zeros([B,K], dtype=tf.float32)
+
+    print(euclidean_dist1)
+    print(euclidean_dist1<NEAR_THRESHOLD)
+    print(objectness_label.shape)
+    objectness_label = tf.where(euclidean_dist1<NEAR_THRESHOLD, 1, 0)
+    objectness_mask = tf.where(euclidean_dist1<NEAR_THRESHOLD, 1.0, 0.0)
+    objectness_mask = tf.where(euclidean_dist1>FAR_THRESHOLD, 1.0, 0.0)
+    #objectness_label[euclidean_dist1<NEAR_THRESHOLD] = 1
+    #objectness_mask[euclidean_dist1<NEAR_THRESHOLD] = 1
+    #objectness_mask[euclidean_dist1>FAR_THRESHOLD] = 1
 
     # Compute objectness loss
     objectness_scores = end_points['objectness_scores'] #(B, num_proposal, 2)
-    criterion = tf.keras.losses.CategoricalCrossentropy(reduction=tf.keras.losses.Reduction.NONE)
-    objectness_loss = criterion(objectness_label, tf.transpose(objectness_scores, perm=[0,2,1]), sample_weight=OBJECTNESS_CLS_WEIGHTS)
+    objectness_label_one_hot = tf.one_hot(objectness_label, depth=2, axis=-1)
+
+    """
+    criterion = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE) # softmax not applied
+    objectness_loss = criterion(objectness_label, objectness_scores)
+
+    print("objectness_loss shape:", objectness_loss.shape)
+    print(objectness_loss)
+    """
+    def crossEntropyWithClassWeights(y_true, y_pred, weight, n_class=2):
+        y_pred_softmax = tf.nn.softmax(y_pred)
+        loss = - y_true * tf.math.log(y_pred_softmax+1e-10) * weight
+        loss = tf.reduce_sum(loss, axis=-1)
+        return loss
+
+    objectness_loss = crossEntropyWithClassWeights(objectness_label_one_hot, objectness_scores, weight=tf.constant(OBJECTNESS_CLS_WEIGHTS), n_class=2)
     objectness_loss = tf.reduce_sum(objectness_loss * objectness_mask)/(tf.reduce_sum(objectness_mask)+1e-6)
 
     # Set assignment
@@ -133,7 +191,7 @@ def compute_box_and_sem_cls_loss(end_points, config):
     gt_center = end_points['center_label'][:,:,0:3] # (batch_size, MAX_NUM_OBJ, 3)
     dist1, ind1, dist2, _ = nn_distance(pred_center, gt_center) # dist1: (batch_size, MAX_NUM_OBJ), dist2: (batch_size, num_proposal)
     box_label_mask = end_points['box_label_mask']  #(batch_size, MAX_NUM_OBJ)
-    objectness_label = end_points['objectness_label'].float() #(batch_size, MAX_NUM_OBJ)
+    objectness_label = tf.cast(end_points['objectness_label'], dtype=tf.float32) #(batch_size, MAX_NUM_OBJ)
     centroid_reg_loss1 = \
         tf.reduce_sum(dist1*objectness_label)/(tf.reduce_sum(objectness_label)+1e-6)
     centroid_reg_loss2 = \
@@ -195,8 +253,7 @@ def compute_box_and_sem_cls_loss(end_points, config):
 
     return center_loss, heading_class_loss, heading_residual_normalized_loss, size_class_loss, size_residual_normalized_loss, sem_cls_loss
 
-#def get_loss(end_points, config):
-def get_loss(gt, end_points):
+def get_loss(end_points, config):
     """ Loss functions
 
     Args:
@@ -219,11 +276,7 @@ def get_loss(gt, end_points):
         loss: pytorch scalar tensor
         end_points: dict
     """
-    print("========Calc loss!!!=========")
-    print(gt)
-    print(end_points)
-    for k in gt.keys():
-        end_points[k] = gt[k]
+    print("========Calc loss!!!=========")       
 
     # Vote loss
     vote_loss = compute_vote_loss(end_points)
@@ -262,7 +315,7 @@ def get_loss(gt, end_points):
     # --------------------------------------------
     # Some other statistics
     obj_pred_val = tf.math.argmax(end_points['objectness_scores'], axis=2) # B,K
-    obj_acc = tf.reduce_sum(tf.cast(obj_pred_val==tf.cast(objectness_label, dtype=tf.int64), dtype=tf.float32)*objectness_mask)/(tf.reduce_sum(objectness_mask)+1e-6)
+    obj_acc = tf.reduce_sum(tf.cast(obj_pred_val==tf.cast(objectness_label, dtype=tf.int32), dtype=tf.float32)*objectness_mask)/(tf.reduce_sum(objectness_mask)+1e-6)
     end_points['obj_acc'] = obj_acc
 
     print("loss and end points", loss, end_points)

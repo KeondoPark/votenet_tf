@@ -276,3 +276,113 @@ Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_s
 Current learning rate: 0.001000
 Current BN decay momentum: 0.500000
 2021-07-20 22:52:14.841852
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-22 13:35:40.457174
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-22 13:38:59.283914
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-22 13:40:14.086329
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-22 13:44:45.963413
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-22 14:23:34.626695
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-22 14:27:38.251245
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-22 14:54:23.599769
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-22 15:18:15.441821
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-22 15:40:32.078470
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-22 15:41:44.419506
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-22 15:43:33.206624
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-22 16:05:07.682707
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-22 16:06:13.334094
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-22 16:15:21.044696
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-22 16:34:48.884706
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-22 21:36:48.085617
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-22 21:39:40.833033
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-23 00:44:53.256243
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-23 00:46:30.775384
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-23 00:49:33.425590
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-23 00:52:43.461622
+Namespace(DUMP_DIR='/home/gundo0102/votenet_tf/log', ap_iou_thresh=0.25, batch_size=8, bn_decay_rate=0.5, bn_decay_step=20, checkpoint_path=None, cluster_sampling='vote_fps', dataset='sunrgbd', dump_dir=None, dump_results=False, learning_rate=0.001, log_dir='log', lr_decay_rates='0.1,0.1,0.1', lr_decay_steps='80,120,160', max_epoch=180, no_height=False, num_point=20000, num_target=256, overwrite=False, use_color=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1, weight_decay=0)
+**** EPOCH 000 ****
+Current learning rate: 0.001000
+Current BN decay momentum: 0.500000
+2021-07-23 00:54:04.660853
