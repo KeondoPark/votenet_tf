@@ -84,8 +84,6 @@ class VoteNet(tf.keras.Model):
         end_points = {}        
 
         batch_size = inputs['point_clouds'].shape[0]
-        print(inputs)
-        print(inputs['point_clouds'].shape)
 
         end_points = self.backbone_net(inputs['point_clouds'], end_points)
                 

@@ -9,7 +9,7 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
-from nn_distance_tf import nn_distance, huber_loss
+from nn_distance_tf import nn_distance, huber_loss, huber_loss_torch
 import tensorflow as tf
 import torch
 import torch.nn as nn
@@ -54,7 +54,7 @@ def compute_vote_loss(end_points):
     seed_gt_votes_mask = tf.gather(end_points['vote_label_mask'], axis=1, indices=seed_inds, batch_dims = 1) #(B, 20000) -> (B, num_seed)
     #seed_inds_expand = tf.tile(tf.reshape(seed_inds, shape=[batch_size, num_seed, 1]), multiples=[1,1,3*GT_VOTE_FACTOR])
     #print("seed_inds_expand shape: ", seed_inds_expand.shape)
-    seed_gt_votes = tf.gather(end_points['vote_label'], axis=1, indices=seed_inds, batch_dims=1)
+    seed_gt_votes = tf.gather(end_points['vote_label'], axis=1, indices=seed_inds, batch_dims=1) # (B, 20000, 9) -> (B, num_seed, 9)
     seed_gt_votes += tf.tile(end_points['seed_xyz'], multiples=[1,1,3])
 
     # Compute the min of min of distance
@@ -127,39 +127,66 @@ def compute_objectness_loss(end_points):
     euclidean_dist1 = tf.math.sqrt(dist1+1e-6)
     objectness_label = tf.zeros([B,K], dtype=tf.int32)
     objectness_mask = tf.zeros([B,K], dtype=tf.float32)
-
-    print(euclidean_dist1)
-    print(euclidean_dist1<NEAR_THRESHOLD)
-    print(objectness_label.shape)
+     
     objectness_label = tf.where(euclidean_dist1<NEAR_THRESHOLD, 1, 0)
     objectness_mask = tf.where(euclidean_dist1<NEAR_THRESHOLD, 1.0, 0.0)
     objectness_mask = tf.where(euclidean_dist1>FAR_THRESHOLD, 1.0, 0.0)
-    #objectness_label[euclidean_dist1<NEAR_THRESHOLD] = 1
-    #objectness_mask[euclidean_dist1<NEAR_THRESHOLD] = 1
-    #objectness_mask[euclidean_dist1>FAR_THRESHOLD] = 1
 
     # Compute objectness loss
     objectness_scores = end_points['objectness_scores'] #(B, num_proposal, 2)
     objectness_label_one_hot = tf.one_hot(objectness_label, depth=2, axis=-1)
 
     """
+    Below code could be used if weight per class is not necessary
+
     criterion = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE) # softmax not applied
     objectness_loss = criterion(objectness_label, objectness_scores)
 
     print("objectness_loss shape:", objectness_loss.shape)
     print(objectness_loss)
     """
+
     def crossEntropyWithClassWeights(y_true, y_pred, weight, n_class=2):
         y_pred_softmax = tf.nn.softmax(y_pred)
         loss = - y_true * tf.math.log(y_pred_softmax+1e-10) * weight
         loss = tf.reduce_sum(loss, axis=-1)
         return loss
 
-    objectness_loss = crossEntropyWithClassWeights(objectness_label_one_hot, objectness_scores, weight=tf.constant(OBJECTNESS_CLS_WEIGHTS), n_class=2)
+    objectness_loss = crossEntropyWithClassWeights(objectness_label_one_hot, objectness_scores, weight=tf.constant(OBJECTNESS_CLS_WEIGHTS), n_class=2)    
     objectness_loss = tf.reduce_sum(objectness_loss * objectness_mask)/(tf.reduce_sum(objectness_mask)+1e-6)
 
     # Set assignment
     object_assignment = ind1 # (B,K) with values in 0,1,...,K2-1
+
+    
+
+    """
+    For validation
+    
+    dist1_torch = torch.tensor(dist1.numpy())
+    euclidean_dist1_torch = torch.sqrt(dist1_torch+1e-6)
+    objectness_label_torch = torch.zeros((B,K), dtype=torch.long)
+    objectness_mask_torch = torch.zeros((B,K))
+    objectness_label_torch[euclidean_dist1_torch<NEAR_THRESHOLD] = 1
+    objectness_mask_torch[euclidean_dist1_torch<NEAR_THRESHOLD] = 1
+    objectness_mask_torch[euclidean_dist1_torch>FAR_THRESHOLD] = 1
+
+    print("(Tensorflow) euclidean_dist1[0]", euclidean_dist1[0])
+    print("(Torch) euclidean_dist1[0]", euclidean_dist1_torch[0])
+
+    # Compute objectness loss
+    objectness_scores_torch = torch.tensor(end_points['objectness_scores'].numpy())
+    criterion = nn.CrossEntropyLoss(torch.Tensor(OBJECTNESS_CLS_WEIGHTS), reduction='none')
+    objectness_loss_torch = criterion(objectness_scores_torch.transpose(2,1), objectness_label_torch) #(B, K)    
+    objectness_loss_torch = torch.sum(objectness_loss_torch * objectness_mask_torch)/(torch.sum(objectness_mask_torch)+1e-6)    
+    print("(Tensorflow) objectness_loss_reduced", objectness_loss)
+    print("(Torch) objectness_loss_reduced", objectness_loss_torch)
+
+    # Set assignment
+    object_assignment_torch = torch.tensor(ind1.numpy()) # (B,K) with values in 0,1,...,K2-1
+    print("(Tensorflow) object_assignment[0]", object_assignment[0])
+    print("(Torch) object_assignment[0]", object_assignment_torch[0])
+    """
 
     return objectness_loss, objectness_label, objectness_mask, object_assignment
 
@@ -201,55 +228,151 @@ def compute_box_and_sem_cls_loss(end_points, config):
     # Compute heading loss
     # Change object_assignment to be compatible with tf.gather_nd
     K = object_assignment.shape[1]
+    heading_class_label = tf.gather(end_points['heading_class_label'], axis=1, indices=object_assignment, batch_dims=1) #(B, K2) -> (B, K)
+    """
     object_assignment_exp = tf.expand_dims(object_assignment, axis = -1) #(B,K,1)
     row_id = tf.expand_dims(tf.expand_dims(np.array(list(range(batch_size))), axis=-1), axis=-1) #(B,1,1)
     row_id_tile = tf.tile(row_id, multiples=(1,K,1)) #(B,K,1)
     ind_tf = tf.concat([row_id_tile, object_assignment_exp], axis=-1) #(B,K,2)
     heading_class_label = tf.gather_nd(end_points['heading_class_label'], ind_tf)
     #heading_class_label = torch.gather(end_points['heading_class_label'], 1, object_assignment) # select (B,K) from (B,K2)
-
-    criterion_heading_class = tf.keras.losses.SparseCategoricalCrossentropy(reduction=tf.keras.losses.Reduction.NONE) #SparseCategoricalCrossentropy is used because heading_class_label is NOT one-hot
-    heading_class_loss = criterion_heading_class(heading_class_label, tf.transpose(end_points['heading_scores'], perm=[0,2,1])) # (B,K)    
+    """
+    criterion_heading_class = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE) #SparseCategoricalCrossentropy is used because heading_class_label is NOT one-hot
+    heading_class_loss = criterion_heading_class(heading_class_label, end_points['heading_scores']) # (B,K)    
     heading_class_loss = tf.reduce_sum(heading_class_loss * objectness_label) / (tf.reduce_sum(objectness_label)+1e-6)
 
-    heading_residual_label = tf.gather_nd(end_points['heading_residual_label'], ind_tf) # select (B,K) from (B,K2)
+    #heading_residual_label = tf.gather_nd(end_points['heading_residual_label'], ind_tf) # select (B,K) from (B,K2)
+    heading_residual_label = tf.gather(end_points['heading_residual_label'], axis=1, indices=object_assignment, batch_dims=1)
     heading_residual_normalized_label = heading_residual_label / (np.pi/num_heading_bin)
 
-    heading_label_one_hot = tf.one_hot(heading_class_label, depth=num_heading_bin)
-    huber_loss = tf.keras.losses.Huber(delta=1.0, reduction=tf.keras.losses.Reduction.NONE)()
-    heading_residual_normalized_loss = huber_loss(tf.reduce_sum(end_points['heading_residuals_normalized']*heading_label_one_hot - heading_residual_normalized_label, axis=-1))
-    heading_residual_normalized_loss = tf.reduce_sum(heading_residual_normalized_loss*objectness_label)/(tf.reduce_sum(objectness_label)+1e-6)
+    heading_label_one_hot = tf.one_hot(heading_class_label, depth=num_heading_bin, axis=-1) #(B, K, 12)
+    #huber_loss = tf.keras.losses.Huber(delta=1.0, reduction=tf.keras.losses.Reduction.NONE)
+    heading_residual_normalized_loss = huber_loss(heading_residual_normalized_label - tf.reduce_sum(end_points['heading_residuals_normalized']*heading_label_one_hot, axis=-1))
+    heading_residual_normalized_loss = tf.reduce_sum(objectness_label * heading_residual_normalized_loss) / (tf.reduce_sum(objectness_label)+1e-6)
 
     # Compute size loss
-    size_class_label = tf.gather_nd(end_points['size_class_label'], ind_tf) # select (B,K) from (B,K2)
-    criterion_size_class = tf.keras.losses.SparseCategoricalCrossentropy(reduction=tf.keras.losses.Reduction.NONE)
-    size_class_loss = criterion_size_class(size_class_label, tf.transpose(end_points['size_scores'], perm=[0,2,1])) # (B,K)
+    #size_class_label = tf.gather_nd(end_points['size_class_label'], ind_tf) # select (B,K) from (B,K2)
+    size_class_label = tf.gather(end_points['size_class_label'], axis=1, indices=object_assignment, batch_dims=1) # select (B,K) from (B,K2)
+    criterion_size_class = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE)
+    size_class_loss = criterion_size_class(size_class_label, end_points['size_scores']) # (B,K)
     size_class_loss = tf.reduce_sum(size_class_loss * objectness_label)/(tf.reduce_sum(objectness_label)+1e-6)
 
     #Create index used for tensorflow gather_nd... not very convenient compared to pytorch
+    size_residual_label = tf.gather(end_points['size_residual_label'], axis=1, indices=object_assignment, batch_dims=1) # select (B,K,3) from (B,K2,3)
+    """
     a = tf.tile(tf.expand_dims(ind_tf, axis=2), multiples=(1,1,3,1)) # (B,K,3,2)    
     b = tf.tile(tf.expand_dims(np.array(list(range(3))), axis=0), multiples=(K,1)) #(K,3)
     b = tf.expand_dims(tf.tile(tf.expand_dims(b, axis=0), multiples=(batch_size,1,1)), axis=-1) #(B,K,3,1)
     ind_size_residual = tf.concat([a,b], axis=-1) #(B, K, 3, 3) First 3 is the number of elements to gather / Second 3 is the number of dimension
     size_residual_label = tf.gather_nd(end_points['size_residual_label'], ind_size_residual) # select (B,K,3) from (B,K2,3)
-
+    """
     
-    size_label_one_hot = tf.one_hot(heading_class_label, depth=num_size_cluster) #(B, K, num_size_cluster)    
+    size_label_one_hot = tf.one_hot(size_class_label, depth=num_size_cluster) #(B, K, num_size_cluster)    
     size_label_one_hot_tiled = tf.tile(tf.expand_dims(size_label_one_hot, axis=-1), multiples=(1,1,1,3)) # (B,K,num_size_cluster,3)
     predicted_size_residual_normalized = tf.reduce_sum(end_points['size_residuals_normalized']*size_label_one_hot_tiled, axis=2) # (B,K,3)
     
     mean_size_arr_expanded = tf.expand_dims(tf.expand_dims(tf.convert_to_tensor(mean_size_arr.astype(np.float32)), axis=0), axis=0) # (1,1,num_size_cluster,3) 
     mean_size_label = tf.reduce_sum(size_label_one_hot_tiled * mean_size_arr_expanded, axis=2) # (B,K,3)
+    
     size_residual_label_normalized = size_residual_label / mean_size_label # (B,K,3)
-    size_residual_normalized_loss = tf.math.reduce_mean(huber_loss(predicted_size_residual_normalized - size_residual_label_normalized, delta=1.0), axis=-1) # (B,K,3) -> (B,K)
+    size_residual_normalized_loss = tf.reduce_mean(huber_loss(size_residual_label_normalized - predicted_size_residual_normalized), axis=-1) # (B,K,3) -> (B,K)
     size_residual_normalized_loss = tf.reduce_sum(size_residual_normalized_loss*objectness_label)/(tf.reduce_sum(objectness_label)+1e-6)
 
     # 3.4 Semantic cls loss
     #sem_cls_label = torch.gather(end_points['sem_cls_label'], 1, object_assignment) # select (B,K) from (B,K2)
-    sem_cls_label = tf.gather_nd(end_points['sem_cls_label'], ind_tf) # select (B,K) from (B,K2)
-    criterion_sem_cls = tf.keras.losses.SparseCategoricalCrossentropy(reduction=tf.keras.losses.Reduction.NONE)
-    sem_cls_loss = criterion_sem_cls(sem_cls_label, tf.transpose(end_points['sem_cls_scores'], perm=[0,2,1])) # (B,K)
+    #sem_cls_label = tf.gather_nd(end_points['sem_cls_label'], ind_tf) # select (B,K) from (B,K2)
+    sem_cls_label = tf.gather(end_points['sem_cls_label'], axis=1, indices=object_assignment, batch_dims=1)
+    criterion_sem_cls = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE)
+    sem_cls_loss = criterion_sem_cls(sem_cls_label, end_points['sem_cls_scores']) # (B,K)
     sem_cls_loss = tf.reduce_sum(sem_cls_loss * objectness_label)/(tf.reduce_sum(objectness_label)+1e-6)
+
+    """
+    ==========================For validation=========================
+    objectness_label_torch = torch.tensor(end_points['objectness_label'].numpy()).float()
+    dist1_torch = torch.tensor(dist1.numpy())
+    dist2_torch = torch.tensor(dist2.numpy())
+    box_label_mask_torch = torch.tensor(end_points['box_label_mask'].numpy())
+
+    centroid_reg_loss1_torch = \
+        torch.sum(dist1_torch*objectness_label_torch)/(torch.sum(objectness_label_torch)+1e-6)
+    centroid_reg_loss2_torch = \
+        torch.sum(dist2_torch*box_label_mask_torch)/(torch.sum(box_label_mask_torch)+1e-6)
+    center_loss_torch = centroid_reg_loss1_torch + centroid_reg_loss2_torch
+
+    print("(Tensorflow) center_loss", center_loss)
+    print("(Torch) center_loss", center_loss_torch)
+
+    # Compute heading loss
+    heading_class_label_torch = torch.tensor(end_points['heading_class_label'].numpy()).long()
+    object_assignment_torch = torch.tensor(object_assignment.numpy())
+    heading_class_label_torch = torch.gather(heading_class_label_torch, 1, object_assignment_torch) # select (B,K) from (B,K2)
+    criterion_heading_class = nn.CrossEntropyLoss(reduction='none')
+    heading_scores_torch = torch.tensor(end_points['heading_scores'].numpy())
+    heading_class_loss_torch = criterion_heading_class(heading_scores_torch.transpose(2,1), heading_class_label_torch) # (B,K)
+    heading_class_loss_torch = torch.sum(heading_class_loss_torch * objectness_label_torch)/(torch.sum(objectness_label_torch)+1e-6)
+    print("(Tensorflow) heading_class_loss", heading_class_loss)
+    print("(Torch) heading_class_loss", heading_class_loss_torch)
+
+    heading_residual_label_torch = torch.tensor(end_points['heading_residual_label'].numpy())
+    heading_residual_label_torch = torch.gather(heading_residual_label_torch, 1, object_assignment_torch) # select (B,K) from (B,K2)
+    heading_residual_normalized_label_torch = heading_residual_label_torch / (np.pi/num_heading_bin)
+
+    heading_label_one_hot_torch = torch.FloatTensor(batch_size, heading_class_label_torch.shape[1], num_heading_bin).zero_()
+    heading_label_one_hot_torch.scatter_(2, heading_class_label_torch.unsqueeze(-1), 1) # src==1 so it's *one-hot* (B,K,num_heading_bin)
+    heading_residuals_normalized_torch = torch.tensor(end_points['heading_residuals_normalized'].numpy())
+    heading_residual_normalized_loss_torch = huber_loss_torch(torch.sum(heading_residuals_normalized_torch*heading_label_one_hot_torch, -1) - heading_residual_normalized_label_torch, delta=1.0) # (B,K)
+    heading_residual_normalized_loss_torch = torch.sum(heading_residual_normalized_loss_torch*objectness_label_torch)/(torch.sum(objectness_label_torch)+1e-6)
+    print("(Tensorflow) heading_residual_normalized_loss", heading_residual_normalized_loss)
+    print("(Torch) heading_residual_normalized_loss", heading_residual_normalized_loss_torch)
+
+    # Compute size loss
+    size_class_label_torch = torch.tensor(end_points['size_class_label'].numpy())
+    size_class_label_torch = torch.gather(size_class_label_torch, 1, object_assignment_torch).long() # select (B,K) from (B,K2)
+    criterion_size_class_torch = nn.CrossEntropyLoss(reduction='none')
+    size_scores_torch = torch.tensor(end_points['size_scores'].numpy())
+    size_class_loss_torch = criterion_size_class_torch(size_scores_torch.transpose(2,1), size_class_label_torch) # (B,K)
+    size_class_loss_torch = torch.sum(size_class_loss_torch * objectness_label_torch)/(torch.sum(objectness_label_torch)+1e-6)
+    print("(Tensorflow) size_class_loss", size_class_loss)
+    print("(Torch) size_class_loss", size_class_loss_torch)
+
+
+    size_residual_label_torch = torch.tensor(end_points['size_residual_label'].numpy())
+    size_residual_label_torch = torch.gather(size_residual_label_torch, 1, object_assignment_torch.unsqueeze(-1).repeat(1,1,3)) # select (B,K,3) from (B,K2,3)
+    size_label_one_hot_torch = torch.FloatTensor(batch_size, size_class_label_torch.shape[1], num_size_cluster).zero_()
+    size_label_one_hot_torch.scatter_(2, size_class_label_torch.unsqueeze(-1), 1) # src==1 so it's *one-hot* (B,K,num_size_cluster)
+    size_label_one_hot_tiled_torch = size_label_one_hot_torch.unsqueeze(-1).repeat(1,1,1,3) # (B,K,num_size_cluster,3)
+    size_residuals_normalized_torch = torch.tensor(end_points['size_residuals_normalized'].numpy())    
+    predicted_size_residual_normalized_torch = torch.sum(size_residuals_normalized_torch*size_label_one_hot_tiled_torch, 2) # (B,K,3)
+    
+
+    mean_size_arr_expanded_torch = torch.from_numpy(mean_size_arr.astype(np.float32)).unsqueeze(0).unsqueeze(0) # (1,1,num_size_cluster,3) 
+    mean_size_label_torch = torch.sum(size_label_one_hot_tiled_torch * mean_size_arr_expanded_torch, 2) # (B,K,3)
+
+    print("(tensorflow)size_label_one_hot[1]", size_label_one_hot[1])
+    print("(torch)size_label_one_hot[1]", size_label_one_hot_torch[1])
+
+    print("(tensorflow)size_label_one_hot_tiled[1]", size_label_one_hot_tiled[1])
+    print("(torch)size_label_one_hot_tiled[1]", size_label_one_hot_tiled_torch[1])
+
+    size_residual_label_normalized_torch = size_residual_label_torch / mean_size_label_torch # (B,K,3)
+    size_residual_normalized_loss_torch = torch.mean(huber_loss_torch(predicted_size_residual_normalized_torch - size_residual_label_normalized_torch, delta=1.0), -1) # (B,K,3) -> (B,K)
+    size_residual_normalized_loss_torch = torch.sum(size_residual_normalized_loss_torch*objectness_label_torch)/(torch.sum(objectness_label_torch)+1e-6)
+    print("(Tensorflow) size_residual_normalized_loss", size_residual_normalized_loss)
+    print("(Torch) size_residual_normalized_loss", size_residual_normalized_loss_torch)
+
+
+    # 3.4 Semantic cls loss
+    sem_cls_label_torch = torch.tensor(end_points['sem_cls_label'].numpy())
+    sem_cls_label_torch = torch.gather(sem_cls_label_torch, 1, object_assignment_torch).long() # select (B,K) from (B,K2)
+    criterion_sem_cls_torch = nn.CrossEntropyLoss(reduction='none')
+    sem_cls_scores_torch = torch.tensor(end_points['sem_cls_scores'].numpy())
+    sem_cls_loss_torch = criterion_sem_cls_torch(sem_cls_scores_torch.transpose(2,1), sem_cls_label_torch) # (B,K)
+    sem_cls_loss_torch = torch.sum(sem_cls_loss_torch * objectness_label_torch)/(torch.sum(objectness_label_torch)+1e-6)
+    print("(Tensorflow) sem_cls_loss", sem_cls_loss)
+    print("(Torch) sem_cls_loss", sem_cls_loss_torch)
+    """
+
+
 
     return center_loss, heading_class_loss, heading_residual_normalized_loss, size_class_loss, size_residual_normalized_loss, sem_cls_loss
 
@@ -275,8 +398,7 @@ def get_loss(end_points, config):
     Returns:
         loss: pytorch scalar tensor
         end_points: dict
-    """
-    print("========Calc loss!!!=========")       
+    """    
 
     # Vote loss
     vote_loss = compute_vote_loss(end_points)
@@ -315,8 +437,10 @@ def get_loss(end_points, config):
     # --------------------------------------------
     # Some other statistics
     obj_pred_val = tf.math.argmax(end_points['objectness_scores'], axis=2) # B,K
-    obj_acc = tf.reduce_sum(tf.cast(obj_pred_val==tf.cast(objectness_label, dtype=tf.int32), dtype=tf.float32)*objectness_mask)/(tf.reduce_sum(objectness_mask)+1e-6)
+    pred_correct = tf.zeros_like(obj_pred_val, dtype=tf.int64)
+    pred_correct = tf.where(obj_pred_val==tf.cast(objectness_label, dtype=tf.int64), 1, 0)
+    obj_acc = tf.reduce_sum(tf.cast(pred_correct, dtype=tf.float32)*objectness_mask)/(tf.reduce_sum(objectness_mask)+1e-6)
     end_points['obj_acc'] = obj_acc
 
-    print("loss and end points", loss, end_points)
+    print("loss:", loss)
     return loss, end_points

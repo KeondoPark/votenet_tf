@@ -64,20 +64,40 @@ def parse_predictions(end_points, config_dict):
 
     batch_size = end_points['heading_scores'].shape[0]
     K = end_points['heading_scores'].shape[1] #num_proposal
+
     pred_heading_class = tf.math.argmax(end_points['heading_scores'], axis = -1) #(B, K)
-    pred_heading_class_exp = tf.expand_dims(tf.expand_dims(pred_heading_class, axis=-1), axis=-1) #(B, K, 1, 1)
-    row_id = tf.stack(tf.meshgrid(tf.range(0, batch_size), tf.range(0, K), indexing='ij'), axis=-1) #(B,K,2)
-    row_id_exp = tf.expand_dims(row_id, axis=-1) #(B,K,1,2)
-    ind_tf = tf.concat([row_id_exp, pred_heading_class_exp], axis=-1)  #(B,K,1,3)
-    pred_heading_residual = tf.gather_nd(end_points['heading_residuals'], ind_tf) #end_points['heading_residuals']: (B, K, num_heading_bin) -> (B, K, 1)
+    #pred_heading_class_exp = tf.expand_dims(tf.expand_dims(pred_heading_class, axis=-1), axis=-1) #(B, K, 1, 1)
+    #row_id = tf.stack(tf.meshgrid(tf.range(0, batch_size), tf.range(0, K), indexing='ij'), axis=-1) #(B,K,2)
+    #row_id_exp = tf.expand_dims(row_id, axis=-1) #(B,K,1,2)
+    #ind_tf = tf.concat([row_id_exp, pred_heading_class_exp], axis=-1)  #(B,K,1,3)
+    #pred_heading_residual = tf.gather_nd(end_points['heading_residuals'], ind_tf) #end_points['heading_residuals']: (B, K, num_heading_bin) -> (B, K, 1)
+
+    print("pred_heading_class shape:", pred_heading_class.shape)
+    print("heading_residuals shape:", end_points['heading_residuals'].shape)
+    pred_heading_residual = tf.gather(end_points['heading_residuals'], axis=1, 
+                                    indices=tf.expand_dims(pred_heading_class, axis=-1), batch_dims=1) #(B, K, num_heading_bin) -> (B, K, 1)
+    print("pred_heading_residual shape:", pred_heading_residual.shape)
+    pred_heading_residual = tf.squeeze(pred_heading_residual, axis=[2])    
 
     #pred_heading_class = torch.argmax(end_points['heading_scores'], -1) # B,num_proposal
     #pred_heading_residual = torch.gather(end_points['heading_residuals'], 2, pred_heading_class.unsqueeze(-1)) # B,num_proposal,1
-    pred_heading_residual = tf.squeeze(pred_heading_residual, axis=[2])    
+        
     pred_size_class = tf.math.argmax(end_points['size_scores'], axis=-1) # B,num_proposal
-    coords = tf.concat([tf.expand_dims(tf.stack(tf.meshgrid(tf.range(0,B), tf.range(0,K), indexing='ij'), axis=-1), axis=2), \
-                       tf.expand_dims(tf.expand_dims(pred_size_class, axis=-1), axis=-1)], axis=-1) # (B, K, 1, 2) + (B, K, 1, 1) -> (B, K, 1, 3)
-    pred_size_residual = tf.gatehr_nd(end_points['size_residuals'], coords) # (B, K, 1, 3)
+
+    print("end_points['size_residuals'] shape:", end_points['size_residuals'].shape)
+    print("pred_size_class shape:", pred_size_class.shape)
+
+    print("pred_size_class[0,0]:", pred_size_class[0,0])
+    print("end_points['size_residuals'][0][0]:", end_points['size_residuals'][0,0])
+    # (B, K, 10, 3) -> (B, K, 1, 3)
+    pred_size_residual = tf.gather(end_points['size_residuals'], axis=2, 
+                                indices=tf.expand_dims(pred_size_class, axis=-1), batch_dims=2)        
+    print("pred_size_residual shape", pred_size_residual.shape)
+    print("pred_size_residual[0,0]", pred_size_residual[0,0])
+
+    #coords = tf.concat([tf.expand_dims(tf.stack(tf.meshgrid(tf.range(0,B), tf.range(0,K), indexing='ij'), axis=-1), axis=2), \
+    #                   tf.expand_dims(tf.expand_dims(pred_size_class, axis=-1), axis=-1)], axis=-1) # (B, K, 1, 2) + (B, K, 1, 1) -> (B, K, 1, 3)
+    #pred_size_residual = tf.gatehr_nd(end_points['size_residuals'], coords) # (B, K, 1, 3)
     pred_size_residual = tf.squeeze(pred_size_residual, axis=[2]).numpy() # B,num_proposal,3
     
     pred_size_class = tf.tile(tf.expand_dims(tf.expand_dims(pred_size_class, axis=-1), axis=-1), multiples=[1,1,1,3]) #(B,K,1,3)       

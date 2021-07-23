@@ -53,9 +53,6 @@ input:
 returns:
     batch_size * npoint         int32
     '''
-    print("=====Farthest point sample=====")
-    print(inp.shape)
-    print(npoint)
     return sampling_module.farthest_point_sample(inp, npoint)
 ops.NoGradient('FarthestPointSample')
     

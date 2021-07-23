@@ -72,8 +72,6 @@ class Pointnet2Backbone(layers.Layer):
         self.fp2 = PointnetFPModule(mlp=[256+256,256,256])
 
     def _break_up_pc(self, pc):
-        print("===== _break_up_pc =====")
-        print(pc.shape)
         xyz = pc[..., 0:3]
         features = pc[..., 3:] if pc.shape[-1] > 3 else None        
 

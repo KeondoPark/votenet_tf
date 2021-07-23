@@ -53,14 +53,11 @@ class VotingModule(layers.Layer):
         net = self.relu1(self.bn1(self.conv1(seed_features))) 
         net = self.relu2(self.bn2(self.conv2(net))) 
         net = self.conv3(net) # (batch_size, num_seed, (3+out_dim)*vote_factor)                
-        
-        print("Num seed:", num_seed)
-        print("Net shape:", net)
+                
         # No need for transpose in Tensorflow, because it uses H,W,C indexing        
-
         net = layers.Reshape((num_seed, self.vote_factor, 3+self.out_dim))(net)
         #net = tf.expand_dims(net, axis=1)
-        print(net)
+        
 
         offset = net[:,:,:,0:3]
         #vote_xyz = tf.expand_dims(seed_xyz, axis = 2) + offset

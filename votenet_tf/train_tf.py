@@ -256,8 +256,38 @@ train_ds = tf.data.Dataset.from_generator(lambda: (ret for ret in TRAIN_DATASET)
                 
 train_ds = train_ds.batch(BATCH_SIZE).prefetch(2)
 
-print(list(train_ds.take(1).as_numpy_iterator())[0]['point_clouds'].shape)
-
+test_ds = tf.data.Dataset.from_generator(lambda: (ret for ret in TEST_DATASET),
+    output_types=({
+                    'point_clouds': tf.float32,    
+                    'center_label': tf.float32,
+                    'heading_class_label': tf.int32,
+                    'heading_residual_label': tf.float32,
+                    'size_class_label': tf.int32,
+                    'size_residual_label': tf.float32,
+                    'sem_cls_label': tf.int32,
+                    'box_label_mask': tf.float32,
+                    'vote_label': tf.float32,
+                    'vote_label_mask': tf.int32,
+                    'scan_idx': tf.int32,
+                    'max_gt_bboxes': tf.float32
+                }),
+    output_shapes = ({
+        'point_clouds':tf.TensorShape((NUM_POINT,num_input_channel+3)),    
+        'center_label':tf.TensorShape((64,3)),
+        'heading_class_label':tf.TensorShape((64,)),
+        'heading_residual_label': tf.TensorShape((64,)),
+        'size_class_label': tf.TensorShape((64,)),
+        'size_residual_label': tf.TensorShape((64,3)),
+        'sem_cls_label': tf.TensorShape((64,)),
+        'box_label_mask': tf.TensorShape((64,)),
+        'vote_label': tf.TensorShape((NUM_POINT,9)),
+        'vote_label_mask': tf.TensorShape((NUM_POINT,)),
+        'scan_idx': tf.TensorShape(()),
+        'max_gt_bboxes': tf.TensorShape((64,8))
+    })
+    )
+                
+test_ds = test_ds.batch(BATCH_SIZE).prefetch(2)
 
 # TFBoard Visualizers
 TRAIN_VISUALIZER = TfVisualizer(FLAGS, 'train')
@@ -295,13 +325,13 @@ def train_one_epoch():
         for key in end_points:
             if 'loss' in key or 'acc' in key or 'ratio' in key:
                 if key not in stat_dict: stat_dict[key] = 0
-                stat_dict[key] += end_points[key].item()
+                stat_dict[key] += end_points[key]
 
         batch_interval = 10
         if (batch_idx+1) % batch_interval == 0:
             log_string(' ---- batch: %03d ----' % (batch_idx+1))
             TRAIN_VISUALIZER.log_scalars({key:stat_dict[key]/batch_interval for key in stat_dict},
-                (EPOCH_CNT*len(train_ds)+batch_idx)*BATCH_SIZE)
+                EPOCH_CNT*len(TRAIN_DATASET)+(batch_idx)*BATCH_SIZE)
             for key in sorted(stat_dict.keys()):
                 log_string('mean %s: %f'%(key, stat_dict[key]/batch_interval))
                 stat_dict[key] = 0
@@ -310,17 +340,16 @@ def evaluate_one_epoch():
     stat_dict = {} # collect statistics
     ap_calculator = APCalculator(ap_iou_thresh=FLAGS.ap_iou_thresh,
         class2type_map=DATASET_CONFIG.class2type)
-    net.eval() # set model to eval mode (for bn and dp)
-    for batch_idx, batch_data_label in enumerate(TEST_DATALOADER):
+    
+    for batch_idx, batch_data_label in enumerate(test_ds):
         if batch_idx % 10 == 0:
             print('Eval batch: %d'%(batch_idx))
         for key in batch_data_label:
-            batch_data_label[key] = batch_data_label[key].to(device)
+            batch_data_label[key] = batch_data_label[key]
         
         # Forward pass
         inputs = {'point_clouds': batch_data_label['point_clouds']}
-        with torch.no_grad():
-            end_points = net(inputs)
+        end_points = net(inputs, training=False)
 
         # Compute loss
         for key in batch_data_label:
@@ -332,7 +361,7 @@ def evaluate_one_epoch():
         for key in end_points:
             if 'loss' in key or 'acc' in key or 'ratio' in key:
                 if key not in stat_dict: stat_dict[key] = 0
-                stat_dict[key] += end_points[key].item()
+                stat_dict[key] += end_points[key]
 
         batch_pred_map_cls = parse_predictions(end_points, CONFIG_DICT) 
         batch_gt_map_cls = parse_groundtruths(end_points, CONFIG_DICT) 
@@ -370,6 +399,7 @@ def train(start_epoch):
         log_string('Current learning rate: %f'%(get_current_lr(epoch)))
         log_string('Current BN decay momentum: %f'%(bnm_scheduler.lmbd(bnm_scheduler.last_epoch)))
         log_string(str(datetime.now()))
+        loss = evaluate_one_epoch()
         train_one_epoch()
 
     

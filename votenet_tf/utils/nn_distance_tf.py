@@ -9,6 +9,7 @@ Modified by Keondo Park
 """
 
 import tensorflow as tf
+import torch
 import numpy as np
 
 
@@ -27,6 +28,25 @@ def huber_loss(error, delta=1.0):
     abs_error = tf.abs(error)
     #quadratic = torch.min(abs_error, torch.FloatTensor([delta]))
     quadratic = tf.clip_by_value(abs_error, clip_value_min = 0, clip_value_max=delta)
+    linear = (abs_error - quadratic)
+    loss = 0.5 * quadratic**2 + delta * linear
+    return loss
+
+def huber_loss_torch(error, delta=1.0):
+    """
+    Args:
+        error: Torch tensor (d1,d2,...,dk)
+    Returns:
+        loss: Torch tensor (d1,d2,...,dk)
+
+    x = error = pred - gt or dist(pred,gt)
+    0.5 * |x|^2                 if |x|<=d
+    0.5 * d^2 + d * (|x|-d)     if |x|>d
+    Ref: https://github.com/charlesq34/frustum-pointnets/blob/master/models/model_util.py
+    """
+    abs_error = torch.abs(error)
+    #quadratic = torch.min(abs_error, torch.FloatTensor([delta]))
+    quadratic = torch.clamp(abs_error, max=delta)
     linear = (abs_error - quadratic)
     loss = 0.5 * quadratic**2 + delta * linear
     return loss

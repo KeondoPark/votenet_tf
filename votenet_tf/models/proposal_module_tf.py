@@ -124,7 +124,6 @@ class ProposalModule(layers.Layer):
         net = self.relu1(self.bn1(self.conv1(features)))
         net = self.relu2(self.bn2(self.conv2(net))) 
         net = self.conv3(net) # (batch_size, num_proposal, 2+3+num_heading_bin*2+num_size_cluster*4)
-        print(net.shape)
 
         end_points = decode_scores(net, end_points, self.num_class, self.num_heading_bin, self.num_size_cluster, self.mean_size_arr)
         return end_points
