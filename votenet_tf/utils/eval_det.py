@@ -232,7 +232,7 @@ def eval_det_multiprocessing(pred_all, gt_all, ovthresh=0.25, use_07_metric=Fals
                 gt[classname][img_id] = []
             pred[classname][img_id].append((bbox,score))
     for img_id in gt_all.keys():
-        for classname, bbox in gt_all[img_id]:
+        for classname, bbox in gt_all[img_id]:            
             if classname not in gt: gt[classname] = {}
             if img_id not in gt[classname]:
                 gt[classname][img_id] = []

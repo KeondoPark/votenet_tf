@@ -146,11 +146,6 @@ else:
     print('Unknown dataset %s. Exiting...'%(FLAGS.dataset))
     exit(-1)
 print(len(TRAIN_DATASET), len(TEST_DATASET))
-#TRAIN_DATALOADER = DataLoader(TRAIN_DATASET, batch_size=BATCH_SIZE,
-#    shuffle=True, num_workers=4, worker_init_fn=my_worker_init_fn)
-#TEST_DATALOADER = DataLoader(TEST_DATASET, batch_size=BATCH_SIZE,
-#    shuffle=True, num_workers=4, worker_init_fn=my_worker_init_fn)
-#print(len(TRAIN_DATALOADER), len(TEST_DATALOADER))
 
 # Init the model and optimzier
 #device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -187,9 +182,26 @@ optimizer = tf.keras.optimizers.Adam(learning_rate=BASE_LEARNING_RATE)
 # Load checkpoint if there is any
 it = -1 # for the initialize value of `LambdaLR` and `BNMomentumScheduler`
 start_epoch = 0
-if CHECKPOINT_PATH is not None and os.path.isfile(CHECKPOINT_PATH):
-    net.load_weights(CHECKPOINT_PATH)    
-    log_string("-> loaded checkpoint %s"%(CHECKPOINT_PATH))
+ckpt = tf.train.Checkpoint(epoch=tf.Variable(1), optimizer=optimizer, net=net)
+
+if CHECKPOINT_PATH is None or not os.path.isfile(CHECKPOINT_PATH):
+    CHECKPOINT_PATH = './log/tf_ckpt'
+
+manager = tf.train.CheckpointManager(ckpt, CHECKPOINT_PATH, max_to_keep=3)
+ckpt.restore(manager.latest_checkpoint)
+print("Start epoch:", ckpt.epoch)
+if manager.latest_checkpoint:
+    print("Restored from {}".format(manager.latest_checkpoint))
+    start_epoch = ckpt.epoch
+else:
+    print("Initializing from scratch.")
+
+    #net.load_weights(CHECKPOINT_PATH)    
+    #log_string("-> loaded checkpoint %s"%(CHECKPOINT_PATH))
+
+
+
+
 
 # Decay Batchnorm momentum from 0.5 to 0.001
 # note: pytorch's BN momentum (default 0.1)= 1 - tensorflow's BN momentum
@@ -331,7 +343,7 @@ def train_one_epoch():
         if (batch_idx+1) % batch_interval == 0:
             log_string(' ---- batch: %03d ----' % (batch_idx+1))
             TRAIN_VISUALIZER.log_scalars({key:stat_dict[key]/batch_interval for key in stat_dict},
-                EPOCH_CNT*len(TRAIN_DATASET)+(batch_idx)*BATCH_SIZE)
+                (EPOCH_CNT*len(TRAIN_DATASET)+(batch_idx))*BATCH_SIZE)
             for key in sorted(stat_dict.keys()):
                 log_string('mean %s: %f'%(key, stat_dict[key]/batch_interval))
                 stat_dict[key] = 0
@@ -365,15 +377,11 @@ def evaluate_one_epoch():
 
         batch_pred_map_cls = parse_predictions(end_points, CONFIG_DICT) 
         batch_gt_map_cls = parse_groundtruths(end_points, CONFIG_DICT) 
-        ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)
-
-        # Dump evaluation results for visualization
-        if FLAGS.dump_results and batch_idx == 0 and EPOCH_CNT %10 == 0:
-            MODEL.dump_results(end_points, DUMP_DIR, DATASET_CONFIG) 
+        ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)       
 
     # Log statistics
     TEST_VISUALIZER.log_scalars({key:stat_dict[key]/float(batch_idx+1) for key in stat_dict},
-        (EPOCH_CNT+1)*len(TRAIN_DATALOADER)*BATCH_SIZE)
+        EPOCH_CNT*len(TRAIN_DATASET)*BATCH_SIZE)
     for key in sorted(stat_dict.keys()):
         log_string('eval mean %s: %f'%(key, stat_dict[key]/(float(batch_idx+1))))
 
@@ -398,9 +406,14 @@ def train(start_epoch):
         log_string('**** EPOCH %03d ****' % (epoch))
         log_string('Current learning rate: %f'%(get_current_lr(epoch)))
         log_string('Current BN decay momentum: %f'%(bnm_scheduler.lmbd(bnm_scheduler.last_epoch)))
-        log_string(str(datetime.now()))
-        loss = evaluate_one_epoch()
+        log_string(str(datetime.now()))  
         train_one_epoch()
+        ckpt.epoch.assign_add(1)
+        if EPOCH_CNT == 0 or EPOCH_CNT % 10 == 9: # Eval every 10 epochs
+            loss = evaluate_one_epoch()
+            save_path = manager.save()
+            print("Saved checkpoint for step {}: {}".format(int(ckpt.epoch), save_path))
+            print("loss {:1.2f}".format(loss.numpy()))
 
     
     #net.fit(train_ds, epochs=10, callbacks=callbacks)
@@ -435,7 +448,7 @@ def train(start_epoch):
     '''
 if __name__=='__main__':
     #train(start_epoch)
-    #print(len(TRAIN_DATASET), len(TEST_DATASET))
+    print(len(TRAIN_DATASET), len(TEST_DATASET))
     #ret_dict = next(iter(TRAIN_DATASET))
     #print(ret_dict)
     train(start_epoch)
