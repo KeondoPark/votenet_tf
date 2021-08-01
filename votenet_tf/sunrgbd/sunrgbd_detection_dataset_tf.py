@@ -218,42 +218,6 @@ class SunrgbdDetectionVotesDataset(keras.utils.Sequence):
         ret_dict['max_gt_bboxes'] = tf.convert_to_tensor(max_bboxes, dtype=tf.float32)
         return ret_dict
 
-        '''
-        ret = (
-        point_cloud.astype(np.float32),
-        target_bboxes.astype(np.float32)[:,0:3],
-        angle_classes.astype(np.int64),
-        angle_residuals.astype(np.float32),
-        size_classes.astype(np.int64),
-        size_residuals.astype(np.float32),
-        target_bboxes_semcls.astype(np.int64),
-        target_bboxes_mask.astype(np.float32),
-        point_votes.astype(np.float32),
-        point_votes_mask.astype(np.int64),
-        np.array(idx).astype(np.int64),
-        max_bboxes
-        )
-        return ret
-        '''
-        '''
-        ret_dict = {}
-        ret_dict['point_clouds'] = point_cloud.astype(np.float32)
-        ret_dict['center_label'] = target_bboxes.astype(np.float32)[:,0:3]
-        ret_dict['heading_class_label'] = angle_classes.astype(np.int64)
-        ret_dict['heading_residual_label'] = angle_residuals.astype(np.float32)
-        ret_dict['size_class_label'] = size_classes.astype(np.int64)
-        ret_dict['size_residual_label'] = size_residuals.astype(np.float32)
-        target_bboxes_semcls = np.zeros((MAX_NUM_OBJ))
-        target_bboxes_semcls[0:bboxes.shape[0]] = bboxes[:,-1] # from 0 to 9
-        ret_dict['sem_cls_label'] = target_bboxes_semcls.astype(np.int64)
-        ret_dict['box_label_mask'] = target_bboxes_mask.astype(np.float32)
-        ret_dict['vote_label'] = point_votes.astype(np.float32)
-        ret_dict['vote_label_mask'] = point_votes_mask.astype(np.int64)
-        ret_dict['scan_idx'] = np.array(idx).astype(np.int64)
-        ret_dict['max_gt_bboxes'] = max_bboxes
-        return ret_dict
-        ''' 
-
 
 def viz_votes(pc, point_votes, point_votes_mask):
     """ Visualize point votes and point votes mask labels

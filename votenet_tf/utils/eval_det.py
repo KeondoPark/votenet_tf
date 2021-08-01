@@ -151,6 +151,9 @@ def eval_det_cls(pred, gt, ovthresh=0.25, use_07_metric=False, get_iou_func=get_
     # compute precision recall
     fp = np.cumsum(fp)
     tp = np.cumsum(tp)
+    #print("tp", tp)
+    #print("fp", fp)
+    #print("npos", npos)
     rec = tp / float(npos)
     #print('NPOS: ', npos)
     # avoid divide by zero in case the first detection matches a difficult

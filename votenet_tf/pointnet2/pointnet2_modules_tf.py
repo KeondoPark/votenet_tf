@@ -279,6 +279,8 @@ class PointnetSAModuleVotes(layers.Layer):
         '''
         #new_features = tf.squeeze(new_features, axis=-2)  # (B, npoint, mlp[-1])
         new_features = layers.Reshape((self.npoint, new_features.shape[-1]))(new_features)
+
+
         if not self.ret_unique_cnt:
             #return new_xyz, new_features, inds
             return new_xyz, new_features, inds, ball_query_idx

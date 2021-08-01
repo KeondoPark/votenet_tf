@@ -47,7 +47,7 @@ def decode_scores(net, end_points, num_class, num_heading_bin, num_size_cluster,
 
     size_scores = net[:,:,5+num_heading_bin*2:5+num_heading_bin*2+num_size_cluster]
     size_residuals = net[:,:,5 + num_heading_bin*2 + num_size_cluster : 5 + num_heading_bin*2 + num_size_cluster*4]
-    size_residuals_normalized = layers.Reshape((num_proposal, num_size_cluster, 3))(size_residuals) # B x num_proposal x num_size_cluster x 3
+    size_residuals_normalized = tf.reshape(size_residuals, [batch_size,num_proposal, num_size_cluster, 3]) # B x num_proposal x num_size_cluster x 3
     end_points['size_scores'] = size_scores
     end_points['size_residuals_normalized'] = size_residuals_normalized
     end_points['size_residuals'] = size_residuals_normalized * tf.expand_dims(tf.expand_dims(tf.convert_to_tensor(mean_size_arr, dtype=tf.float32), axis=0), axis=0)
@@ -125,7 +125,8 @@ class ProposalModule(layers.Layer):
         net = self.relu2(self.bn2(self.conv2(net))) 
         net = self.conv3(net) # (batch_size, num_proposal, 2+3+num_heading_bin*2+num_size_cluster*4)
 
-        end_points = decode_scores(net, end_points, self.num_class, self.num_heading_bin, self.num_size_cluster, self.mean_size_arr)
+
+        end_points = decode_scores(net, end_points, self.num_class, self.num_heading_bin, self.num_size_cluster, self.mean_size_arr)        
         return end_points
 
 if __name__=='__main__':

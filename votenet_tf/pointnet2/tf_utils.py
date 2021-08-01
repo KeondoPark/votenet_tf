@@ -73,7 +73,8 @@ class _BNBase(layers.Layer):
         #self.add_module(name + "bn", batch_norm(in_size))
                 
         self.bn_layer=batch_norm(axis=1 if data_format=="channels_first" else -1, 
-                                name=name + "bn")
+                                name=name + "bn",
+                                momentum=0.9, epsilon=1e-6)
         # In Tensorflow, Beta and gamma is initialized as 1 and 0, respectively
         # No need to consider below
         #nn.init.constant_(self[0].weight, 1.0)
@@ -212,7 +213,8 @@ class Conv2d(_ConvBase):
             padding: str = 'valid',
             activation='relu',
             bn: bool = False,
-            init=tf.keras.initializers.GlorotNormal(),
+            init=tf.keras.initializers.he_normal(seed=0),
+            #init=tf.constant_initializer(value=1),
             bias: bool = True,
             #preact: bool = False,
             name: str = "",

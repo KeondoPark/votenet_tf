@@ -129,8 +129,9 @@ def compute_objectness_loss(end_points):
     objectness_mask = tf.zeros([B,K], dtype=tf.float32)
      
     objectness_label = tf.where(euclidean_dist1<NEAR_THRESHOLD, 1, 0)
-    objectness_mask = tf.where(euclidean_dist1<NEAR_THRESHOLD, 1.0, 0.0)
-    objectness_mask = tf.where(euclidean_dist1>FAR_THRESHOLD, 1.0, 0.0)
+    objectness_mask1 = tf.where(euclidean_dist1<NEAR_THRESHOLD, 1.0, 0.0)
+    objectness_mask2 = tf.where(euclidean_dist1>FAR_THRESHOLD, 1.0, 0.0)
+    objectness_mask = np.maximum(objectness_mask1, objectness_mask2)
 
     # Compute objectness loss
     objectness_scores = end_points['objectness_scores'] #(B, num_proposal, 2)
@@ -148,7 +149,7 @@ def compute_objectness_loss(end_points):
 
     def crossEntropyWithClassWeights(y_true, y_pred, weight, n_class=2):
         y_pred_softmax = tf.nn.softmax(y_pred)
-        loss = - y_true * tf.math.log(y_pred_softmax+1e-10) * weight
+        loss = - y_true * tf.math.log(y_pred_softmax+1e-6) * weight
         loss = tf.reduce_sum(loss, axis=-1)
         return loss
 
@@ -160,8 +161,8 @@ def compute_objectness_loss(end_points):
 
     
 
-    """
-    For validation
+    """    
+    #For validation
     
     dist1_torch = torch.tensor(dist1.numpy())
     euclidean_dist1_torch = torch.sqrt(dist1_torch+1e-6)
@@ -187,6 +188,7 @@ def compute_objectness_loss(end_points):
     print("(Tensorflow) object_assignment[0]", object_assignment[0])
     print("(Torch) object_assignment[0]", object_assignment_torch[0])
     """
+    
 
     return objectness_loss, objectness_label, objectness_mask, object_assignment
 
@@ -429,6 +431,15 @@ def get_loss(end_points, config):
     box_loss = center_loss + 0.1*heading_cls_loss + heading_reg_loss + 0.1*size_cls_loss + size_reg_loss
     end_points['box_loss'] = box_loss
 
+    #print("vote_loss", vote_loss)
+    #print("objectness_loss", objectness_loss)
+    #print("center_loss", center_loss)
+    #print("heading_cls_loss", heading_cls_loss)
+    #print("heading_reg_loss", heading_reg_loss)
+    #print("size_cls_loss", size_cls_loss)
+    #print("size_reg_loss", size_reg_loss)
+    #print("sem_cls_loss", sem_cls_loss)
+
     # Final loss function
     loss = vote_loss + 0.5*objectness_loss + box_loss + 0.1*sem_cls_loss
     loss *= 10
@@ -442,5 +453,5 @@ def get_loss(end_points, config):
     obj_acc = tf.reduce_sum(tf.cast(pred_correct, dtype=tf.float32)*objectness_mask)/(tf.reduce_sum(objectness_mask)+1e-6)
     end_points['obj_acc'] = obj_acc
 
-    print("loss:", loss)
+    #print("loss:", loss)
     return loss, end_points

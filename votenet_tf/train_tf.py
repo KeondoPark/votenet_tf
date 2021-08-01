@@ -33,6 +33,7 @@ import importlib
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
+import time
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
@@ -184,7 +185,8 @@ it = -1 # for the initialize value of `LambdaLR` and `BNMomentumScheduler`
 start_epoch = 0
 ckpt = tf.train.Checkpoint(epoch=tf.Variable(1), optimizer=optimizer, net=net)
 
-if CHECKPOINT_PATH is None or not os.path.isfile(CHECKPOINT_PATH):
+if CHECKPOINT_PATH is None or not os.path.isdir(CHECKPOINT_PATH):
+    print("Use defualt checkpoint path")
     CHECKPOINT_PATH = './log/tf_ckpt'
 
 manager = tf.train.CheckpointManager(ckpt, CHECKPOINT_PATH, max_to_keep=3)
@@ -192,15 +194,12 @@ ckpt.restore(manager.latest_checkpoint)
 print("Start epoch:", ckpt.epoch)
 if manager.latest_checkpoint:
     print("Restored from {}".format(manager.latest_checkpoint))
-    start_epoch = ckpt.epoch
+    start_epoch = ckpt.epoch.numpy()
 else:
     print("Initializing from scratch.")
 
     #net.load_weights(CHECKPOINT_PATH)    
     #log_string("-> loaded checkpoint %s"%(CHECKPOINT_PATH))
-
-
-
 
 
 # Decay Batchnorm momentum from 0.5 to 0.001
@@ -266,7 +265,7 @@ train_ds = tf.data.Dataset.from_generator(lambda: (ret for ret in TRAIN_DATASET)
     })
     )
                 
-train_ds = train_ds.batch(BATCH_SIZE).prefetch(2)
+train_ds = train_ds.batch(BATCH_SIZE).prefetch(2).shuffle(len(TRAIN_DATASET))
 
 test_ds = tf.data.Dataset.from_generator(lambda: (ret for ret in TEST_DATASET),
     output_types=({
@@ -318,11 +317,29 @@ def train_one_epoch():
     stat_dict = {} # collect statistics
     adjust_learning_rate(optimizer, EPOCH_CNT)
     bnm_scheduler.step() # decay BN momentum    
-    for batch_idx, batch_data_label in enumerate(train_ds): 
+
+    #inputs = tf.constant([[1.0,2.0,3.0,1.0],[3.0,2.0,1.0,3.0]])
+    #inputs = tf.constant([[1.0,2.0,3.0,1.0]])
+    #inputs = {'point_clouds':tf.expand_dims(inputs, axis=0)}
+    #output = net(inputs, training=True)
+    #loss, end_points = criterion(output, DATASET_CONFIG)        \
+    
+    t_load = 0
+    t_fwd = 0
+    t_bwd = 0
+
+    start = time.time()
+
+    for batch_idx, batch_data_label in enumerate(train_ds):         
+        
         # Forward pass
         with tf.GradientTape() as tape:
-            inputs = {'point_clouds': batch_data_label['point_clouds']}
+            inputs = {'point_clouds': batch_data_label['point_clouds']}            
+            t_load += time.time() - start
+            start = time.time()
             end_points = net(inputs, training=True)
+            t_fwd += time.time() - start
+            start = time.time()
             # Compute loss and gradients, update parameters.
             for key in batch_data_label:
                 assert(key not in end_points)
@@ -332,6 +349,8 @@ def train_one_epoch():
         grads = tape.gradient(loss, net.trainable_weights)
 
         optimizer.apply_gradients(zip(grads, net.trainable_weights))
+        
+        t_bwd += time.time() - start        
 
         # Accumulate statistics and print out
         for key in end_points:
@@ -339,7 +358,7 @@ def train_one_epoch():
                 if key not in stat_dict: stat_dict[key] = 0
                 stat_dict[key] += end_points[key]
 
-        batch_interval = 10
+        batch_interval = 50
         if (batch_idx+1) % batch_interval == 0:
             log_string(' ---- batch: %03d ----' % (batch_idx+1))
             TRAIN_VISUALIZER.log_scalars({key:stat_dict[key]/batch_interval for key in stat_dict},
@@ -348,12 +367,19 @@ def train_one_epoch():
                 log_string('mean %s: %f'%(key, stat_dict[key]/batch_interval))
                 stat_dict[key] = 0
 
+        start = time.time()
+
+    print("Loading time:", t_load)
+    print("Forward time:", t_fwd)
+    print("Backward time:", t_bwd)
+
+
 def evaluate_one_epoch():
     stat_dict = {} # collect statistics
     ap_calculator = APCalculator(ap_iou_thresh=FLAGS.ap_iou_thresh,
         class2type_map=DATASET_CONFIG.class2type)
     
-    for batch_idx, batch_data_label in enumerate(test_ds):
+    for batch_idx, batch_data_label in enumerate(test_ds):        
         if batch_idx % 10 == 0:
             print('Eval batch: %d'%(batch_idx))
         for key in batch_data_label:
@@ -367,7 +393,7 @@ def evaluate_one_epoch():
         for key in batch_data_label:
             assert(key not in end_points)
             end_points[key] = batch_data_label[key]
-        loss, end_points = criterion(end_points, DATASET_CONFIG)
+        loss, end_points = criterion(end_points, DATASET_CONFIG)        
 
         # Accumulate statistics and print out
         for key in end_points:
@@ -375,9 +401,10 @@ def evaluate_one_epoch():
                 if key not in stat_dict: stat_dict[key] = 0
                 stat_dict[key] += end_points[key]
 
-        batch_pred_map_cls = parse_predictions(end_points, CONFIG_DICT) 
+        batch_pred_map_cls = parse_predictions(end_points, CONFIG_DICT)        
         batch_gt_map_cls = parse_groundtruths(end_points, CONFIG_DICT) 
-        ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)       
+        ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)    
+         
 
     # Log statistics
     TEST_VISUALIZER.log_scalars({key:stat_dict[key]/float(batch_idx+1) for key in stat_dict},
@@ -399,7 +426,10 @@ def train(start_epoch):
     callbacks = []
     callbacks.append(tf.keras.callbacks.LearningRateScheduler(lr_schedule))
     callbacks.append(CustomCallback())
-    #net.compile(optimizer=optimizer, loss=criterion)
+    
+    #EPOCH_CNT = 1
+    #loss = evaluate_one_epoch()
+    
 
     for epoch in range(start_epoch, MAX_EPOCH):
         EPOCH_CNT = epoch
@@ -407,45 +437,17 @@ def train(start_epoch):
         log_string('Current learning rate: %f'%(get_current_lr(epoch)))
         log_string('Current BN decay momentum: %f'%(bnm_scheduler.lmbd(bnm_scheduler.last_epoch)))
         log_string(str(datetime.now()))  
+
         train_one_epoch()
+        
         ckpt.epoch.assign_add(1)
         if EPOCH_CNT == 0 or EPOCH_CNT % 10 == 9: # Eval every 10 epochs
             loss = evaluate_one_epoch()
             save_path = manager.save()
             print("Saved checkpoint for step {}: {}".format(int(ckpt.epoch), save_path))
             print("loss {:1.2f}".format(loss.numpy()))
+        
 
-    
-    #net.fit(train_ds, epochs=10, callbacks=callbacks)
-
-
-    '''
-    global EPOCH_CNT 
-    min_loss = 1e10
-    loss = 0
-    for epoch in range(start_epoch, MAX_EPOCH):
-        EPOCH_CNT = epoch
-        log_string('**** EPOCH %03d ****' % (epoch))
-        log_string('Current learning rate: %f'%(get_current_lr(epoch)))
-        log_string('Current BN decay momentum: %f'%(bnm_scheduler.lmbd(bnm_scheduler.last_epoch)))
-        log_string(str(datetime.now()))
-        # Reset numpy seed.
-        # REF: https://github.com/pytorch/pytorch/issues/5059
-        np.random.seed()
-        train_one_epoch()
-        if EPOCH_CNT == 0 or EPOCH_CNT % 10 == 9: # Eval every 10 epochs
-            loss = evaluate_one_epoch()
-        # Save checkpoint
-        save_dict = {'epoch': epoch+1, # after training one epoch, the start_epoch should be epoch+1
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'loss': loss,
-                    }
-        try: # with nn.DataParallel() the net is added as a submodule of DataParallel
-            save_dict['model_state_dict'] = net.module.state_dict()
-        except:
-            save_dict['model_state_dict'] = net.state_dict()
-        torch.save(save_dict, os.path.join(LOG_DIR, 'checkpoint.tar'))
-    '''
 if __name__=='__main__':
     #train(start_epoch)
     print(len(TRAIN_DATASET), len(TEST_DATASET))

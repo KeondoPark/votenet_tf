@@ -29,7 +29,7 @@ class VotingModule(layers.Layer):
         self.vote_factor = vote_factor
         self.in_dim = seed_feature_dim
         self.out_dim = self.in_dim # due to residual feature, in_dim has to be == out_dim
-        self.conv1 = layers.Conv1D(filters=self.in_dim, kernel_size=1)
+        self.conv1 = layers.Conv1D(filters=self.in_dim, kernel_size=1)        
         self.conv2 = layers.Conv1D(filters=self.in_dim, kernel_size=1)
         self.conv3 = layers.Conv1D(filters=(3+self.out_dim) * self.vote_factor, kernel_size=1) 
         self.bn1 = layers.BatchNormalization(axis=-1)

@@ -20,6 +20,8 @@ from box_util import get_3d_box
 sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
 from sunrgbd_utils import extract_pc_in_box3d
 
+import torch
+
 def flip_axis_to_camera(pc):
     ''' Flip X-right,Y-forward,Z-up to X-right,Y-down,Z-forward
     Input and output are both (N,3) array
@@ -61,26 +63,62 @@ def parse_predictions(end_points, config_dict):
     """
     
     pred_center = end_points['center'] # B,num_proposal,3
-
-    
     K = end_points['heading_scores'].shape[1] #num_proposal
 
     pred_heading_class = tf.math.argmax(end_points['heading_scores'], axis = -1) #(B, K)        
     pred_heading_residual = tf.gather(end_points['heading_residuals'], axis=2, 
                                     indices=tf.expand_dims(pred_heading_class, axis=-1), batch_dims=2) #(B, K, num_heading_bin) -> (B, K, 1)    
-    pred_heading_residual = tf.squeeze(pred_heading_residual, axis=[2])    
-   
-        
-    pred_size_class = tf.math.argmax(end_points['size_scores'], axis=-1) # B,num_proposal
+    pred_heading_residual = tf.squeeze(pred_heading_residual, axis=[2])       
 
+    pred_size_class = tf.math.argmax(end_points['size_scores'], axis=-1) # B,num_proposal
+    
     # (B, K, 10, 3) -> (B, K, 1, 3)
     pred_size_residual = tf.gather(end_points['size_residuals'], axis=2, 
                                 indices=tf.expand_dims(pred_size_class, axis=-1), batch_dims=2)        
-    pred_size_residual = tf.squeeze(pred_size_residual, axis=[2]) # B,num_proposal,3    
+    pred_size_residual = tf.squeeze(pred_size_residual, axis=[2]) # B,num_proposal,3            
     
     pred_sem_cls = tf.math.argmax(end_points['sem_cls_scores'], axis=-1) # B,num_proposal
     sem_cls_probs = softmax(end_points['sem_cls_scores'].numpy()) # B,num_proposal,10
     pred_sem_cls_prob = np.max(sem_cls_probs,-1) # B,num_proposal
+
+
+    """
+    Pytorch validation    
+
+    pred_center_torch = torch.tensor(end_points['center'].numpy()) # B,num_proposal,3
+    heading_scores_torch = torch.tensor(end_points['heading_scores'].numpy())
+    pred_heading_class_torch = torch.argmax(heading_scores_torch, -1) # B,num_proposal
+    heading_residuals_torch = torch.tensor(end_points['heading_residuals'].numpy())
+    pred_heading_residual_torch = torch.gather(heading_residuals_torch, 2,
+        pred_heading_class_torch.unsqueeze(-1)) # B,num_proposal,1
+    pred_heading_residual_torch.squeeze_(2)
+    print("Heading scores:", end_points['heading_scores'][0])
+    print("(Tensorflow)Heading class:", pred_heading_class[0])
+    print("(Torch)Heading class:", pred_heading_class_torch[0])
+    
+    print("(Tensorflow)Heading residual:", pred_heading_residual[0])
+    print("(Torch)Heading residual:", pred_heading_residual_torch[0])
+
+    size_scores_torch  = torch.tensor(end_points['size_scores'].numpy())
+    pred_size_class_torch = torch.argmax(size_scores_torch, -1) # B,num_proposal
+    print("Size scores:", end_points['size_scores'][0])
+    print("(Tensorflow)Size class:", pred_size_class[0])
+    print("(Torch)Size class:", pred_size_class_torch[0])
+    print("(Tensorflow)Size residual before gather:", end_points['size_residuals'][0])    
+    size_residuals_torch = torch.tensor(end_points['size_residuals'].numpy())
+    pred_size_residual_torch = torch.gather(size_residuals_torch, 2,
+        pred_size_class_torch.unsqueeze(-1).unsqueeze(-1).repeat(1,1,1,3)) # B,num_proposal,1,3
+    pred_size_residual_torch.squeeze_(2)    
+    print("(Tensorflow)Size residual:", pred_size_residual[0])
+    print("(Torch)Size residual:", pred_size_residual_torch[0])
+
+    sem_cls_scores_torch  = torch.tensor(end_points['sem_cls_scores'].numpy())
+    pred_sem_cls_torch = torch.argmax(sem_cls_scores_torch, -1) # B,num_proposal
+    sem_cls_probs_torch = softmax(sem_cls_scores_torch.detach().cpu().numpy()) # B,num_proposal,10
+    pred_sem_cls_prob_torch = np.max(sem_cls_probs_torch,-1) # B,num_proposal
+    print("(Tensorflow)pred_sem_cls_prob:", pred_sem_cls_prob[0])
+    print("(Torch)pred_sem_cls_prob:", pred_sem_cls_prob_torch[0])
+    """
 
     num_proposal = pred_center.shape[1] 
     # Since we operate in upright_depth coord for points, while util functions
@@ -114,9 +152,15 @@ def parse_predictions(end_points, config_dict):
                     nonempty_box_mask[i,j] = 0
         # -------------------------------------
 
-    # detach() returns a new tensor, detached from the current graph / shares memory storage with original tensor    
+    # detach() returns a new tensor, detached from the current graph / shares memory storage with original tensor  
+    # #============= Validation =======================
+    #print("end_points['objectness_scores'][5]:", end_points['objectness_scores'][5])
+    #============= Validation =======================  
     obj_logits = tf.stop_gradient(end_points['objectness_scores']).numpy()
     obj_prob = softmax(obj_logits)[:,:,1] # (B,K)
+    #============= Validation =======================
+    #print("obj_prob[5]:", obj_prob[5])
+    #============= Validation =======================
     if not config_dict['use_3d_nms']:
         # ---------- NMS input: pred_with_prob in (B,K,7) -----------
         pred_mask = np.zeros((bsize, K))
@@ -153,6 +197,7 @@ def parse_predictions(end_points, config_dict):
                 config_dict['nms_iou'], config_dict['use_old_type_nms'])
             assert(len(pick)>0)
             pred_mask[i, nonempty_box_inds[pick]] = 1
+
         end_points['pred_mask'] = pred_mask
         # ---------- NMS output: pred_mask in (B,K) -----------
     elif config_dict['use_3d_nms'] and config_dict['cls_nms']:
@@ -174,6 +219,9 @@ def parse_predictions(end_points, config_dict):
                 config_dict['nms_iou'], config_dict['use_old_type_nms'])
             assert(len(pick)>0)
             pred_mask[i, nonempty_box_inds[pick]] = 1
+            #============= Validation =======================
+            #if i == 5: print("Pred mask:", pred_mask[i])
+            #============= Validation =======================
         end_points['pred_mask'] = pred_mask
         # ---------- NMS output: pred_mask in (B,K) -----------
 
@@ -268,6 +316,7 @@ class APCalculator(object):
     def compute_metrics(self):
         """ Use accumulated predictions and groundtruths to compute Average Precision.
         """
+        
         rec, prec, ap = eval_det_multiprocessing(self.pred_map_cls, self.gt_map_cls, ovthresh=self.ap_iou_thresh, get_iou_func=get_iou_obb)
         ret_dict = {} 
         for key in sorted(ap.keys()):
