@@ -20,11 +20,14 @@ import sys
 import cv2
 import argparse
 from PIL import Image
+DATA_DIR = '/home/aiot/data'
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, '../utils/'))
 import pc_util
 import sunrgbd_utils
+from tqdm import tqdm
+import tensorflow as tf
 
 DEFAULT_TYPE_WHITELIST = ['bed','table','sofa','chair','toilet','desk','dresser','night_stand','bookshelf','bathtub']
 
@@ -170,7 +173,8 @@ def data_viz(data_dir, dump_dir=os.path.join(BASE_DIR, 'data_viz_dump')):
 
 def extract_sunrgbd_data(idx_filename, split, output_folder, num_point=20000,
     type_whitelist=DEFAULT_TYPE_WHITELIST,
-    save_votes=False, use_v1=False, skip_empty_scene=True):
+    save_votes=False, use_v1=False, skip_empty_scene=True,
+    save_tfrecord=False):
     """ Extract scene point clouds and 
     bounding boxes (centroids, box sizes, heading angles, semantic classes).
     Dumped point clouds and boxes are in upright depth coord.
@@ -260,7 +264,133 @@ def extract_sunrgbd_data(idx_filename, split, output_folder, num_point=20000,
             np.savez_compressed(os.path.join(output_folder, '%06d_votes.npz'%(data_idx)),
                 point_votes = point_votes)
 
+def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=20000,
+    type_whitelist=DEFAULT_TYPE_WHITELIST,
+    use_v1=False, skip_empty_scene=True):
+    """ Same as extract_sunrgbd_data EXCEPT
+
+    Args:
+        save_votes is removed and assumed to be always True
+
+    Dumps:
+        TFRecords containing point_cloud, bboxes, point_votes
+
+        point cloud: (N,6) where N is for number of subsampled points and 6 is
+            for XYZ and RGB (in 0~1) in upright depth coord
+        bboxes: (K,8) where K is the number of objects, 8 is for
+            centroids (cx,cy,cz), dimension (l,w,h), heanding_angle and semantic_class
+        point_votes: (N,10) with 0/1 indicating whether the point belongs to an object,
+            then three sets of GT votes for up to three objects. If the point is only in one
+            object's OBB, then the three GT votes are the same.
+    """
+    def _bytes_feature(input_list):
+        """Returns a bytes_list from a string / byte."""
+        if isinstance(value, type(tf.constant(0))):
+            value = value.numpy() # BytesList won't unpack a string from an EagerTensor.
+        return tf.train.Feature(bytes_list=tf.train.BytesList(value=input_list))
+
+    def _float_feature(input_list):
+        """Returns a float_list from a float / double."""
+        return tf.train.Feature(float_list=tf.train.FloatList(value=input_list))
+
+    def _int64_feature(input_list):
+        """Returns an int64_list from a bool / enum / int / uint."""
+        return tf.train.Feature(int64_list=tf.train.Int64List(value=input_list))
     
+    def create_example(point_cloud, bboxes, point_votes, n_valid_box):    
+        feature = {        
+            'point_cloud': _float_feature(list(point_cloud.reshape((-1)))),        
+            'bboxes': _float_feature(list(bboxes.reshape((-1)))),
+            'point_votes':_float_feature(list(point_votes.reshape((-1)))),
+            'n_valid_box':_int64_feature([n_valid_box])
+        }
+
+        return tf.train.Example(features=tf.train.Features(feature=feature))
+    dataset = sunrgbd_object('/home/aiot/data/sunrgbd_trainval', split, use_v1=use_v1)
+    data_idx_list = [int(line.rstrip()) for line in open(idx_filename)]
+
+    #output_folder = os.path.join(os.path.dirname(os.path.dirname(BASE_DIR)), output_folder)
+    #print(output_folder)
+
+    if not os.path.exists(output_folder):
+        os.mkdir(output_folder)
+
+    n_pc_shard = 100
+    n_shards = int(len(data_idx_list) / n_pc_shard) + (1 if len(data_idx_list) % n_pc_shard != 0 else 0)
+
+    MAX_NUM_OBJ = 64
+
+    for shard in tqdm(range(n_shards)):
+        tfrecords_shard_path = os.path.join(output_folder, "{}_{}.records".format("sunrgbd", '%.5d-of-%.5d' % (shard, n_shards - 1)))
+        start_idx = shard * n_pc_shard
+        end_idx = min((shard+1) * n_pc_shard, len(data_idx_list))
+        data_idx_shard_list = data_idx_list[start_idx:end_idx]
+        with tf.io.TFRecordWriter(tfrecords_shard_path) as writer:
+            for data_idx in data_idx_shard_list: 
+                if data_idx == 2983: continue   #Errorneous data
+                #print('------------- ', data_idx)
+                objects = dataset.get_label_objects(data_idx)
+
+                # Skip scenes with 0 object
+                if skip_empty_scene and (len(objects)==0 or \
+                    len([obj for obj in objects if obj.classname in type_whitelist])==0):
+                        continue
+
+                assert len(objects) <= MAX_NUM_OBJ
+
+                obbs = np.zeros((MAX_NUM_OBJ,8))
+                cnt = 0
+                for i, obj in enumerate(objects):
+                    if obj.classname not in type_whitelist: continue
+                    obbs[cnt, 0:3] = obj.centroid
+                    # Note that compared with that in data_viz, we do not time 2 to l,w.h
+                    # neither do we flip the heading angle
+                    obbs[cnt, 3:6] = np.array([obj.l,obj.w,obj.h])
+                    obbs[cnt, 6] = obj.heading_angle
+                    obbs[cnt, 7] = sunrgbd_utils.type2class[obj.classname]
+                    cnt+=1
+
+                n_valid_box = cnt
+                    
+                pc_upright_depth = dataset.get_depth(data_idx)
+                pc_upright_depth_subsampled = pc_util.random_sampling(pc_upright_depth, num_point)
+
+                #np.savez_compressed(os.path.join(output_folder,'%06d_pc.npz'%(data_idx)),
+                #    pc=pc_upright_depth_subsampled)
+                #np.save(os.path.join(output_folder, '%06d_bbox.npy'%(data_idx)), obbs)
+            
+                N = pc_upright_depth_subsampled.shape[0]
+                point_votes = np.zeros((N,10)) # 3 votes and 1 vote mask 
+                point_vote_idx = np.zeros((N)).astype(np.int32) # in the range of [0,2]
+                indices = np.arange(N)
+                for obj in objects:
+                    if obj.classname not in type_whitelist: continue
+                    try:
+                        # Find all points in this object's OBB
+                        box3d_pts_3d = sunrgbd_utils.my_compute_box_3d(obj.centroid,
+                            np.array([obj.l,obj.w,obj.h]), obj.heading_angle)
+                        pc_in_box3d,inds = sunrgbd_utils.extract_pc_in_box3d(\
+                            pc_upright_depth_subsampled, box3d_pts_3d)
+                        # Assign first dimension to indicate it is in an object box
+                        point_votes[inds,0] = 1
+                        # Add the votes (all 0 if the point is not in any object's OBB)
+                        votes = np.expand_dims(obj.centroid,0) - pc_in_box3d[:,0:3]
+                        sparse_inds = indices[inds] # turn dense True,False inds to sparse number-wise inds
+                        for i in range(len(sparse_inds)):
+                            j = sparse_inds[i]
+                            point_votes[j, int(point_vote_idx[j]*3+1):int((point_vote_idx[j]+1)*3+1)] = votes[i,:]
+                            # Populate votes with the fisrt vote
+                            if point_vote_idx[j] == 0:
+                                point_votes[j,4:7] = votes[i,:]
+                                point_votes[j,7:10] = votes[i,:]
+                        point_vote_idx[inds] = np.minimum(2, point_vote_idx[inds]+1)
+                    except:
+                        print('ERROR ----',  data_idx, obj.classname)
+                #np.savez_compressed(os.path.join(output_folder, '%06d_votes.npz'%(data_idx)),
+                #    point_votes = point_votes)
+                tf_example = create_example(pc_upright_depth_subsampled, obbs, point_votes, n_valid_box)
+                writer.write(tf_example.SerializeToString())
+
 def get_box3d_dim_statistics(idx_filename,
     type_whitelist=DEFAULT_TYPE_WHITELIST,
     save_path=None):
@@ -309,6 +439,7 @@ if __name__=='__main__':
     parser.add_argument('--compute_median_size', action='store_true', help='Compute median 3D bounding box sizes for each class.')
     parser.add_argument('--gen_v1_data', action='store_true', help='Generate V1 dataset.')
     parser.add_argument('--gen_v2_data', action='store_true', help='Generate V2 dataset.')
+    parser.add_argument('--tfrecord', action='store_true', help='Generate TFRecord dataset.')
     args = parser.parse_args()
 
     if args.viz:
@@ -338,3 +469,13 @@ if __name__=='__main__':
             split = 'training',
             output_folder = os.path.join(BASE_DIR, 'sunrgbd_pc_bbox_votes_50k_v2_val'),
             save_votes=True, num_point=50000, use_v1=False, skip_empty_scene=False)
+
+    if args.tfrecord:
+        extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/train_data_idx.txt'),
+            split = 'training',
+            output_folder = os.path.join(os.path.dirname(os.path.dirname(BASE_DIR)), 'sunrgbd_pc_bbox_votes_50k_v1_train'),
+            num_point=50000, use_v1=True, skip_empty_scene=False)
+        extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/val_data_idx.txt'),
+            split = 'training',
+            output_folder = os.path.join(os.path.dirname(os.path.dirname(BASE_DIR)), 'sunrgbd_pc_bbox_votes_50k_v1_val'),
+            num_point=50000, use_v1=True, skip_empty_scene=False)

@@ -83,9 +83,9 @@ class VoteNet(tf.keras.Model):
         """
         end_points = {}        
 
-        batch_size = inputs['point_clouds'].shape[0]
+        batch_size = inputs.shape[0]
 
-        end_points = self.backbone_net(inputs['point_clouds'], end_points)
+        end_points = self.backbone_net(inputs, end_points)
                 
         # --------- HOUGH VOTING ---------
         xyz = end_points['fp2_xyz']

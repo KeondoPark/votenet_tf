@@ -119,34 +119,20 @@ def my_worker_init_fn(worker_id):
 # Create Dataset and Dataloader
 if FLAGS.dataset == 'sunrgbd':
     sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
-    from sunrgbd_detection_dataset_tf import SunrgbdDetectionVotesDataset, MAX_NUM_OBJ
+    from sunrgbd_detection_dataset_tf import SunrgbdDetectionVotesDataset_tfrecord, MAX_NUM_OBJ
     from model_util_sunrgbd import SunrgbdDatasetConfig
     DATASET_CONFIG = SunrgbdDatasetConfig()
-    TRAIN_DATASET = SunrgbdDetectionVotesDataset('train', num_points=NUM_POINT,
-        augment=True,
-        use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
-        use_v1=(not FLAGS.use_sunrgbd_v2))
-        #use_painted=FLAGS.use_painted)
-    TEST_DATASET = SunrgbdDetectionVotesDataset('val', num_points=NUM_POINT,
-        augment=False,
-        use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
-        use_v1=(not FLAGS.use_sunrgbd_v2))
-        #use_painted=FLAGS.use_painted)
-elif FLAGS.dataset == 'scannet':
-    sys.path.append(os.path.join(ROOT_DIR, 'scannet'))
-    from scannet_detection_dataset import ScannetDetectionDataset, MAX_NUM_OBJ
-    from model_util_scannet import ScannetDatasetConfig
-    DATASET_CONFIG = ScannetDatasetConfig()
-    TRAIN_DATASET = ScannetDetectionDataset('train', num_points=NUM_POINT,
-        augment=True,
+    TRAIN_DATASET = SunrgbdDetectionVotesDataset_tfrecord('train', num_points=NUM_POINT,
+        augment=True, shuffle=True, batch_size=BATCH_SIZE,
         use_color=FLAGS.use_color, use_height=(not FLAGS.no_height))
-    TEST_DATASET = ScannetDetectionDataset('val', num_points=NUM_POINT,
-        augment=False,
+        #use_painted=FLAGS.use_painted)
+    TEST_DATASET = SunrgbdDetectionVotesDataset_tfrecord('val', num_points=NUM_POINT,
+        augment=False,  shuffle=False, batch_size=BATCH_SIZE,
         use_color=FLAGS.use_color, use_height=(not FLAGS.no_height))
+        #use_painted=FLAGS.use_painted)
 else:
     print('Unknown dataset %s. Exiting...'%(FLAGS.dataset))
     exit(-1)
-print(len(TRAIN_DATASET), len(TEST_DATASET))
 
 # Init the model and optimzier
 #device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -226,14 +212,17 @@ def lr_schedule(epoch, lr):
             lr *= LR_DECAY_RATES[i]
     return lr
 
-class CustomCallback(keras.callbacks.Callback):
-    def on_epoch_begin(self, epoch, logs=None):
-        EPOCH_CNT = epoch
-        log_string('**** EPOCH %03d ****' % (epoch))
-        log_string('Current learning rate: %f'%(get_current_lr(epoch)))
-        log_string('Current BN decay momentum: %f'%(bnm_scheduler.lmbd(bnm_scheduler.last_epoch)))
-        log_string(str(datetime.now()))
+train_ds = TRAIN_DATASET.preprocess()
+train_ds = train_ds.prefetch(BATCH_SIZE)
 
+test_ds = TEST_DATASET.preprocess()
+test_ds = test_ds.prefetch(BATCH_SIZE)
+
+out = train_ds.take(1)
+print(out)
+
+
+"""
 train_ds = tf.data.Dataset.from_generator(lambda: (ret for ret in TRAIN_DATASET),
     output_types=({
                     'point_clouds': tf.float32,    
@@ -299,7 +288,7 @@ test_ds = tf.data.Dataset.from_generator(lambda: (ret for ret in TEST_DATASET),
     )
                 
 test_ds = test_ds.batch(BATCH_SIZE).prefetch(2)
-
+"""
 # TFBoard Visualizers
 TRAIN_VISUALIZER = TfVisualizer(FLAGS, 'train')
 TEST_VISUALIZER = TfVisualizer(FLAGS, 'test')
@@ -310,6 +299,9 @@ CONFIG_DICT = {'remove_empty_box':False, 'use_3d_nms':True,
     'nms_iou':0.25, 'use_old_type_nms':False, 'cls_nms':True,
     'per_class_proposal': True, 'conf_thresh':0.05,
     'dataset_config':DATASET_CONFIG}
+
+label_dict = {0:'point_cloud', 1:'center_label', 2:'heading_class_label', 3:'heading_residual_label', 4:'size_class_label',\
+    5:'size_residual_label', 6:'sem_cls_label', 7:'box_label_mask', 8:'vote_label', 9:'vote_label_mask', 10: 'max_gt_bboxes'}
 
 # ------------------------------------------------------------------------- GLOBAL CONFIG END
 
@@ -330,20 +322,27 @@ def train_one_epoch():
 
     start = time.time()
 
-    for batch_idx, batch_data_label in enumerate(train_ds):         
+    for batch_idx, batch_data in enumerate(train_ds):                 
         
         # Forward pass
         with tf.GradientTape() as tape:
-            inputs = {'point_clouds': batch_data_label['point_clouds']}            
+            inputs = batch_data[0]            
             t_load += time.time() - start
             start = time.time()
+            #for i, data in enumerate(batch_data):
+            #    print("==============================",label_dict[i])
+            #    print(data[0])
+
+            #exit(0)
+
+
             end_points = net(inputs, training=True)
             t_fwd += time.time() - start
             start = time.time()
             # Compute loss and gradients, update parameters.
-            for key in batch_data_label:
-                assert(key not in end_points)
-                end_points[key] = batch_data_label[key]
+            for i, data in enumerate(batch_data):
+                if i == 0: continue #pass point cloud
+                end_points[label_dict[i]] = data
             loss, end_points = criterion(end_points, DATASET_CONFIG)        
 
         grads = tape.gradient(loss, net.trainable_weights)
@@ -358,14 +357,17 @@ def train_one_epoch():
                 if key not in stat_dict: stat_dict[key] = 0
                 stat_dict[key] += end_points[key]
 
-        batch_interval = 50
-        if (batch_idx+1) % batch_interval == 0:
+        batch_interval = 10
+        if (batch_idx+1) % batch_interval == 0:            
             log_string(' ---- batch: %03d ----' % (batch_idx+1))
-            TRAIN_VISUALIZER.log_scalars({key:stat_dict[key]/batch_interval for key in stat_dict},
-                (EPOCH_CNT*len(TRAIN_DATASET)+(batch_idx))*BATCH_SIZE)
+            #TRAIN_VISUALIZER.log_scalars({key:stat_dict[key]/batch_interval for key in stat_dict},
+            #    (EPOCH_CNT*len(TRAIN_DATASET)+(batch_idx))*BATCH_SIZE)
             for key in sorted(stat_dict.keys()):
                 log_string('mean %s: %f'%(key, stat_dict[key]/batch_interval))
                 stat_dict[key] = 0
+        #if batch_idx == 9:
+        #    break
+
 
         start = time.time()
 
@@ -379,20 +381,18 @@ def evaluate_one_epoch():
     ap_calculator = APCalculator(ap_iou_thresh=FLAGS.ap_iou_thresh,
         class2type_map=DATASET_CONFIG.class2type)
     
-    for batch_idx, batch_data_label in enumerate(test_ds):        
+    for batch_idx, batch_data in enumerate(test_ds):        
         if batch_idx % 10 == 0:
             print('Eval batch: %d'%(batch_idx))
-        for key in batch_data_label:
-            batch_data_label[key] = batch_data_label[key]
         
         # Forward pass
-        inputs = {'point_clouds': batch_data_label['point_clouds']}
+        inputs = batch_data[0] 
         end_points = net(inputs, training=False)
 
         # Compute loss
-        for key in batch_data_label:
-            assert(key not in end_points)
-            end_points[key] = batch_data_label[key]
+        for i, data in enumerate(batch_data):
+            if i == 0: continue #pass point cloud
+            end_points[label_dict[i]] = data
         loss, end_points = criterion(end_points, DATASET_CONFIG)        
 
         # Accumulate statistics and print out
@@ -407,8 +407,8 @@ def evaluate_one_epoch():
          
 
     # Log statistics
-    TEST_VISUALIZER.log_scalars({key:stat_dict[key]/float(batch_idx+1) for key in stat_dict},
-        EPOCH_CNT*len(TRAIN_DATASET)*BATCH_SIZE)
+    #TEST_VISUALIZER.log_scalars({key:stat_dict[key]/float(batch_idx+1) for key in stat_dict},
+    #    EPOCH_CNT*len(TRAIN_DATASET)*BATCH_SIZE)
     for key in sorted(stat_dict.keys()):
         log_string('eval mean %s: %f'%(key, stat_dict[key]/(float(batch_idx+1))))
 
@@ -423,9 +423,6 @@ def evaluate_one_epoch():
 
 def train(start_epoch):
     global EPOCH_CNT 
-    callbacks = []
-    callbacks.append(tf.keras.callbacks.LearningRateScheduler(lr_schedule))
-    callbacks.append(CustomCallback())
     
     #EPOCH_CNT = 1
     #loss = evaluate_one_epoch()
@@ -450,7 +447,7 @@ def train(start_epoch):
 
 if __name__=='__main__':
     #train(start_epoch)
-    print(len(TRAIN_DATASET), len(TEST_DATASET))
+    #print(len(TRAIN_DATASET), len(TEST_DATASET))
     #ret_dict = next(iter(TRAIN_DATASET))
     #print(ret_dict)
     train(start_epoch)

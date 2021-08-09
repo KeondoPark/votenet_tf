@@ -56,11 +56,12 @@ class SunrgbdDatasetConfig(object):
                 class*(2pi/N) + number = angle
         '''
         num_class = self.num_heading_bin
-        angle = angle%(2*np.pi)
-        assert(angle>=0 and angle<=2*np.pi)
+        #angle = angle%(2*np.pi)
+        #assert(angle>=0 and angle<=2*np.pi)
         angle_per_class = 2*np.pi/float(num_class)
         shifted_angle = (angle+angle_per_class/2)%(2*np.pi)
-        class_id = int(shifted_angle/angle_per_class)
+        #class_id = int(shifted_angle/angle_per_class)
+        class_id = np.divide(shifted_angle, angle_per_class).astype(np.int32)
         residual_angle = shifted_angle - (class_id*angle_per_class+angle_per_class/2)
         return class_id, residual_angle
     
