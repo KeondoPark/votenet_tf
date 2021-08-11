@@ -9,4 +9,4 @@
 source /home/${USER}/.bashrc # Initiate your shell environment
 source ~/anaconda3/etc/profile.d/conda.sh
 conda activate votenet_tf # Activate your conda environment
-srun python /home/gundo0102/votenet_tf/train_tf.py  --checkpoint_path /home/gundo0102/votenet_tf/log/tf_ckpt --max_epoch 180
+srun python /home/gundo0102/votenet_tf/train_tf.py  --checkpoint_path /home/gundo0102/votenet_tf/log_210810/tf_ckpt_210810 --max_epoch 180 --log_dir log_210810

@@ -287,7 +287,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
             self.dataset = self.dataset.map(self.augment_tensor, num_parallel_calls=tf.data.experimental.AUTOTUNE)
         
         self.dataset = self.dataset.map(self.sample_points, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-        self.dataset = self.dataset.map(self.tf_get_output, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        self.dataset = self.dataset.map(self.tf_get_output) #tf.data.experimental.AUTOTUNE)
         
         return self.dataset
 
@@ -339,7 +339,9 @@ class SunrgbdDetectionVotesDataset_tfrecord():
                 #box3d_size = bbox[3:6]*2
                 box3d_size = bbox[3:6]
                 #box3d_size *= 2
-                size_class = semantic_class                    
+                size_class = semantic_class         
+                #mean_size =  self.type_mean_size_np[size_class.numpy().astype(np.int32)]         
+                #size_residual = 2 * box3d_size - mean_size
                 size_residual = 2 * box3d_size - self.type_mean_size_np[size_class.numpy().astype(np.int32)]
                 #size_class, size_residual = size2class(box3d_size, class2type[semantic_class])
                 box3d_centers[b,i,:] = box3d_center
@@ -452,7 +454,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
             votes1_flip = -1 * point_votes[:,:,1,None]
             votes4_flip = -1 * point_votes[:,:,4,None]
             votes7_flip = -1 * point_votes[:,:,7,None]
-            votes = tf.concat((point_votes[:,:,0,None], votes1_flip, point_votes[:,:,2:4], votes4_flip, point_votes[:,:,5:7], votes7_flip, point_votes[:,:,8:]), axis=-1)
+            point_votes = tf.concat((point_votes[:,:,0,None], votes1_flip, point_votes[:,:,2:4], votes4_flip, point_votes[:,:,5:7], votes7_flip, point_votes[:,:,8:]), axis=-1)
             
         pc_coords = point_cloud[:,:,0:3]    
         pc_height = point_cloud[:,:,-1,None]

@@ -22,6 +22,7 @@ from proposal_module_tf import ProposalModule
 from dump_helper_tf import dump_results
 from loss_helper_tf import get_loss
 
+import time
 
 class VoteNet(tf.keras.Model):
     r"""
@@ -94,13 +95,16 @@ class VoteNet(tf.keras.Model):
         end_points['seed_xyz'] = xyz
         end_points['seed_features'] = features
         
+        start = time.time() 
         xyz, features = self.vgen(xyz, features)
+        print("Runtime for Voting module:", time.time() - start)
         features_norm = tf.norm(features, ord=2, axis=1)
         features = tf.divide(features, tf.expand_dims(features_norm, axis=1))
         end_points['vote_xyz'] = xyz
         end_points['vote_features'] = features
-
+        start = time.time() 
         end_points = self.pnet(xyz, features, end_points)
+        print("Runtime for Proposal module:", time.time() - start)
 
         return end_points
 

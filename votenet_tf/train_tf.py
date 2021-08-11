@@ -205,22 +205,19 @@ def get_current_lr(epoch):
 def adjust_learning_rate(optimizer, epoch):
     lr = get_current_lr(epoch)
     optimizer.learning_rate = lr
-
+"""
 def lr_schedule(epoch, lr):
     for i,lr_decay_epoch in enumerate(LR_DECAY_STEPS):
         if epoch >= lr_decay_epoch:
             lr *= LR_DECAY_RATES[i]
     return lr
+"""
 
 train_ds = TRAIN_DATASET.preprocess()
 train_ds = train_ds.prefetch(BATCH_SIZE)
 
 test_ds = TEST_DATASET.preprocess()
 test_ds = test_ds.prefetch(BATCH_SIZE)
-
-out = train_ds.take(1)
-print(out)
-
 
 """
 train_ds = tf.data.Dataset.from_generator(lambda: (ret for ret in TRAIN_DATASET),
@@ -367,6 +364,7 @@ def train_one_epoch():
                 stat_dict[key] = 0
         #if batch_idx == 9:
         #    break
+        exit(0)
 
 
         start = time.time()

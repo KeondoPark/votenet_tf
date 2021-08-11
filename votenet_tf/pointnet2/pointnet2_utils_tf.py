@@ -84,10 +84,10 @@ class QueryAndGroup(layers.Layer):
         """
 
         
-        #start = time.time()
+        start = time.time()
         idx, pts_cnt = tf_grouping.query_ball_point(self.radius, self.nsample, xyz, new_xyz)
-        #end = time.time()
-        #print("Runtime for ball query original: ", end - start)
+        end = time.time()
+        print("Runtime for ball query original: ", end - start)
         
         """
         start = time.time()
@@ -111,7 +111,7 @@ class QueryAndGroup(layers.Layer):
                     sample_ind = tf.random.int(shape=[self.nsample - num_unique], minval=0, maxval=num_unique, dtype=tf.dtypes.int32)
                     all_ind = tf.concat([unique_ind, unique_ind[sample_ind]], axis=0)
                     idx[i_batch, i_region, :] = all_ind
-        
+        start = time.time()
         grouped_xyz = tf_grouping.group_point(xyz, idx)  # (B, npoint, nsample, 3)
         
         grouped_xyz -= tf.expand_dims(new_xyz, axis=-2)
@@ -132,7 +132,7 @@ class QueryAndGroup(layers.Layer):
                 self.use_xyz
             ), "Cannot have not features and not use xyz as a feature!"
             new_features = grouped_xyz
-
+        print("Runtime for group_point: ", time.time() - start)
         ret = [new_features]
         #Keondo: Added for later use
         ret.append(idx)
