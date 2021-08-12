@@ -236,7 +236,7 @@ class PointnetSAModuleVotes(layers.Layer):
                 inds = tf_sampling.farthest_point_sample(self.npoint, xyz)                
                 #inds, batch_distances = pointnet2_utils.fps_light(xyz, self.npoint)
                 end = time.time()
-                print("Runtime for FPS original", end - start)
+                #print("Runtime for FPS original", end - start)
         else:
             assert(inds.shape[1] == self.npoint)   
 
@@ -245,7 +245,7 @@ class PointnetSAModuleVotes(layers.Layer):
             xyz, inds
         ) if self.npoint is not None else None
         end = time.time()
-        print("Runtime for gather_op original", end - start)
+        #print("Runtime for gather_op original", end - start)
 
         if not self.ret_unique_cnt:
         #if not self.ret_unique_cnt:
@@ -265,7 +265,7 @@ class PointnetSAModuleVotes(layers.Layer):
                 grouped_features
             )  # (B, npoint, nsample, mlp[-1])
         end = time.time()
-        print("Runtime for shared MLP", end - start)
+        #print("Runtime for shared MLP", end - start)
 
 
         if self.pooling == 'max':
@@ -284,7 +284,7 @@ class PointnetSAModuleVotes(layers.Layer):
         #new_features = tf.squeeze(new_features, axis=-2)  # (B, npoint, mlp[-1])
         new_features = layers.Reshape((self.npoint, new_features.shape[-1]))(new_features)
         end = time.time()
-        print("Runtime for shared MLP and max pooling", end - start)
+        #print("Runtime for shared MLP and max pooling", end - start)
 
         if not self.ret_unique_cnt:
             #return new_xyz, new_features, inds
@@ -415,14 +415,14 @@ class PointnetFPModule(layers.Layer):
             norm = tf.reduce_sum(dist_recip, axis=2, keepdims=True)
             weight = dist_recip / norm  # (B, n, 3)
             end = time.time()
-            print("Runtime for Threenn original", end - start)
+            #print("Runtime for Threenn original", end - start)
             
             start = time.time() 
             interpolated_feats = tf_interpolate.three_interpolate(
                 known_feats, idx, weight
             )
             end = time.time()
-            print("Runtime for Inverse three_interpolate original: ", end - start)
+            #print("Runtime for Inverse three_interpolate original: ", end - start)
 
         else:
             interpolated_feats = tf.tile(known_feats, [1, tf.shape(unknow_feats)[1] / tf.shape(known_feats)[1], 1])
@@ -436,7 +436,7 @@ class PointnetFPModule(layers.Layer):
         #new_features = tf.expand_dims(new_features, axis=-2)
         new_features = layers.Reshape((new_features.shape[1], 1, new_features.shape[2]))(new_features)
         new_features = self.mlp(new_features)
-        print("Runtime for Shared mlp", time.time() - start)
+        #print("Runtime for Shared mlp", time.time() - start)
 
         #return tf.squeeze(new_features, axis=-2)   
         return layers.Reshape((new_features.shape[1], new_features.shape[-1]))(new_features)  

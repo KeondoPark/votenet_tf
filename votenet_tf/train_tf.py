@@ -328,7 +328,11 @@ def train_one_epoch():
             start = time.time()
             #for i, data in enumerate(batch_data):
             #    print("==============================",label_dict[i])
-            #    print(data[0])
+            #    if i == 8:
+            #        np.savetxt("tf_votes.csv", data[0].numpy(), delimiter=",")
+                            
+                #else:
+                #    print(data[0])
 
             #exit(0)
 
@@ -354,7 +358,7 @@ def train_one_epoch():
                 if key not in stat_dict: stat_dict[key] = 0
                 stat_dict[key] += end_points[key]
 
-        batch_interval = 10
+        batch_interval = 50
         if (batch_idx+1) % batch_interval == 0:            
             log_string(' ---- batch: %03d ----' % (batch_idx+1))
             #TRAIN_VISUALIZER.log_scalars({key:stat_dict[key]/batch_interval for key in stat_dict},
@@ -364,8 +368,6 @@ def train_one_epoch():
                 stat_dict[key] = 0
         #if batch_idx == 9:
         #    break
-        exit(0)
-
 
         start = time.time()
 
@@ -421,10 +423,6 @@ def evaluate_one_epoch():
 
 def train(start_epoch):
     global EPOCH_CNT 
-    
-    #EPOCH_CNT = 1
-    #loss = evaluate_one_epoch()
-    
 
     for epoch in range(start_epoch, MAX_EPOCH):
         EPOCH_CNT = epoch

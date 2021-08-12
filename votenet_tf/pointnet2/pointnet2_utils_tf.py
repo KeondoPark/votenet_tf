@@ -87,7 +87,7 @@ class QueryAndGroup(layers.Layer):
         start = time.time()
         idx, pts_cnt = tf_grouping.query_ball_point(self.radius, self.nsample, xyz, new_xyz)
         end = time.time()
-        print("Runtime for ball query original: ", end - start)
+        #print("Runtime for ball query original: ", end - start)
         
         """
         start = time.time()
@@ -132,7 +132,7 @@ class QueryAndGroup(layers.Layer):
                 self.use_xyz
             ), "Cannot have not features and not use xyz as a feature!"
             new_features = grouped_xyz
-        print("Runtime for group_point: ", time.time() - start)
+        #print("Runtime for group_point: ", time.time() - start)
         ret = [new_features]
         #Keondo: Added for later use
         ret.append(idx)

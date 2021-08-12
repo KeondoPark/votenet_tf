@@ -260,21 +260,10 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         print("type_mean_size_np:", self.type_mean_size_np)
         
     def preprocess(self):
-
-        #for features in iter(self.dataset):
-        #    print("Before reshape, bboxes:", features['bboxes'])    
-        #    break
-            
+           
         # Reshape
         self.dataset = self.dataset.map(map_func=self.reshape_tensor, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-
-        #for pc, box, votes, n_box in iter(self.dataset):
-        #    print("After reshape, bboxes:", box)    
-        #    print("n_valid_box:", n_box)
-        #    break
-        
-
-
+ 
         if self.use_color:
             self.dataset = self.dataset.map(self.preprocess_color, num_parallel_calls=tf.data.experimental.AUTOTUNE)
         else:
@@ -296,7 +285,6 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         n_pc = point_cloud.shape[1]
         choice_indices = tf.random.uniform([self.num_points], minval=0, maxval=n_pc, dtype=tf.int32)
         choice_indices = tf.tile(tf.expand_dims(choice_indices,0), [tf.shape(point_cloud)[0],1])
-        #choice_indices = tf.broadcast_to(choice_indices, point_cloud.shape[:2])
         
         point_cloud = tf.gather(point_cloud, choice_indices, axis=1, batch_dims=1)
         point_votes = tf.gather(point_votes, choice_indices, axis=1, batch_dims=1)
@@ -423,7 +411,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
 
     def preprocess_height(self, point_cloud, bboxes, votes, n_valid_box):
         y_coords = point_cloud[:, :, 2]    
-        tf.sort(y_coords, direction='DESCENDING', axis=-1)
+        y_coords = tf.sort(y_coords, direction='DESCENDING', axis=-1)
         floor_height = y_coords[:, int(0.99*N_POINT), None]         
         height = point_cloud[:,:,2] - tf.tile(floor_height, [1,N_POINT])
         point_cloud = tf.concat([point_cloud, tf.expand_dims(height, axis=-1)], axis=-1) # (N,4) or (N,7)
@@ -446,7 +434,8 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         pi = 3.141592653589793
         # Flipping along the YZ plane
         if tf.random.uniform(shape=[]) > 0.5:        
-            pc_flip = -1 * point_cloud[:,:,:1]
+        #if True:
+            pc_flip = -1 * point_cloud[:,:,0,None]
             point_cloud = tf.concat((pc_flip, point_cloud[:,:,1:]), axis=-1)
             bboxes_flip = -1 * bboxes[:,:,0,None]
             bboxes_angle = pi -1 * bboxes[:,:,6,None]

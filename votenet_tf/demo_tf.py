@@ -47,7 +47,7 @@ if __name__=='__main__':
     if FLAGS.dataset == 'sunrgbd':
         sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
         from sunrgbd_detection_dataset_tf import DC # dataset config
-        checkpoint_path = os.path.join(demo_dir, 'pretrained_votenet_on_sunrgbd.tar')        
+        checkpoint_path = os.path.join(demo_dir, 'tv_ckpt_210810')        
         pc_path = os.path.join(demo_dir, 'input_pc_sunrgbd.ply')
         #pc_path = os.path.join(demo_dir, 'pc_person2.ply')
     elif FLAGS.dataset == 'scannet':
@@ -56,7 +56,7 @@ if __name__=='__main__':
         checkpoint_path = os.path.join(demo_dir, 'pretrained_votenet_on_scannet.tar')
         pc_path = os.path.join(demo_dir, 'input_pc_scannet.ply')
     else:
-        print('Unkown dataset %s. Exiting.'%(DATASET))
+        print('Unkown dataset. Exiting.')
         exit(-1)
 
     eval_config_dict = {'remove_empty_box': True, 'use_3d_nms': True, 'nms_iou': 0.25,
@@ -88,8 +88,9 @@ if __name__=='__main__':
    
     # Model inference
     inputs = {'point_clouds': tf.convert_to_tensor(pc)}
+
     tic = time.time()
-    end_points = net(inputs, training=False)
+    end_points = net(inputs['point_clouds'], training=False)
     toc = time.time()
     print('Inference time: %f'%(toc-tic))
 
@@ -101,7 +102,7 @@ if __name__=='__main__':
 
     for pred in pred_map_cls[0]:
         print('-'*20)
-        print('class:', class2type[pred[0]])
+        print('class:', class2type[pred[0].numpy()])
         print('conf:', pred[2])
         print('coords', pred[1])
 

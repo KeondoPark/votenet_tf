@@ -50,25 +50,30 @@ def dump_results(end_points, dump_dir, config, inference_switch=False):
     B, K, _ = end_points['heading_scores'].shape  # K = num_proposal
     #Find maximum heading scores and get the corresponding heading residuals
     pred_heading_class = tf.math.argmax(end_points['heading_scores'], axis=-1) # B,K
-    coords = tf.concat([tf.expand_dims(tf.stack(tf.meshgrid(tf.range(0,B), tf.range(0,K), indexing='ij'), axis=-1), axis=2), \
-                       tf.expand_dims(tf.expand_dims(pred_heading_class, axis=-1), axis=-1)], axis=-1) # (B, K, 1, 2) + (B, K, 1, 1) -> (B, K, 1, 3)
+    pred_heading_residual = tf.gather(end_points['heading_residuals'], axis=2, 
+                                    indices=tf.expand_dims(pred_heading_class, axis=-1), batch_dims=2) #(B, K, num_heading_bin) -> (B, K, 1)
+    
+    #coords = tf.concat([tf.expand_dims(tf.stack(tf.meshgrid(tf.range(0,B), tf.range(0,K), indexing='ij'), axis=-1), axis=2), \
+    #                   tf.expand_dims(tf.expand_dims(pred_heading_class, axis=-1), axis=-1)], axis=-1) # (B, K, 1, 2) + (B, K, 1, 1) -> (B, K, 1, 3)
     #heading_residuals: (B, K, num_heading_bin)
-    pred_heading_residual = tf.gather_nd(end_points['heading_residuals'], coords) # B,K,1   
+    #pred_heading_residual = tf.gather_nd(end_points['heading_residuals'], coords) # B,K,1   
+
+
     pred_heading_class = pred_heading_class.numpy() # B,K
     pred_heading_residual = tf.squeeze(pred_heading_residual, axis=[2]).numpy() # B,K
 
     #Find maximum size scores and get the corresponding size residuals
     #size_scores: (B, K, num_size_cluster)
     pred_size_class = tf.cast(tf.math.argmax(end_points['size_scores'], axis=-1), dtype=tf.int32) # B,K
-    coords = tf.concat([tf.expand_dims(tf.stack(tf.meshgrid(tf.range(0,B), tf.range(0,K), indexing='ij'), axis=-1), axis=2), \
-                       tf.expand_dims(tf.expand_dims(pred_size_class, axis=-1), axis=-1)], axis=-1) # (B, K, 1, 2) + (B, K, 1, 1) -> (B, K, 1, 3)
+    pred_size_residual = tf.gather(end_points['size_residuals'], axis=2, 
+                                indices=tf.expand_dims(pred_size_class, axis=-1), batch_dims=2)        
+    pred_size_residual = tf.squeeze(pred_size_residual, axis=[2]) # B,num_proposal,3  
+    #coords = tf.concat([tf.expand_dims(tf.stack(tf.meshgrid(tf.range(0,B), tf.range(0,K), indexing='ij'), axis=-1), axis=2), \
+    #                   tf.expand_dims(tf.expand_dims(pred_size_class, axis=-1), axis=-1)], axis=-1) # (B, K, 1, 2) + (B, K, 1, 1) -> (B, K, 1, 3)
     
     #size_residuals: (B, K, num_size_cluster, 3)
-    pred_size_residual = tf.gatehr_nd(end_points['size_residuals'], coords) # (B, K, 1, 3)
+    #pred_size_residual = tf.gatehr_nd(end_points['size_residuals'], coords) # (B, K, 1, 3)
     #pred_size_residual = torch.gather(end_points['size_residuals'], 2, pred_size_class.unsqueeze(-1).unsqueeze(-1).repeat(1,1,1,3)) # B,num_proposal,1,3
-
-    pred_size_residual = tf.squeeze(pred_size_residual, axis=[2]).numpy() # B,num_proposal,3
-
     # OTHERS
     pred_mask = end_points['pred_mask'] # B,num_proposal
     idx_beg = 0
