@@ -100,7 +100,7 @@ class ProposalModule(layers.Layer):
         """
         if self.sampling == 'vote_fps':
             # Farthest point sampling (FPS) on votes
-            xyz, features, fps_inds, _ = self.vote_aggregation(xyz, features, sample_type='fps')
+            xyz, features, fps_inds, _, _ = self.vote_aggregation(xyz, features, sample_type='fps')
             sample_inds = fps_inds
         elif self.sampling == 'seed_fps': 
             # FPS on seed and choose the votes corresponding to the seeds

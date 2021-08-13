@@ -288,7 +288,7 @@ class PointnetSAModuleVotes(layers.Layer):
 
         if not self.ret_unique_cnt:
             #return new_xyz, new_features, inds
-            return new_xyz, new_features, inds, ball_query_idx
+            return new_xyz, new_features, inds, ball_query_idx, grouped_features
         else:
             return new_xyz, new_features, inds, unique_cnt
 '''

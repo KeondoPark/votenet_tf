@@ -104,35 +104,39 @@ class Pointnet2Backbone(layers.Layer):
         # --------- 4 SET ABSTRACTION LAYERS ---------
         #xyz, features, fps_inds = self.sa1(xyz, features)
         #print("========================== SA1 ===============================")
-        xyz, features, fps_inds, ball_query_idx = self.sa1(xyz, features, sample_type='fps')
+        xyz, features, fps_inds, ball_query_idx, grouped_features = self.sa1(xyz, features, sample_type='fps')
         end_points['sa1_inds'] = fps_inds
         end_points['sa1_xyz'] = xyz
         end_points['sa1_features'] = features
         end_points['sa1_ball_query_idx'] = ball_query_idx
+        end_points['sa1_grouped_features'] = grouped_features
 
         #print("========================== SA2 ===============================")
         #xyz, features, fps_inds = self.sa2(xyz, features) # this fps_inds is just 0,1,...,1023
-        xyz, features, fps_inds, ball_query_idx = self.sa2(xyz, features, sample_type='fps') # this fps_inds is just 0,1,...,1023
+        xyz, features, fps_inds, ball_query_idx, grouped_features = self.sa2(xyz, features, sample_type='fps') # this fps_inds is just 0,1,...,1023
         end_points['sa2_inds'] = fps_inds
         end_points['sa2_xyz'] = xyz
         end_points['sa2_features'] = features
         end_points['sa2_ball_query_idx'] = ball_query_idx
+        end_points['sa2_grouped_features'] = grouped_features
 
         #print("========================== SA3 ===============================")
         #xyz, features, fps_inds = self.sa3(xyz, features) # this fps_inds is just 0,1,...,511
-        xyz, features, fps_inds, ball_query_idx = self.sa3(xyz, features, sample_type='fps') # this fps_inds is just 0,1,...,511
+        xyz, features, fps_inds, ball_query_idx, grouped_features = self.sa3(xyz, features, sample_type='fps') # this fps_inds is just 0,1,...,511
         end_points['sa3_inds'] = fps_inds
         end_points['sa3_xyz'] = xyz
         end_points['sa3_features'] = features
         end_points['sa3_ball_query_idx'] = ball_query_idx
+        end_points['sa3_grouped_features'] = grouped_features
 
         #print("========================== SA4 ===============================")
         #xyz, features, fps_inds = self.sa4(xyz, features) # this fps_inds is just 0,1,...,255
-        xyz, features, fps_inds, ball_query_idx = self.sa4(xyz, features, sample_type='fps') # this fps_inds is just 0,1,...,255
+        xyz, features, fps_inds, ball_query_idx, grouped_features = self.sa4(xyz, features, sample_type='fps') # this fps_inds is just 0,1,...,255
         end_points['sa4_inds'] = fps_inds
         end_points['sa4_xyz'] = xyz
         end_points['sa4_features'] = features
         end_points['sa4_ball_query_idx'] = ball_query_idx
+        end_points['sa4_grouped_features'] = grouped_features
 
         # --------- 2 FEATURE UPSAMPLING LAYERS --------
         #features = self.fp1(end_points['sa3_xyz'], end_points['sa4_xyz'], end_points['sa3_features'], end_points['sa4_features'])
