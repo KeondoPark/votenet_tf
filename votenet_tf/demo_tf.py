@@ -69,7 +69,8 @@ if __name__=='__main__':
         sampling='vote_fps', num_class=DC.num_class,
         num_heading_bin=DC.num_heading_bin,
         num_size_cluster=DC.num_size_cluster,
-        mean_size_arr=DC.mean_size_arr)
+        mean_size_arr=DC.mean_size_arr,
+        use_tflite=False)
     print('Constructed model.')
     
     # Load checkpoint
