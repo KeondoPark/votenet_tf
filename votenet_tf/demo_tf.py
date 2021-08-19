@@ -16,6 +16,7 @@ import time
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='sunrgbd', help='Dataset: sunrgbd or scannet [default: sunrgbd]')
 parser.add_argument('--num_point', type=int, default=20000, help='Point Number [default: 20000]')
+parser.add_argument('--checkpoint_path', default=None, help='Model checkpoint path [default: None]')
 FLAGS = parser.parse_args()
 
 import tensorflow as tf
@@ -47,7 +48,7 @@ if __name__=='__main__':
     if FLAGS.dataset == 'sunrgbd':
         sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
         from sunrgbd_detection_dataset_tf import DC # dataset config
-        checkpoint_path = 'log_210817/tf_ckpt_210817' # os.path.join(demo_dir, 'tf_ckpt_210812')        
+        checkpoint_path = FLAGS.checkpoint_path # os.path.join(demo_dir, 'tf_ckpt_210812')        
         pc_path = os.path.join(demo_dir, 'input_pc_sunrgbd.ply')
         #pc_path = os.path.join(demo_dir, 'pc_person2.ply')
     elif FLAGS.dataset == 'scannet':
