@@ -29,7 +29,7 @@ class Pointnet2Backbone(layers.Layer):
             Number of input channels in the feature descriptor for each point.
             e.g. 3 for RGB.
     """
-    def __init__(self, input_feature_dim=0):
+    def __init__(self, input_feature_dim=0, use_tflite=False):
         super().__init__()
 
         self.sa1 = PointnetSAModuleVotes(
@@ -38,7 +38,9 @@ class Pointnet2Backbone(layers.Layer):
                 nsample=64,
                 mlp=[input_feature_dim, 64, 64, 128],
                 use_xyz=True,
-                normalize_xyz=True
+                normalize_xyz=True,
+                use_tflite=use_tflite,
+                tflite_name='sa1_qaunt.tflite'
             )
 
         self.sa2 = PointnetSAModuleVotes(
@@ -68,8 +70,8 @@ class Pointnet2Backbone(layers.Layer):
                 normalize_xyz=True
             )
 
-        self.fp1 = PointnetFPModule(mlp=[256+256,256,256])
-        self.fp2 = PointnetFPModule(mlp=[256+256,256,256])
+        self.fp1 = PointnetFPModule(mlp=[256+256,256,256], m=512)
+        self.fp2 = PointnetFPModule(mlp=[256+256,256,256], m=1024)
 
     def _break_up_pc(self, pc):
         xyz = pc[..., 0:3]
@@ -103,7 +105,7 @@ class Pointnet2Backbone(layers.Layer):
 
         # --------- 4 SET ABSTRACTION LAYERS ---------
         #xyz, features, fps_inds = self.sa1(xyz, features)
-        #print("========================== SA1 ===============================")
+        print("========================== SA1 ===============================")
         xyz, features, fps_inds, ball_query_idx, grouped_features = self.sa1(xyz, features, sample_type='fps')
         end_points['sa1_inds'] = fps_inds
         end_points['sa1_xyz'] = xyz
@@ -111,7 +113,7 @@ class Pointnet2Backbone(layers.Layer):
         end_points['sa1_ball_query_idx'] = ball_query_idx
         end_points['sa1_grouped_features'] = grouped_features
 
-        #print("========================== SA2 ===============================")
+        print("========================== SA2 ===============================")
         #xyz, features, fps_inds = self.sa2(xyz, features) # this fps_inds is just 0,1,...,1023
         xyz, features, fps_inds, ball_query_idx, grouped_features = self.sa2(xyz, features, sample_type='fps') # this fps_inds is just 0,1,...,1023
         end_points['sa2_inds'] = fps_inds

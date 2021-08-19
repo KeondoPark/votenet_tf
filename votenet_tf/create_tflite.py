@@ -81,7 +81,7 @@ def tflite_convert(keyword, model, base_model, out_dir):
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--checkpoint_path', default=None, help='Model checkpoint path [default: None]')
-parser.add_argument('--out_dir', default=None, help='Folder name where output tflite files are saved')
+parser.add_argument('--out_dir', default="tflite_models", help='Folder name where output tflite files are saved')
 FLAGS = parser.parse_args()
 
 
@@ -134,20 +134,20 @@ if __name__=='__main__':
 
     # Build Shard MLP parts of the pointnet backbone as a model
     class SharedMLPModel(tf.keras.Model):
-        def __init__(self, mlp_spec, nsample):
+        def __init__(self, mlp_spec, nsample, input_shape):
             super().__init__()
-            self.sharedMLP = tf_utils.SharedMLP(mlp_spec, bn=True)
+            self.sharedMLP = tf_utils.SharedMLP(mlp_spec, bn=True, input_shape=input_shape)
             self.max_pool = layers.MaxPooling2D(pool_size=(1, nsample), strides=1, data_format="channels_last")
 
         def call(self, grouped_features):
             new_features = self.max_pool(self.sharedMLP(grouped_features))
 
-            return grouped_features
+            return new_features
 
-    sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64)
-    sa2_mlp = SharedMLPModel(mlp_spec=[128, 128, 128, 256], nsample=32)
-    sa3_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16)
-    sa4_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16)
+    sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[2048,64,4])
+    sa2_mlp = SharedMLPModel(mlp_spec=[128, 128, 128, 256], nsample=32, input_shape=[1024,32,128+3])
+    sa3_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16, input_shape=[512,16,256+3])
+    sa4_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16, input_shape=[256,16,256+3])
     dummy_in_sa1 = tf.convert_to_tensor(np.random.random([1,2048,64,4])) # (B, npoint, nsample, C+3)
     dummy_in_sa2 = tf.convert_to_tensor(np.random.random([1,1024,32,128+3])) # (B, npoint, nsample, C+3)
     dummy_in_sa3 = tf.convert_to_tensor(np.random.random([1,512,16,256+3])) # (B, npoint, nsample, C+3)

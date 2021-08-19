@@ -47,7 +47,7 @@ if __name__=='__main__':
     if FLAGS.dataset == 'sunrgbd':
         sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
         from sunrgbd_detection_dataset_tf import DC # dataset config
-        checkpoint_path = os.path.join(demo_dir, 'tv_ckpt_210810')        
+        checkpoint_path = 'log_210817/tf_ckpt_210817' # os.path.join(demo_dir, 'tf_ckpt_210812')        
         pc_path = os.path.join(demo_dir, 'input_pc_sunrgbd.ply')
         #pc_path = os.path.join(demo_dir, 'pc_person2.ply')
     elif FLAGS.dataset == 'scannet':
@@ -113,7 +113,7 @@ if __name__=='__main__':
         total_params = 0
         for layer in model.layers:
             #if not parameter.requires_grad: continue
-            param = layer.count_params()
+            param = layer.count_params()            
             table.add_row([layer.name, param])
             total_params+=param
         print(table)

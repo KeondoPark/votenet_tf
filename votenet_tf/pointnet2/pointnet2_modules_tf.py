@@ -183,7 +183,9 @@ class PointnetSAModuleVotes(layers.Layer):
             sigma: float = None, # for RBF pooling
             normalize_xyz: bool = False, # noramlize local XYZ with radius
             sample_uniformly: bool = False,
-            ret_unique_cnt: bool = False
+            ret_unique_cnt: bool = False,
+            use_tflite: bool = False,
+            tflite_name: str = None
     ):
         super().__init__()
 
@@ -208,10 +210,20 @@ class PointnetSAModuleVotes(layers.Layer):
 
         mlp_spec = mlp
         if use_xyz and len(mlp_spec)>0:
-            mlp_spec[0] += 3
-        self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=bn)        
-        self.max_pool = layers.MaxPooling2D(pool_size=(1, self.nsample), strides=1, data_format="channels_last")
-        self.avg_pool = layers.AveragePooling2D(pool_size=(1, self.nsample), strides=1, data_format="channels_last")        
+            mlp_spec[0] += 3  
+        
+        self.use_tflite = use_tflite
+        if self.use_tflite:
+            self.interpreter = tf.lite.Interpreter(model_path=os.path.join("tflite_models",tflite_name))
+            self.interpreter.allocate_tensors()
+
+            # Get input and output tensors.
+            self.input_details = self.interpreter.get_input_details()
+            self.output_details = self.interpreter.get_output_details()
+        else:
+            self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=bn, input_shape=[npoint, nsample, 3+mlp_spec[0]])        
+            self.max_pool = layers.MaxPooling2D(pool_size=(1, self.nsample), strides=1, data_format="channels_last")
+            self.avg_pool = layers.AveragePooling2D(pool_size=(1, self.nsample), strides=1, data_format="channels_last")        
 
     def call(self, xyz, features, inds=None, sample_type = 'fps_light'):
         r"""
@@ -260,31 +272,37 @@ class PointnetSAModuleVotes(layers.Layer):
                 xyz, new_xyz, features
             )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)
 
-        start = time.time()     
-        new_features = self.mlp_module(
-                grouped_features
-            )  # (B, npoint, nsample, mlp[-1])
-        end = time.time()
-        #print("Runtime for shared MLP", end - start)
+        start = time.time()   
+        if self.use_tflite:
+            self.interpreter.set_tensor(self.input_details[0]['index'], grouped_features)
+            self.interpreter.invoke()
+            new_features = self.interpreter.get_tensor(self.output_details[0]['index'])
+            #print(self.output_details[0]['index'])
+            #print(new_features)
+        else:              
+            new_features = self.mlp_module(
+                    grouped_features
+                )  # (B, npoint, nsample, mlp[-1])
+            end = time.time()
+            #print("Runtime for shared MLP", end - start)
 
-
-        if self.pooling == 'max':
-            #new_features = layers.MaxPooling2D(pool_size=(1, tf.shape(new_features)[2]), strides=1, data_format="channels_last")(new_features)  # (B, npoint, 1, mlp[-1])
-            new_features = self.max_pool(new_features)  # (B, npoint, 1, mlp[-1])
-        elif self.pooling == 'avg':
-            #new_features = layers.AvgPooling2D(pool_size=(1, tf.shape(new_features)[2]), strides=1, data_format="channels_last")(new_features) # (B, npoint, 1, mlp[-1])
-            new_features = self.avg_pool(new_features)  # (B, npoint, 1, mlp[-1])
-        '''
-        elif self.pooling == 'rbf': 
-            # Use radial basis function kernel for weighted sum of features (normalized by nsample and sigma)
-            # Ref: https://en.wikipedia.org/wiki/Radial_basis_function_kernel
-            rbf = tf.math.exp(-1 * grouped_xyz.pow(2).sum(1,keepdim=False) / (self.sigma**2) / 2) # (B, npoint, nsample)
-            new_features = tf.reduce_sum(new_features * rbf.unsqueeze(1), axis=-1, keepdims=True) / float(self.nsample) # (B, mlp[-1], npoint, 1)
-        '''
+            if self.pooling == 'max':
+                #new_features = layers.MaxPooling2D(pool_size=(1, tf.shape(new_features)[2]), strides=1, data_format="channels_last")(new_features)  # (B, npoint, 1, mlp[-1])
+                new_features = self.max_pool(new_features)  # (B, npoint, 1, mlp[-1])
+            elif self.pooling == 'avg':
+                #new_features = layers.AvgPooling2D(pool_size=(1, tf.shape(new_features)[2]), strides=1, data_format="channels_last")(new_features) # (B, npoint, 1, mlp[-1])
+                new_features = self.avg_pool(new_features)  # (B, npoint, 1, mlp[-1])
+            '''
+            elif self.pooling == 'rbf': 
+                # Use radial basis function kernel for weighted sum of features (normalized by nsample and sigma)
+                # Ref: https://en.wikipedia.org/wiki/Radial_basis_function_kernel
+                rbf = tf.math.exp(-1 * grouped_xyz.pow(2).sum(1,keepdim=False) / (self.sigma**2) / 2) # (B, npoint, nsample)
+                new_features = tf.reduce_sum(new_features * rbf.unsqueeze(1), axis=-1, keepdims=True) / float(self.nsample) # (B, mlp[-1], npoint, 1)
+            '''
         #new_features = tf.squeeze(new_features, axis=-2)  # (B, npoint, mlp[-1])
         new_features = layers.Reshape((self.npoint, new_features.shape[-1]))(new_features)
         end = time.time()
-        #print("Runtime for shared MLP and max pooling", end - start)
+        print("Runtime for shared MLP and max pooling", end - start)
 
         if not self.ret_unique_cnt:
             #return new_xyz, new_features, inds
@@ -385,9 +403,9 @@ class PointnetFPModule(layers.Layer):
         Use batchnorm
     """
 
-    def __init__(self, *, mlp: List[int], bn: bool = True):
+    def __init__(self, *, mlp: List[int], bn: bool = True, m: int):
         super().__init__()
-        self.mlp = tf_utils.SharedMLP(mlp, bn=bn)
+        self.mlp = tf_utils.SharedMLP(mlp, bn=bn, input_shape=[m,1,mlp[0]])
 
     def call(
             self, unknown, known,

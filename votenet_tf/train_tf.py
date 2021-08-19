@@ -371,9 +371,9 @@ def train_one_epoch():
 
         start = time.time()
 
-    print("Loading time:", t_load)
-    print("Forward time:", t_fwd)
-    print("Backward time:", t_bwd)
+    log_string("Loading time:" + str(t_load))
+    log_string("Forward time:" + str(t_fwd))
+    log_string("Backward time:" +  str(t_bwd))
 
 
 def evaluate_one_epoch():
@@ -432,12 +432,13 @@ def train(start_epoch):
         log_string(str(datetime.now()))  
 
         train_one_epoch()
-        
         ckpt.epoch.assign_add(1)
+        
+        save_path = manager.save()
+        log_string("Saved checkpoint for step {}: {}".format(int(ckpt.epoch), save_path))
+
         if EPOCH_CNT == 0 or EPOCH_CNT % 10 == 9: # Eval every 10 epochs
-            loss = evaluate_one_epoch()
-            save_path = manager.save()
-            print("Saved checkpoint for step {}: {}".format(int(ckpt.epoch), save_path))
+            loss = evaluate_one_epoch()            
             print("loss {:1.2f}".format(loss.numpy()))
         
 

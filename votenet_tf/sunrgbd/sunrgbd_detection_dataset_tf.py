@@ -283,7 +283,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
     def sample_points(self, point_cloud, bboxes, point_votes, n_valid_box):
         
         n_pc = point_cloud.shape[1]
-        choice_indices = tf.random.uniform([self.num_points], minval=0, maxval=n_pc, dtype=tf.int32)
+        choice_indices = tf.random.uniform([self.num_points], minval=0, maxval=n_pc, dtype=tf.int64)
         choice_indices = tf.tile(tf.expand_dims(choice_indices,0), [tf.shape(point_cloud)[0],1])
         
         point_cloud = tf.gather(point_cloud, choice_indices, axis=1, batch_dims=1)
@@ -373,15 +373,15 @@ class SunrgbdDetectionVotesDataset_tfrecord():
                 
         point_cloud = tf.convert_to_tensor(point_cloud, dtype=tf.float32)
         center_label = tf.convert_to_tensor(target_bboxes[:,:,0:3], dtype=tf.float32)
-        heading_class_label = tf.convert_to_tensor(angle_classes, dtype=tf.int32)
+        heading_class_label = tf.convert_to_tensor(angle_classes, dtype=tf.int64)
         heading_residual_label = tf.convert_to_tensor(angle_residuals, dtype=tf.float32)
-        size_class_label = tf.convert_to_tensor(size_classes, dtype=tf.int32)
+        size_class_label = tf.convert_to_tensor(size_classes, dtype=tf.int64)
         
         size_residual_label = tf.convert_to_tensor(size_residuals, dtype=tf.float32)
-        sem_cls_label = tf.convert_to_tensor(target_bboxes_semcls, dtype=tf.int32)
+        sem_cls_label = tf.convert_to_tensor(target_bboxes_semcls, dtype=tf.int64)
         box_label_mask = tf.convert_to_tensor(target_bboxes_mask, dtype=tf.float32)
         vote_label = tf.convert_to_tensor(point_votes[:,:,1:], dtype=tf.float32)
-        vote_label_mask = tf.convert_to_tensor(tf.cast(point_votes[:,:,0],dtype=tf.int32), dtype=tf.int32)
+        vote_label_mask = tf.convert_to_tensor(tf.cast(point_votes[:,:,0],dtype=tf.int64), dtype=tf.int64)
         
         max_gt_bboxes = tf.convert_to_tensor(max_bboxes, dtype=tf.float32)
         
@@ -393,8 +393,8 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         [point_cloud, center_label, heading_class_label, heading_residual_label, size_class_label, \
             size_residual_label, sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes] \
                 = tf.py_function(func=self._get_output, inp=[point_cloud, bboxes, point_votes, n_valid_box],
-                                 Tout= [tf.float32, tf.float32, tf.int32, tf.float32, tf.int32, 
-                                        tf.float32, tf.int32, tf.float32, tf.float32, tf.int32, 
+                                 Tout= [tf.float32, tf.float32, tf.int64, tf.float32, tf.int64, 
+                                        tf.float32, tf.int64, tf.float32, tf.float32, tf.int64, 
                                         tf.float32])
         return point_cloud, center_label, heading_class_label, heading_residual_label, size_class_label, \
             size_residual_label, sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes

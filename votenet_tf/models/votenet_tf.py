@@ -44,7 +44,7 @@ class VoteNet(tf.keras.Model):
     """
 
     def __init__(self, num_class, num_heading_bin, num_size_cluster, mean_size_arr,
-        input_feature_dim=0, num_proposal=128, vote_factor=1, sampling='vote_fps'):
+        input_feature_dim=0, num_proposal=128, vote_factor=1, sampling='vote_fps', use_tflite=False):
         super().__init__()
 
         self.num_class = num_class
@@ -58,7 +58,7 @@ class VoteNet(tf.keras.Model):
         self.sampling=sampling
 
         # Backbone point feature learning
-        self.backbone_net = Pointnet2Backbone(input_feature_dim=self.input_feature_dim)
+        self.backbone_net = Pointnet2Backbone(input_feature_dim=self.input_feature_dim, use_tflite=use_tflite)
 
         # Hough voting
         self.vgen = VotingModule(self.vote_factor, 256)

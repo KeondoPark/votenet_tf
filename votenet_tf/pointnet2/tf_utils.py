@@ -13,12 +13,11 @@ class SharedMLP(layers.Layer):
     def __init__(
             self,
             args: List[int],
-            #input_shape: List[int],
+            input_shape: List[int],
             *,
             bn: bool = False,
             activation='relu',
-            #preact: bool = False,
-            first: bool = False,
+            #preact: bool = False,            
             name: str = "",
             data_format: str = "channels_last"
     ):
@@ -29,43 +28,39 @@ class SharedMLP(layers.Layer):
         for i in range(len(args) - 1):
             if i == 0:
                 self.mlp_layers.append(                            
-                    Conv2d(                    
+                    _ConvBase(                    
                         args[i + 1],
                         bn=bn,
                         activation=activation,
                         #preact=preact,                    
                         name=name + 'layer{}'.format(i),
-                        input_shape=None,
-                        data_format="channels_last"
+                        input_shape=input_shape,
+                        data_format=data_format
                     )
                 )
             else:
                 self.mlp_layers.append(                            
-                    Conv2d(                    
+                    _ConvBase(                    
                         args[i + 1],
                         bn=bn,
                         activation=activation,
                         #preact=preact,                    
                         name=name + 'layer{}'.format(i),
                         input_shape=None,
-                        data_format="channels_last"               
+                        data_format=data_format               
                     )
                 )
   
 
     def call(self, inputs):
-
-        first = True
-        for mlp_layer in self.mlp_layers:
-            if first:
-                x = mlp_layer(inputs)
-                first = False
-            else:
-                x = mlp_layer(x)
+        
+        x = inputs
+        for mlp_layer in self.mlp_layers:            
+            x = mlp_layer(x)            
         
         return x
 
-        
+"""
 class _BNBase(layers.Layer):
 
     def __init__(self, data_format, batch_norm=None, name=""):
@@ -74,7 +69,7 @@ class _BNBase(layers.Layer):
                 
         self.bn_layer=batch_norm(axis=1 if data_format=="channels_first" else -1, 
                                 name=name + "bn",
-                                momentum=0.9, epsilon=1e-6)
+                                momentum=0.9, epsilon=0.001)
         # In Tensorflow, Beta and gamma is initialized as 1 and 0, respectively
         # No need to consider below
         #nn.init.constant_(self[0].weight, 1.0)
@@ -82,13 +77,6 @@ class _BNBase(layers.Layer):
     
     def call(self, inputs):
         return self.bn_layer(inputs)
-
-        
-# THere is only one batch normalization function in keras layer
-#class BatchNorm1d(_BNBase):
-
-#    def __init__(self, in_size: int, *, name: str = ""):
-#        super().__init__(in_size, batch_norm=nn.BatchNorm1d, name=name)
 
 
 class BatchNorm2d(_BNBase):
@@ -98,28 +86,19 @@ class BatchNorm2d(_BNBase):
 
     def call(self, inputs):
         return super().call(inputs)
-
-
-
-#class BatchNorm3d(_BNBase):
-
-#    def __init__(self, in_size: int, name: str = ""):
-#        super().__init__(in_size, batch_norm=nn.BatchNorm3d, name=name)
-
+"""        
 
 class _ConvBase(layers.Layer):
 
     def __init__(
             self,            
             out_size,
-            kernel_size,
-            stride,
-            padding,
-            activation,
-            bn,
-            init,
-            conv=None,
-            batch_norm=None,
+            kernel_size: Tuple[int, int] = (1, 1),
+            stride: Tuple[int, int] = (1, 1),
+            padding='valid',
+            activation='relu',
+            bn=False,
+            init=tf.keras.initializers.he_normal(seed=0),                       
             bias=True,            
             #preact=False,
             name="",
@@ -130,7 +109,7 @@ class _ConvBase(layers.Layer):
 
         bias = bias and (not bn)
         if input_shape is not None:
-            self.conv_unit = conv(
+            self.conv_unit = layers.Conv2D(
                 #in_size,
                 out_size,
                 kernel_size=kernel_size,
@@ -144,7 +123,7 @@ class _ConvBase(layers.Layer):
                 input_shape =input_shape
             )
         else:
-            self.conv_unit = conv(
+            self.conv_unit = layers.Conv2D(
                 #in_size,
                 out_size,
                 kernel_size=kernel_size,
@@ -159,7 +138,10 @@ class _ConvBase(layers.Layer):
 
         self.bn = bn
         if self.bn:            
-            self.bn_unit = batch_norm(data_format)
+            #self.bn_unit = batch_norm(data_format)
+            self.bn_unit = layers.BatchNormalization(axis=1 if data_format=="channels_first" else -1, 
+                                name=name + "bn",
+                                momentum=0.9, epsilon=0.001)
     
     def call(self, inputs):
         if self.bn:
@@ -167,41 +149,8 @@ class _ConvBase(layers.Layer):
         else:
             return self.conv_unit(inputs)
 
-"""
-class Conv1d(_ConvBase):
 
-    def __init__(
-            self,
-            in_size: int,
-            out_size: int,
-            *,
-            kernel_size: int = 1,
-            stride: int = 1,
-            padding: int = 0,
-            activation='relu',
-            bn: bool = False,
-            init=tf.keras.initializers.HeNormal(),
-            bias: bool = True,
-            preact: bool = False,
-            name: str = ""
-    ):
-        super().__init__(
-            in_size,
-            out_size,
-            kernel_size,
-            stride,
-            padding,
-            activation,
-            bn,
-            init,
-            conv=layers.Conv2D,
-            batch_norm=BatchNorm1d,
-            bias=bias,
-            preact=preact,
-            name=name
-        )
 """
-
 class Conv2d(_ConvBase):
 
     def __init__(
@@ -240,87 +189,6 @@ class Conv2d(_ConvBase):
 
     def call(self, inputs):
         return super().call(inputs)
-
-"""
-class Conv3d(_ConvBase):
-
-    def __init__(
-            self,
-            in_size: int,
-            out_size: int,
-            *,
-            kernel_size: Tuple[int, int, int] = (1, 1, 1),
-            stride: Tuple[int, int, int] = (1, 1, 1),
-            padding: Tuple[int, int, int] = (0, 0, 0),
-            activation=nn.ReLU(inplace=True),
-            bn: bool = False,
-            init=nn.init.kaiming_normal_,
-            bias: bool = True,
-            preact: bool = False,
-            name: str = ""
-    ):
-        super().__init__(
-            in_size,
-            out_size,
-            kernel_size,
-            stride,
-            padding,
-            activation,
-            bn,
-            init,
-            conv=nn.Conv3d,
-            batch_norm=BatchNorm3d,
-            bias=bias,
-            preact=preact,
-            name=name
-        )
-
-
-class FC(nn.Sequential):
-
-    def __init__(
-            self,
-            in_size: int,
-            out_size: int,
-            *,
-            activation=nn.ReLU(inplace=True),
-            bn: bool = False,
-            init=None,
-            preact: bool = False,
-            name: str = ""
-    ):
-        super().__init__()
-
-        fc = nn.Linear(in_size, out_size, bias=not bn)
-        if init is not None:
-            init(fc.weight)
-        if not bn:
-            nn.init.constant_(fc.bias, 0)
-
-        if preact:
-            if bn:
-                self.add_module(name + 'bn', BatchNorm1d(in_size))
-
-            if activation is not None:
-                self.add_module(name + 'activation', activation)
-
-        self.add_module(name + 'fc', fc)
-
-        if not preact:
-            if bn:
-                self.add_module(name + 'bn', BatchNorm1d(out_size))
-
-            if activation is not None:
-                self.add_module(name + 'activation', activation)
-
-
-def set_bn_momentum_default(bn_momentum):
-
-    def fn(m):
-        if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
-            m.momentum = bn_momentum
-
-    return fn
 """
 
 class BNMomentumScheduler(object):
@@ -342,12 +210,30 @@ class BNMomentumScheduler(object):
         self.last_epoch = last_epoch
 
     def step(self, epoch=None):
+        def reset_momentum(sharedMLP):
+            for l in sharedMLP.mlp_layers:
+                if isinstance(l.bn_unit, (tf.keras.layers.BatchNormalization)):      
+                    #print("Batch norm reschdule!", l.bn_unit.name)
+                    l.bn_unit.momentum = self.lmbd(epoch)  
+
         if epoch is None:
             epoch = self.last_epoch + 1
 
         self.last_epoch = epoch
-        for layer in self.model.layers:
-            if isinstance(layer, (tf.keras.layers.BatchNormalization)):                
-                layer.momentum = self.lmbd(epoch)       
+        for layer in self.model.layers:            
+            if hasattr(layer, 'sa1'):
+                reset_momentum(layer.sa1.mlp_module)
+                reset_momentum(layer.sa2.mlp_module)
+                reset_momentum(layer.sa3.mlp_module)
+                reset_momentum(layer.sa4.mlp_module)
+                reset_momentum(layer.fp1.mlp)
+                reset_momentum(layer.fp2.mlp)
+
+            if hasattr(layer, 'bn1'):
+                #print("Batch norm reschdule!")
+                layer.bn1.monemtum = self.lmbd(epoch) 
+                layer.bn2.momentum = self.lmbd(epoch)
+    
+             
 
 
