@@ -77,9 +77,9 @@ class Pointnet2Backbone(layers.Layer):
             )
 
         self.fp1 = PointnetFPModule(mlp=[256+256,256,256], m=512,
-                use_tflite=use_tflite, tflite_name='fp1_quant.tflite')
+                use_tflite=use_tflite, tflite_name='fp1_quant_edgetpu.tflite')
         self.fp2 = PointnetFPModule(mlp=[256+256,256,256], m=1024,
-                use_tflite=use_tflite, tflite_name='fp2_quant.tflite')
+                use_tflite=use_tflite, tflite_name='fp2_quant_edgetpu.tflite')
 
     def _break_up_pc(self, pc):
         xyz = pc[..., 0:3]
