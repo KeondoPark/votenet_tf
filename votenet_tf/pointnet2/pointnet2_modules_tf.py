@@ -409,7 +409,7 @@ class PointnetFPModule(layers.Layer):
         self.use_tflite = use_tflite
         if self.use_tflite:            
             #self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))                             
-            self.interperter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))
+            self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))
             self.interpreter.allocate_tensors()
 
             # Get input and output tensors.

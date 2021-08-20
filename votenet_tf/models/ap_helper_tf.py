@@ -20,7 +20,7 @@ from box_util import get_3d_box
 sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
 from sunrgbd_utils import extract_pc_in_box3d
 
-import torch
+#import torch
 
 def flip_axis_to_camera(pc):
     ''' Flip X-right,Y-forward,Z-up to X-right,Y-down,Z-forward

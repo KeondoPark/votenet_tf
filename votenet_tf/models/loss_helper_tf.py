@@ -11,8 +11,8 @@ ROOT_DIR = os.path.dirname(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 from nn_distance_tf import nn_distance, huber_loss, huber_loss_torch
 import tensorflow as tf
-import torch
-import torch.nn as nn
+#import torch
+#rimport torch.nn as nn
 
 FAR_THRESHOLD = 0.6
 NEAR_THRESHOLD = 0.3

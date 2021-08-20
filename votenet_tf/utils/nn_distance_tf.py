@@ -9,7 +9,7 @@ Modified by Keondo Park
 """
 
 import tensorflow as tf
-import torch
+#import torch
 import numpy as np
 
 
