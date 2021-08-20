@@ -17,6 +17,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='sunrgbd', help='Dataset: sunrgbd or scannet [default: sunrgbd]')
 parser.add_argument('--num_point', type=int, default=20000, help='Point Number [default: 20000]')
 parser.add_argument('--checkpoint_path', default=None, help='Model checkpoint path [default: None]')
+parser.add_argument('--gpu_mem_limit', type=int, default=0, help='GPU memory usage')
 FLAGS = parser.parse_args()
 
 import tensorflow as tf
@@ -42,7 +43,19 @@ def preprocess_point_cloud(point_cloud):
     return pc
 
 if __name__=='__main__':
-    
+   
+    # Limit GPU Memory usage, 256MB suffices in jetson nano
+    if FLAGS.gpu_mem_limit:
+        gpus = tf.config.experimental.list_physical_devices('GPU')
+        if gpus:
+            try:
+                tf.config.experimental.set_virtual_device_configuration(gpus[0], 
+                [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=FLAGS.gpu_mem_limit)])
+                logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+                print(len(gpus), "Physical GPUs", len(logical_gpus), "Logical GPUs")
+            except RuntimeError as e:
+                print(e)
+
     # Set file paths and dataset config
     demo_dir = os.path.join(BASE_DIR, 'demo_files') 
     if FLAGS.dataset == 'sunrgbd':
@@ -71,17 +84,43 @@ if __name__=='__main__':
         num_heading_bin=DC.num_heading_bin,
         num_size_cluster=DC.num_size_cluster,
         mean_size_arr=DC.mean_size_arr,
-        use_tflite=False)
+        use_tflite=True)
     print('Constructed model.')
     
     # Load checkpoint
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
-    ckpt = tf.train.Checkpoint(epoch=tf.Variable(1), optimizer=optimizer, net=net)
-    manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=3)
-    ckpt.restore(manager.latest_checkpoint)
-    epoch = ckpt.epoch.numpy()
+    inside_checkpoint=tf.train.list_variables(tf.train.latest_checkpoint(checkpoint_path))
+    for node in inside_checkpoint:
+        print(node)
 
-    print("Loaded checkpoint %s (epoch: %d)"%(checkpoint_path, epoch))
+    fp1 = tf.train.Checkpoint(fp1=net.backbone_net.fp1)
+    fp2 = tf.train.Checkpoint(fp2=net.backbone_net.fp2)  
+    restore_list = []  
+    #restore_list.append(tf.train.Checkpoint(backbone_net=fp1))
+    #restore_list.append(tf.train.Checkpoint(backbone_net=fp2))
+    restore_list.append(tf.train.Checkpoint(pnet=net.pnet))
+    restore_list.append(tf.train.Checkpoint(vgen=net.vgen))
+    
+    for layer in restore_list:
+        new_root = tf.train.Checkpoint(net=layer)
+        new_root.restore(tf.train.latest_checkpoint(checkpoint_path)).expect_partial()
+
+    #new_root = tf.train.Checkpoint(net=pnet)
+    #new_root.restore(tf.train.latest_checkpoint(checkpoint_path))
+
+    #new_root = tf.train.Checkpoint(net=backbone_net1)
+    #new_root.restore(tf.train.latest_checkpoint(checkpoint_path))
+
+    #new_root = tf.train.Checkpoint(net=backbone_net2)
+    #new_root.restore(tf.train.latest_checkpoint(checkpoint_path))
+    
+    
+    #ckpt = tf.train.Checkpoint(epoch=tf.Variable(1), optimizer=optimizer, net=net)
+    #manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=3)
+    #ckpt.restore(manager.latest_checkpoint)
+    #epoch = ckpt.epoch.numpy()
+
+    #print("Loaded checkpoint %s (epoch: %d)"%(checkpoint_path, epoch))
    
     # Load and preprocess input point cloud     
     point_cloud = read_ply(pc_path)
@@ -106,8 +145,9 @@ if __name__=='__main__':
         print('-'*20)
         print('class:', class2type[pred[0].numpy()])
         print('conf:', pred[2])
-        print('coords', pred[1])
+        #print('coords', pred[1])
 
+    """
     from prettytable import PrettyTable
 
     def count_parameters(model):
@@ -123,7 +163,7 @@ if __name__=='__main__':
         return total_params
         
     count_parameters(net)
-
+    """
     print('Finished detection. %d object detected.'%(len(pred_map_cls[0])))
   
     dump_dir = os.path.join(demo_dir, '%s_results'%(FLAGS.dataset))

@@ -58,7 +58,7 @@ def decode_scores(net, end_points, num_class, num_heading_bin, num_size_cluster,
 
 
 class ProposalModule(layers.Layer):
-    def __init__(self, num_class, num_heading_bin, num_size_cluster, mean_size_arr, num_proposal, sampling, seed_feat_dim=256):
+    def __init__(self, num_class, num_heading_bin, num_size_cluster, mean_size_arr, num_proposal, sampling, seed_feat_dim=256, use_tflite=False):
         super().__init__() 
 
         self.num_class = num_class
@@ -76,7 +76,9 @@ class ProposalModule(layers.Layer):
                 nsample=16,
                 mlp=[self.seed_feat_dim, 128, 128, 128],
                 use_xyz=True,
-                normalize_xyz=True
+                normalize_xyz=True,
+                use_tflite=use_tflite,
+                tflite_name='va_quant.tflite'
             )
     
         # Object proposal/detection
@@ -100,20 +102,21 @@ class ProposalModule(layers.Layer):
         """
         if self.sampling == 'vote_fps':
             # Farthest point sampling (FPS) on votes
-            xyz, features, fps_inds, _, _ = self.vote_aggregation(xyz, features, sample_type='fps')
+            xyz, features, fps_inds, _, grouped_features = self.vote_aggregation(xyz, features, sample_type='fps')
+            end_points['va_grouped_features'] = grouped_features
             sample_inds = fps_inds
         elif self.sampling == 'seed_fps': 
             # FPS on seed and choose the votes corresponding to the seeds
             # This gets us a slightly better coverage of *object* votes than vote_fps (which tends to get more cluster votes)
             sample_inds = tf_sampling.farthest_point_sample(self.num_proposal, end_points['seed_xyz'])
-            xyz, features, fps_inds, _ = self.vote_aggregation(xyz, features, sample_inds)
+            xyz, features, fps_inds, _, _ = self.vote_aggregation(xyz, features, sample_inds)
         elif self.sampling == 'random':
             # Random sampling from the votes
             num_seed = end_points['seed_xyz'].shape[1]
             batch_size = end_points['seed_xyz'].shape[0]
             seed_pts = np.random.randint(low=0, high=num_seed, size=(batch_size, self.num_proposal)).astype('float32')
             sample_inds = tf.constant(seed_pts)
-            xyz, features, fps_inds, _ = self.vote_aggregation(xyz, features, sample_inds)
+            xyz, features, fps_inds, _, _ = self.vote_aggregation(xyz, features, sample_inds)
         else:
             log_string('Unknown sampling strategy: %s. Exiting!'%(self.sampling))
             exit()
