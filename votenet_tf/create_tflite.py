@@ -20,6 +20,7 @@ from tensorflow.keras import layers
 from sunrgbd_detection_dataset_tf import SunrgbdDetectionVotesDataset_tfrecord, MAX_NUM_OBJ
 from model_util_sunrgbd import SunrgbdDatasetConfig
 from sunrgbd_detection_dataset_tf import DC # dataset config
+import voting_module_tf
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--checkpoint_path', default=None, help='Model checkpoint path [default: None]')
@@ -58,21 +59,36 @@ def preprocess_point_cloud(point_cloud):
     pc = np.expand_dims(point_cloud.astype(np.float32), 0) # (1,40000,4)
     return pc
 
-# TFlite conversion
-def tflite_convert(keyword, model, base_model, out_dir):
-    # A generator that provides a representative dataset
-    def representative_data_gen():
+def wrapper_representative_data_gen_mlp(keyword, base_model):
+    def representative_data_gen_mlp():
         for i in range(100):
             batch_data = next(iter(test_ds))
             inputs = batch_data[0]
             end_points = base_model(inputs, training=False)
             yield [end_points[keyword + '_grouped_features']]
+    return representative_data_gen_mlp
+
+def wrapper_representative_data_gen_voting(base_model):
+    def representative_data_gen_voting():
+        for i in range(100):
+            batch_data = next(iter(test_ds))
+            inputs = batch_data[0]
+            end_points = base_model(inputs, training=False)
+            yield [end_points['seed_features']]
+    return representative_data_gen_voting
+
+# TFlite conversion
+def tflite_convert(keyword, model, base_model, out_dir, mlp=True):
+    # A generator that provides a representative dataset
 
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
     # This enables quantization
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
     # This sets the representative dataset for quantization
-    converter.representative_dataset = representative_data_gen
+    if mlp:
+        converter.representative_dataset = wrapper_representative_data_gen_mlp(keyword, base_model)
+    else:        
+        converter.representative_dataset = wrapper_representative_data_gen_voting(base_model)
     # This ensures that if any ops can't be quantized, the converter throws an error
     converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
     # For full integer quantization, though supported types defaults to int8 only, we explicitly declare it for clarity.
@@ -148,12 +164,37 @@ if __name__=='__main__':
 
             return new_features
 
+    class nnInVotingModule(tf.keras.Model):
+        def __init__(self, vote_factor, seed_feature_dim):            
+            super().__init__()
+            
+            self.vote_factor = vote_factor
+            self.in_dim = seed_feature_dim
+            self.out_dim = self.in_dim # due to residual feature, in_dim has to be == out_dim
+            self.conv1 = layers.Conv1D(filters=self.in_dim, kernel_size=1)        
+            self.conv2 = layers.Conv1D(filters=self.in_dim, kernel_size=1)
+            self.conv3 = layers.Conv1D(filters=(3+self.out_dim) * self.vote_factor, kernel_size=1) 
+            self.bn1 = layers.BatchNormalization(axis=-1)
+            self.bn2 = layers.BatchNormalization(axis=-1)
+            self.relu1 = layers.Activation('relu')
+            self.relu2 = layers.Activation('relu')
+        
+        def call(self, seed_features):
+            net = self.relu1(self.bn1(self.conv1(seed_features))) 
+            net = self.relu2(self.bn2(self.conv2(net))) 
+            net = self.conv3(net) # (batch_size, num_seed, (3+out_dim)*vote_factor)   
+            return net             
+
+
+
     sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[2048,64,4])
     sa2_mlp = SharedMLPModel(mlp_spec=[128, 128, 128, 256], nsample=32, input_shape=[1024,32,128+3])
     sa3_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16, input_shape=[512,16,256+3])
     sa4_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16, input_shape=[256,16,256+3])
     fp1_mlp = SharedMLPModel(mlp_spec=[256+256,256,256], input_shape=[512,1,512])
     fp2_mlp = SharedMLPModel(mlp_spec=[256+256,256,256], input_shape=[1024,1,512])
+
+    voting = nnInVotingModule(vote_factor=1, seed_feature_dim=256)
 
     va_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 128], nsample=16, input_shape=[256,16,256+3])
 
@@ -163,6 +204,9 @@ if __name__=='__main__':
     dummy_in_sa4 = tf.convert_to_tensor(np.random.random([1,256,16,256+3])) # (B, npoint, nsample, C+3)
     dummy_in_fp1 = tf.convert_to_tensor(np.random.random([1,512,1,512])) # (B, npoint, 1, C)
     dummy_in_fp2 = tf.convert_to_tensor(np.random.random([1,1024,1,512])) # (B, npoint, 1, C)
+
+    dummy_in_voting_features = tf.convert_to_tensor(np.random.random([1,1024,256])) # (B, num_seed, 3)
+
     dummy_in_va = tf.convert_to_tensor(np.random.random([1,256,16,256+3])) # (B, npoint, nsample, C+3)
 
     dummy_out = sa1_mlp(dummy_in_sa1)
@@ -171,7 +215,9 @@ if __name__=='__main__':
     dummy_out = sa4_mlp(dummy_in_sa4)
     dummy_out = fp1_mlp(dummy_in_fp1)
     dummy_out = fp2_mlp(dummy_in_fp2)
+    dummy_out = voting(dummy_in_voting_features)
     dummy_out = va_mlp(dummy_in_va)
+    
     
     
     # Copy weights from the base model
@@ -201,6 +247,13 @@ if __name__=='__main__':
     layer = fp2_mlp.sharedMLP
     layer.set_weights(net.backbone_net.fp2.mlp.get_weights())
 
+    layer = voting
+    layer.conv1.set_weights(net.vgen.conv1.get_weights())
+    layer.conv2.set_weights(net.vgen.conv2.get_weights())
+    layer.conv3.set_weights(net.vgen.conv3.get_weights())
+    layer.bn1.set_weights(net.vgen.bn1.get_weights())
+    layer.bn2.set_weights(net.vgen.bn2.get_weights())
+
     layer = va_mlp.sharedMLP
     layer.set_weights(net.pnet.vote_aggregation.mlp_module.get_weights())
 
@@ -212,6 +265,7 @@ if __name__=='__main__':
     #tflite_convert('sa2', sa2_mlp, net, FLAGS.out_dir)
     #tflite_convert('sa3', sa3_mlp, net, FLAGS.out_dir)
     #tflite_convert('sa4', sa4_mlp, net, FLAGS.out_dir)
-    tflite_convert('fp1', fp1_mlp, net, FLAGS.out_dir)
-    tflite_convert('fp2', fp2_mlp, net, FLAGS.out_dir)
-    tflite_convert('va', va_mlp, net, FLAGS.out_dir)
+    #tflite_convert('fp1', fp1_mlp, net, FLAGS.out_dir)
+    #tflite_convert('fp2', fp2_mlp, net, FLAGS.out_dir)
+    tflite_convert('voting', voting, net, FLAGS.out_dir, mlp=False)
+    #tflite_convert('va', va_mlp, net, FLAGS.out_dir)

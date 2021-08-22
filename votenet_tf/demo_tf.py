@@ -18,6 +18,7 @@ parser.add_argument('--dataset', default='sunrgbd', help='Dataset: sunrgbd or sc
 parser.add_argument('--num_point', type=int, default=20000, help='Point Number [default: 20000]')
 parser.add_argument('--checkpoint_path', default=None, help='Model checkpoint path [default: None]')
 parser.add_argument('--gpu_mem_limit', type=int, default=0, help='GPU memory usage')
+parser.add_argument('--use_tflite', action='store_true', help='Use tflite')
 FLAGS = parser.parse_args()
 
 import tensorflow as tf
@@ -84,7 +85,7 @@ if __name__=='__main__':
         num_heading_bin=DC.num_heading_bin,
         num_size_cluster=DC.num_size_cluster,
         mean_size_arr=DC.mean_size_arr,
-        use_tflite=True)
+        use_tflite=FLAGS.use_tflite)
     print('Constructed model.')
     
     # Load checkpoint
@@ -93,34 +94,34 @@ if __name__=='__main__':
     for node in inside_checkpoint:
         print(node)
 
-    fp1 = tf.train.Checkpoint(fp1=net.backbone_net.fp1)
-    fp2 = tf.train.Checkpoint(fp2=net.backbone_net.fp2)  
-    restore_list = []  
-    #restore_list.append(tf.train.Checkpoint(backbone_net=fp1))
-    #restore_list.append(tf.train.Checkpoint(backbone_net=fp2))
-    restore_list.append(tf.train.Checkpoint(pnet=net.pnet))
-    restore_list.append(tf.train.Checkpoint(vgen=net.vgen))
-    
-    for layer in restore_list:
-        new_root = tf.train.Checkpoint(net=layer)
-        new_root.restore(tf.train.latest_checkpoint(checkpoint_path)).expect_partial()
+    if FLAGS.use_tflite:
+        fp1 = tf.train.Checkpoint(fp1=net.backbone_net.fp1)
+        fp2 = tf.train.Checkpoint(fp2=net.backbone_net.fp2)  
+        restore_list = []  
+        #restore_list.append(tf.train.Checkpoint(backbone_net=fp1))
+        #restore_list.append(tf.train.Checkpoint(backbone_net=fp2))
+        restore_list.append(tf.train.Checkpoint(pnet=net.pnet))
+        restore_list.append(tf.train.Checkpoint(vgen=net.vgen))
+        
+        for layer in restore_list:
+            new_root = tf.train.Checkpoint(net=layer)
+            new_root.restore(tf.train.latest_checkpoint(checkpoint_path)).expect_partial()
 
-    #new_root = tf.train.Checkpoint(net=pnet)
-    #new_root.restore(tf.train.latest_checkpoint(checkpoint_path))
+        #new_root = tf.train.Checkpoint(net=pnet)
+        #new_root.restore(tf.train.latest_checkpoint(checkpoint_path))
 
-    #new_root = tf.train.Checkpoint(net=backbone_net1)
-    #new_root.restore(tf.train.latest_checkpoint(checkpoint_path))
+        #new_root = tf.train.Checkpoint(net=backbone_net1)
+        #new_root.restore(tf.train.latest_checkpoint(checkpoint_path))
 
-    #new_root = tf.train.Checkpoint(net=backbone_net2)
-    #new_root.restore(tf.train.latest_checkpoint(checkpoint_path))
-    
-    
-    #ckpt = tf.train.Checkpoint(epoch=tf.Variable(1), optimizer=optimizer, net=net)
-    #manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=3)
-    #ckpt.restore(manager.latest_checkpoint)
-    #epoch = ckpt.epoch.numpy()
+        #new_root = tf.train.Checkpoint(net=backbone_net2)
+        #new_root.restore(tf.train.latest_checkpoint(checkpoint_path))
+    else:    
+        ckpt = tf.train.Checkpoint(epoch=tf.Variable(1), optimizer=optimizer, net=net)
+        manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=3)
+        ckpt.restore(manager.latest_checkpoint)
+        epoch = ckpt.epoch.numpy()
 
-    #print("Loaded checkpoint %s (epoch: %d)"%(checkpoint_path, epoch))
+        print("Loaded checkpoint %s (epoch: %d)"%(checkpoint_path, epoch))  
    
     # Load and preprocess input point cloud     
     point_cloud = read_ply(pc_path)
@@ -170,3 +171,4 @@ if __name__=='__main__':
     if not os.path.exists(dump_dir): os.mkdir(dump_dir) 
     dump_results(end_points, dump_dir, DC, True)
     print('Dumped detection results to folder %s'%(dump_dir))
+
