@@ -97,14 +97,14 @@ class VoteNet(tf.keras.Model):
         
         start = time.time() 
         xyz, features = self.vgen(xyz, features)
-        print("Runtime for Voting module:", time.time() - start)
+        #print("Runtime for Voting module:", time.time() - start)
         features_norm = tf.norm(features, ord=2, axis=1)
         features = tf.divide(features, tf.expand_dims(features_norm, axis=1))
         end_points['vote_xyz'] = xyz
         end_points['vote_features'] = features
         start = time.time() 
         end_points = self.pnet(xyz, features, end_points)
-        print("Runtime for Proposal module:", time.time() - start)
+        #print("Runtime for Proposal module:", time.time() - start)
 
         return end_points
 
