@@ -78,7 +78,7 @@ class ProposalModule(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True,
                 use_tflite=use_tflite,
-                tflite_name='va_quant.tflite'
+                tflite_name='va_quant_edgetpu.tflite'
             )
     
         # Object proposal/detection
