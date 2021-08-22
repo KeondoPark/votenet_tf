@@ -40,7 +40,7 @@ class Pointnet2Backbone(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True,
                 use_tflite=use_tflite,
-                tflite_name='sa1_qaunt.tflite'
+                tflite_name='sa1_quant_edgetpu.tflite'
             )
 
         self.sa2 = PointnetSAModuleVotes(
@@ -49,7 +49,9 @@ class Pointnet2Backbone(layers.Layer):
                 nsample=32,
                 mlp=[128, 128, 128, 256],
                 use_xyz=True,
-                normalize_xyz=True
+                normalize_xyz=True,
+                use_tflite=use_tflite,
+                tflite_name='sa2_quant_edgetpu.tflite'
             )
 
         self.sa3 = PointnetSAModuleVotes(
@@ -58,7 +60,9 @@ class Pointnet2Backbone(layers.Layer):
                 nsample=16,
                 mlp=[256, 128, 128, 256],
                 use_xyz=True,
-                normalize_xyz=True
+                normalize_xyz=True,
+                use_tflite=use_tflite,
+                tflite_name='sa3_quant_edgetpu.tflite'
             )
 
         self.sa4 = PointnetSAModuleVotes(
@@ -67,11 +71,15 @@ class Pointnet2Backbone(layers.Layer):
                 nsample=16,
                 mlp=[256, 128, 128, 256],
                 use_xyz=True,
-                normalize_xyz=True
+                normalize_xyz=True,
+                use_tflite=use_tflite,
+                tflite_name='sa4_quant_edgetpu.tflite'
             )
 
-        self.fp1 = PointnetFPModule(mlp=[256+256,256,256], m=512)
-        self.fp2 = PointnetFPModule(mlp=[256+256,256,256], m=1024)
+        self.fp1 = PointnetFPModule(mlp=[256+256,256,256], m=512,
+                use_tflite=use_tflite, tflite_name='fp1_quant_edgetpu.tflite')
+        self.fp2 = PointnetFPModule(mlp=[256+256,256,256], m=1024,
+                use_tflite=use_tflite, tflite_name='fp2_quant_edgetpu.tflite')
 
     def _break_up_pc(self, pc):
         xyz = pc[..., 0:3]
@@ -122,7 +130,7 @@ class Pointnet2Backbone(layers.Layer):
         end_points['sa2_ball_query_idx'] = ball_query_idx
         end_points['sa2_grouped_features'] = grouped_features
 
-        #print("========================== SA3 ===============================")
+        print("========================== SA3 ===============================")
         #xyz, features, fps_inds = self.sa3(xyz, features) # this fps_inds is just 0,1,...,511
         xyz, features, fps_inds, ball_query_idx, grouped_features = self.sa3(xyz, features, sample_type='fps') # this fps_inds is just 0,1,...,511
         end_points['sa3_inds'] = fps_inds
@@ -131,7 +139,7 @@ class Pointnet2Backbone(layers.Layer):
         end_points['sa3_ball_query_idx'] = ball_query_idx
         end_points['sa3_grouped_features'] = grouped_features
 
-        #print("========================== SA4 ===============================")
+        print("========================== SA4 ===============================")
         #xyz, features, fps_inds = self.sa4(xyz, features) # this fps_inds is just 0,1,...,255
         xyz, features, fps_inds, ball_query_idx, grouped_features = self.sa4(xyz, features, sample_type='fps') # this fps_inds is just 0,1,...,255
         end_points['sa4_inds'] = fps_inds
@@ -143,11 +151,13 @@ class Pointnet2Backbone(layers.Layer):
         # --------- 2 FEATURE UPSAMPLING LAYERS --------
         #features = self.fp1(end_points['sa3_xyz'], end_points['sa4_xyz'], end_points['sa3_features'], end_points['sa4_features'])
         #features = self.fp2(end_points['sa2_xyz'], end_points['sa3_xyz'], end_points['sa2_features'], features)
-        #print("========================== FP1 ===============================")
-        features = self.fp1(end_points['sa3_xyz'], end_points['sa4_xyz'], end_points['sa3_features'], end_points['sa4_features'], end_points['sa4_ball_query_idx'], end_points['sa4_inds'])
-        #print("========================== FP2 ===============================")
-        features = self.fp2(end_points['sa2_xyz'], end_points['sa3_xyz'], end_points['sa2_features'], features, end_points['sa3_ball_query_idx'], end_points['sa3_inds'])
+        print("========================== FP1 ===============================")
+        features, prop_features = self.fp1(end_points['sa3_xyz'], end_points['sa4_xyz'], end_points['sa3_features'], end_points['sa4_features'], end_points['sa4_ball_query_idx'], end_points['sa4_inds'])
+        end_points['fp1_grouped_features'] = prop_features
+        print("========================== FP2 ===============================")
+        features, prop_features = self.fp2(end_points['sa2_xyz'], end_points['sa3_xyz'], end_points['sa2_features'], features, end_points['sa3_ball_query_idx'], end_points['sa3_inds'])
         end_points['fp2_features'] = features
+        end_points['fp2_grouped_features'] = prop_features
         end_points['fp2_xyz'] = end_points['sa2_xyz']
         num_seed = end_points['fp2_xyz'].shape[1]
         end_points['fp2_inds'] = end_points['sa1_inds'][:,0:num_seed] # indices among the entire input point clouds

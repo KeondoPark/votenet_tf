@@ -21,6 +21,7 @@ import os
 import sys
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
+ROOT_DIR = os.path.dirname(BASE_DIR)
 
 import pointnet2_utils_tf
 import tf_utils
@@ -214,7 +215,8 @@ class PointnetSAModuleVotes(layers.Layer):
         
         self.use_tflite = use_tflite
         if self.use_tflite:
-            self.interpreter = tf.lite.Interpreter(model_path=os.path.join("tflite_models",tflite_name))
+            #self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))                             
+            self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))
             self.interpreter.allocate_tensors()
 
             # Get input and output tensors.
@@ -248,7 +250,7 @@ class PointnetSAModuleVotes(layers.Layer):
                 inds = tf_sampling.farthest_point_sample(self.npoint, xyz)                
                 #inds, batch_distances = pointnet2_utils.fps_light(xyz, self.npoint)
                 end = time.time()
-                #print("Runtime for FPS original", end - start)
+                print("Runtime for FPS original", end - start)
         else:
             assert(inds.shape[1] == self.npoint)   
 
@@ -257,7 +259,7 @@ class PointnetSAModuleVotes(layers.Layer):
             xyz, inds
         ) if self.npoint is not None else None
         end = time.time()
-        #print("Runtime for gather_op original", end - start)
+        print("Runtime for gather_op original", end - start)
 
         if not self.ret_unique_cnt:
         #if not self.ret_unique_cnt:
@@ -277,8 +279,6 @@ class PointnetSAModuleVotes(layers.Layer):
             self.interpreter.set_tensor(self.input_details[0]['index'], grouped_features)
             self.interpreter.invoke()
             new_features = self.interpreter.get_tensor(self.output_details[0]['index'])
-            #print(self.output_details[0]['index'])
-            #print(new_features)
         else:              
             new_features = self.mlp_module(
                     grouped_features
@@ -392,6 +392,8 @@ class PointnetSAModuleMSGVotes(nn.Module):
         return new_xyz, torch.cat(new_features_list, dim=1), inds
 '''
 
+from pycoral.utils.edgetpu import make_interpreter
+
 class PointnetFPModule(layers.Layer):
     r"""Propigates the features of one set to another
 
@@ -403,9 +405,20 @@ class PointnetFPModule(layers.Layer):
         Use batchnorm
     """
 
-    def __init__(self, *, mlp: List[int], bn: bool = True, m: int):
+    def __init__(self, *, mlp: List[int], bn: bool = True, m: int, use_tflite : bool = False, tflite_name: str = None):
         super().__init__()
-        self.mlp = tf_utils.SharedMLP(mlp, bn=bn, input_shape=[m,1,mlp[0]])
+        self.use_tflite = use_tflite
+        if self.use_tflite:            
+            #self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))                             
+            self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))
+            self.interpreter.allocate_tensors()
+
+            # Get input and output tensors.
+            self.input_details = self.interpreter.get_input_details()
+            self.output_details = self.interpreter.get_output_details()
+        else:
+            self.mlp = tf_utils.SharedMLP(mlp, bn=bn, input_shape=[m,1,mlp[0]])
+        
 
     def call(
             self, unknown, known,
@@ -433,31 +446,36 @@ class PointnetFPModule(layers.Layer):
             norm = tf.reduce_sum(dist_recip, axis=2, keepdims=True)
             weight = dist_recip / norm  # (B, n, 3)
             end = time.time()
-            #print("Runtime for Threenn original", end - start)
+            print("Runtime for Threenn original", end - start)
             
             start = time.time() 
             interpolated_feats = tf_interpolate.three_interpolate(
                 known_feats, idx, weight
             )
             end = time.time()
-            #print("Runtime for Inverse three_interpolate original: ", end - start)
+            print("Runtime for Inverse three_interpolate original: ", end - start)
 
         else:
             interpolated_feats = tf.tile(known_feats, [1, tf.shape(unknow_feats)[1] / tf.shape(known_feats)[1], 1])
 
         if unknow_feats is not None:
-            new_features = layers.concatenate([interpolated_feats, unknow_feats],
+            prop_features = layers.concatenate([interpolated_feats, unknow_feats],
                                    axis=2)  #(B, n, C2 + C1)
         else:
-            new_features = interpolated_feats
+            prop_features = interpolated_feats
         start = time.time()
         #new_features = tf.expand_dims(new_features, axis=-2)
-        new_features = layers.Reshape((new_features.shape[1], 1, new_features.shape[2]))(new_features)
-        new_features = self.mlp(new_features)
-        #print("Runtime for Shared mlp", time.time() - start)
+        prop_features = layers.Reshape((prop_features.shape[1], 1, prop_features.shape[2]))(prop_features)
+        if self.use_tflite:
+            self.interpreter.set_tensor(self.input_details[0]['index'], prop_features)
+            self.interpreter.invoke()
+            res_features = self.interpreter.get_tensor(self.output_details[0]['index'])
+        else:
+            res_features = self.mlp(prop_features)
+        print("Runtime for Shared mlp", time.time() - start)
 
         #return tf.squeeze(new_features, axis=-2)   
-        return layers.Reshape((new_features.shape[1], new_features.shape[-1]))(new_features)  
+        return layers.Reshape((res_features.shape[1], res_features.shape[-1]))(res_features), prop_features
 '''
 class PointnetLFPModuleMSG(nn.Module):
     """ Modified based on _PointnetSAModuleBase and PointnetSAModuleMSG
