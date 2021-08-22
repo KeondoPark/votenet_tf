@@ -1,0 +1,2 @@
+Namespace(DUMP_DIR='eval', ap_iou_thresholds='0.25,0.5', batch_size=8, checkpoint_path='tf_ckpt/210817/', cluster_sampling='vote_fps', conf_thresh=0.05, dataset='sunrgbd', dump_dir='eval', faster_eval=True, nms_iou=0.25, no_height=False, num_point=20000, num_target=256, per_class_proposal=True, shuffle_dataset=False, use_3d_nms=True, use_cls_nms=True, use_color=False, use_old_type_nms=False, use_painted=False, use_sunrgbd_v2=False, vote_factor=1)
+2021-08-22 23:29:09.200466
