@@ -131,7 +131,7 @@ def compute_objectness_loss(end_points):
     objectness_label = tf.where(euclidean_dist1<NEAR_THRESHOLD, 1, 0)
     objectness_mask1 = tf.where(euclidean_dist1<NEAR_THRESHOLD, 1.0, 0.0)
     objectness_mask2 = tf.where(euclidean_dist1>FAR_THRESHOLD, 1.0, 0.0)
-    objectness_mask = np.maximum(objectness_mask1, objectness_mask2)
+    objectness_mask = tf.math.maximum(objectness_mask1, objectness_mask2)
 
     # Compute objectness loss
     objectness_scores = end_points['objectness_scores'] #(B, num_proposal, 2)

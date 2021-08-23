@@ -40,7 +40,7 @@ class Pointnet2Backbone(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True,
                 use_tflite=use_tflite,
-                tflite_name='sa1_quant_edgetpu.tflite'
+                tflite_name='sa1_quant_b8.tflite'
             )
 
         self.sa2 = PointnetSAModuleVotes(
@@ -51,7 +51,7 @@ class Pointnet2Backbone(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True,
                 use_tflite=use_tflite,
-                tflite_name='sa2_quant_edgetpu.tflite'
+                tflite_name='sa2_quant_b8.tflite'
             )
 
         self.sa3 = PointnetSAModuleVotes(
@@ -62,7 +62,7 @@ class Pointnet2Backbone(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True,
                 use_tflite=use_tflite,
-                tflite_name='sa3_quant_edgetpu.tflite'
+                tflite_name='sa3_quant_b8.tflite'
             )
 
         self.sa4 = PointnetSAModuleVotes(
@@ -73,13 +73,13 @@ class Pointnet2Backbone(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True,
                 use_tflite=use_tflite,
-                tflite_name='sa4_quant_edgetpu.tflite'
+                tflite_name='sa4_quant_b8.tflite'
             )
 
         self.fp1 = PointnetFPModule(mlp=[256+256,256,256], m=512,
-                use_tflite=use_tflite, tflite_name='fp1_quant_edgetpu.tflite')
+                use_tflite=use_tflite, tflite_name='fp1_quant_b8.tflite')
         self.fp2 = PointnetFPModule(mlp=[256+256,256,256], m=1024,
-                use_tflite=use_tflite, tflite_name='fp2_quant_edgetpu.tflite')
+                use_tflite=use_tflite, tflite_name='fp2_quant_b8.tflite')
 
     def _break_up_pc(self, pc):
         xyz = pc[..., 0:3]

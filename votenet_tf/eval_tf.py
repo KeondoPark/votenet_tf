@@ -53,6 +53,7 @@ parser.add_argument('--conf_thresh', type=float, default=0.05, help='Filter out 
 parser.add_argument('--faster_eval', action='store_true', help='Faster evaluation by skippling empty bounding box removal.')
 parser.add_argument('--shuffle_dataset', action='store_true', help='Shuffle the dataset (random order).')
 parser.add_argument('--use_painted', action='store_true', help='Use Point painting')
+parser.add_argument('--use_tflite', action='store_true', help='Use tflite')
 FLAGS = parser.parse_args()
 
 if FLAGS.use_cls_nms:
@@ -108,7 +109,8 @@ net = votenet_tf.VoteNet(num_class=DATASET_CONFIG.num_class,
                num_proposal=FLAGS.num_target,
                input_feature_dim=num_input_channel,
                vote_factor=FLAGS.vote_factor,
-               sampling=FLAGS.cluster_sampling)
+               sampling=FLAGS.cluster_sampling,
+               use_tflite=FLAGS.use_tflite)
 
 import loss_helper_tf
 criterion = loss_helper_tf.get_loss
@@ -152,7 +154,7 @@ def evaluate_one_epoch():
     
     for batch_idx, batch_data in enumerate(test_ds):        
         if batch_idx % 10 == 0:
-            print('Eval batch: %d'%(batch_idx))
+            log_string('Eval batch: %d'%(batch_idx))
         
         # Forward pass
         inputs = batch_data[0] 

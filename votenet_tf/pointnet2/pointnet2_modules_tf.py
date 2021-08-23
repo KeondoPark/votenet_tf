@@ -215,8 +215,9 @@ class PointnetSAModuleVotes(layers.Layer):
         
         self.use_tflite = use_tflite
         if self.use_tflite:
-            #self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))                             
-            self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))
+            #from pycoral.utils.edgetpu import make_interpreter
+            self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))                             
+            #self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))
             self.interpreter.allocate_tensors()
 
             # Get input and output tensors.
@@ -392,7 +393,7 @@ class PointnetSAModuleMSGVotes(nn.Module):
         return new_xyz, torch.cat(new_features_list, dim=1), inds
 '''
 
-from pycoral.utils.edgetpu import make_interpreter
+
 
 class PointnetFPModule(layers.Layer):
     r"""Propigates the features of one set to another
@@ -408,9 +409,10 @@ class PointnetFPModule(layers.Layer):
     def __init__(self, *, mlp: List[int], bn: bool = True, m: int, use_tflite : bool = False, tflite_name: str = None):
         super().__init__()
         self.use_tflite = use_tflite
-        if self.use_tflite:            
-            #self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))                             
-            self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))
+        if self.use_tflite:
+            #from pycoral.utils.edgetpu import make_interpreter            
+            self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))                             
+            #self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))
             self.interpreter.allocate_tensors()
 
             # Get input and output tensors.
