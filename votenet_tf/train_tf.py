@@ -438,7 +438,8 @@ def train(start_epoch):
         save_path = manager.save()
         log_string("Saved checkpoint for step {}: {}".format(int(ckpt.epoch), save_path))
 
-        if EPOCH_CNT == 0 or EPOCH_CNT % 10 == 9: # Eval every 10 epochs
+        #if EPOCH_CNT == 0 or EPOCH_CNT % 10 == 9: # Eval every 10 epochs
+        if EPOCH_CNT % 20 == 19: # Eval every 20 epochs
             loss = evaluate_one_epoch()            
             print("loss {:1.2f}".format(loss.numpy()))
         

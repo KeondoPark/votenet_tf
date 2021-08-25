@@ -226,6 +226,8 @@ class PointnetSAModuleVotes(layers.Layer):
         else:
             self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=bn, input_shape=[npoint, nsample, 3+mlp_spec[0]])        
             self.max_pool = layers.MaxPooling2D(pool_size=(1, self.nsample), strides=1, data_format="channels_last")
+            #self.max_pool = layers.MaxPooling2D(pool_size=(1, 16), strides=(1,16), data_format="channels_last")
+            #self.max_pool2 = layers.MaxPooling2D(pool_size=(1, int(self.nsample/16)), strides=(1,int(self.nsample/16)), data_format="channels_last")
             self.avg_pool = layers.AveragePooling2D(pool_size=(1, self.nsample), strides=1, data_format="channels_last")        
 
     def call(self, xyz, features, inds=None, sample_type = 'fps_light'):
@@ -290,6 +292,10 @@ class PointnetSAModuleVotes(layers.Layer):
             if self.pooling == 'max':
                 #new_features = layers.MaxPooling2D(pool_size=(1, tf.shape(new_features)[2]), strides=1, data_format="channels_last")(new_features)  # (B, npoint, 1, mlp[-1])
                 new_features = self.max_pool(new_features)  # (B, npoint, 1, mlp[-1])
+                #if self.nsample == 16:
+                #    new_features = self.max_pool(new_features)  # (B, npoint, 1, mlp[-1])
+                #elif self.nsample > 16:
+                #    new_features = self.max_pool2(self.max_pool(new_features))  # (B, npoint, 1, mlp[-1])
             elif self.pooling == 'avg':
                 #new_features = layers.AvgPooling2D(pool_size=(1, tf.shape(new_features)[2]), strides=1, data_format="channels_last")(new_features) # (B, npoint, 1, mlp[-1])
                 new_features = self.avg_pool(new_features)  # (B, npoint, 1, mlp[-1])
@@ -310,6 +316,91 @@ class PointnetSAModuleVotes(layers.Layer):
             return new_xyz, new_features, inds, ball_query_idx, grouped_features
         else:
             return new_xyz, new_features, inds, unique_cnt
+
+
+class PointnetSAModuleVotes_NoMLP(layers.Layer):
+    ''' Modified based on _PointnetSAModuleBase and PointnetSAModuleMSG
+    with extra support for returning point indices for getting their GT votes '''
+
+    def __init__(
+            self,
+            *,            
+            npoint: int = None,
+            radius: float = None,
+            nsample: int = None,            
+            use_xyz: bool = True,                        
+            normalize_xyz: bool = False, # noramlize local XYZ with radius
+            sample_uniformly: bool = False,
+            ret_unique_cnt: bool = False
+    ):
+        super().__init__()
+
+        self.npoint = npoint
+        self.radius = radius
+        self.nsample = nsample        
+        self.mlp_module = None
+        self.use_xyz = use_xyz                
+        self.normalize_xyz = normalize_xyz
+        self.ret_unique_cnt = ret_unique_cnt
+
+        if npoint is not None:
+            self.grouper = pointnet2_utils_tf.QueryAndGroup(radius, nsample,
+                use_xyz=use_xyz, ret_grouped_xyz=True, normalize_xyz=normalize_xyz,
+                sample_uniformly=sample_uniformly, ret_unique_cnt=ret_unique_cnt)
+        else:
+            self.grouper = pointnet2_utils_tf.GroupAll(use_xyz, ret_grouped_xyz=True)
+        
+    def call(self, xyz, features, inds=None, sample_type = 'fps_light'):
+        r"""
+        Parameters
+        ----------
+        xyz : (B, N, 3) tensor of the xyz coordinates of the features
+        features : (B, N, C) tensor of the descriptors of the the features
+        inds : (Optinal)(B, npoint) tensor that stores index to the xyz points (values in 0-N-1)
+
+        Returns
+        -------
+        new_xyz : (B, npoint, 3) tensor of the new features' xyz
+        new_features : (B, \sum_k(mlps[k][-1]), npoint) tensor of the new_features descriptors
+        inds: (B, npoint) tensor of the inds
+        ball_quer_idx: (B, npoint, nsample) Index of ball queried points
+        """
+        
+        if inds is None:
+            
+            if sample_type == 'fps':
+                start = time.time()
+                inds = tf_sampling.farthest_point_sample(self.npoint, xyz)                
+                #inds, batch_distances = pointnet2_utils.fps_light(xyz, self.npoint)
+                end = time.time()
+                #print("Runtime for FPS original", end - start)
+        else:
+            assert(inds.shape[1] == self.npoint)   
+
+        start = time.time()     
+        new_xyz = tf_sampling.gather_point(
+            xyz, inds
+        ) if self.npoint is not None else None
+        end = time.time()
+        #print("Runtime for gather_op original", end - start)
+
+        if not self.ret_unique_cnt:        
+            
+            grouped_features, ball_query_idx, grouped_xyz = self.grouper(
+                xyz, new_xyz, features            
+            )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)
+        else:
+            grouped_features, ball_query_idx, grouped_xyz, unique_cnt = self.grouper(
+            
+                xyz, new_xyz, features
+            )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)
+        
+
+        if not self.ret_unique_cnt:
+            #return new_xyz, new_features, inds
+            return new_xyz, inds, ball_query_idx, grouped_features
+        else:
+            return new_xyz, inds, unique_cnt
 '''
 class PointnetSAModuleMSGVotes(nn.Module):
     """ Modified based on _PointnetSAModuleBase and PointnetSAModuleMSG

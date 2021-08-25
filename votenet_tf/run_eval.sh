@@ -9,4 +9,4 @@
 source /home/${USER}/.bashrc # Initiate your shell environment
 source ~/anaconda3/etc/profile.d/conda.sh
 conda activate votenet_tf # Activate your conda environment
-srun python /home/gundo0102/votenet_tf/eval_tf.py  --checkpoint_path /home/gundo0102/votenet_tf/tf_ckpt/210817 --dump_dir eval --use_3d_nms --use_cls_nms --per_class_proposal --faster_eval --batch_size 8 --use_tflite
+srun python /home/gundo0102/votenet_tf/eval_tf.py  --checkpoint_path /home/gundo0102/votenet_tf/tf_ckpt/210817 --dump_dir eval2 --use_3d_nms --use_cls_nms --per_class_proposal --faster_eval --batch_size 8 --ap_iou_thresholds 0.25 --use_tflite

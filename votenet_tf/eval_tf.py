@@ -151,11 +151,15 @@ def evaluate_one_epoch():
     stat_dict = {} # collect statistics
     ap_calculator_list = [APCalculator(iou_thresh, DATASET_CONFIG.class2type) \
         for iou_thresh in AP_IOU_THRESHOLDS]
-    
+    start = time.time()
+    start2 = time.time()
     for batch_idx, batch_data in enumerate(test_ds):        
+        if batch_idx >= 150: break
         if batch_idx % 10 == 0:
-            log_string('Eval batch: %d'%(batch_idx))
-        
+            end = time.time()
+            log_string('Eval batch: %d '%(batch_idx) + str(end - start))
+            start = time.time()
+        start2 = time.time()
         # Forward pass
         inputs = batch_data[0] 
         end_points = net(inputs, training=False)
@@ -172,6 +176,8 @@ def evaluate_one_epoch():
             if 'loss' in key or 'acc' in key or 'ratio' in key:
                 if key not in stat_dict: stat_dict[key] = 0
                 stat_dict[key] += end_points[key]
+        end2 = time.time()
+        log_string('inference time: ' +  str(end2 - start2))        
 
         batch_pred_map_cls = parse_predictions(end_points, CONFIG_DICT)        
         batch_gt_map_cls = parse_groundtruths(end_points, CONFIG_DICT) 
