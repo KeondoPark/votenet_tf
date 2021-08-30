@@ -69,7 +69,7 @@ class ProposalModule(layers.Layer):
         self.num_proposal = num_proposal
         self.sampling = sampling
         self.seed_feat_dim = seed_feat_dim
-
+        
         # Vote clustering        
         self.vote_aggregation = PointnetSAModuleVotes( 
                 npoint=self.num_proposal,
@@ -77,9 +77,9 @@ class ProposalModule(layers.Layer):
                 nsample=16,
                 mlp=[self.seed_feat_dim, 128, 128, 128],
                 use_xyz=True,
-                normalize_xyz=True,
-                use_tflite=use_tflite,
-                tflite_name='va_quant_b8.tflite'
+                normalize_xyz=True
+                #use_tflite=use_tflite,
+                #tflite_name='va_quant_b8.tflite'
             )
         """
         self.npoint = self.num_proposal
@@ -135,7 +135,7 @@ class ProposalModule(layers.Layer):
         if self.sampling == 'vote_fps':
             # Farthest point sampling (FPS) on votes
             xyz, features, fps_inds, _, grouped_features = self.vote_aggregation(xyz, features, sample_type='fps')
-            #xyz, fps_inds, _, grouped_features = self.vote_aggregation(xyz, features, sample_type='fps')
+            #xyz, fps_inds, _, grouped_features = self.vote_aggregation(xyz, features, sample_type='fps') #NoMLP version
             end_points['va_grouped_features'] = grouped_features
             sample_inds = fps_inds
         elif self.sampling == 'seed_fps': 

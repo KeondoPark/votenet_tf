@@ -31,7 +31,10 @@ class VotingModule(layers.Layer):
         self.out_dim = self.in_dim # due to residual feature, in_dim has to be == out_dim
         self.conv1 = layers.Conv1D(filters=self.in_dim, kernel_size=1)        
         self.conv2 = layers.Conv1D(filters=self.in_dim, kernel_size=1)
-        self.conv3 = layers.Conv1D(filters=(3+self.out_dim) * self.vote_factor, kernel_size=1) 
+        self.conv3 = layers.Conv1D(filters=(3+self.out_dim) * self.vote_factor, kernel_size=1)
+        #self.conv1 = layers.Conv2D(filters=self.in_dim, kernel_size=1)        
+        #self.conv2 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
+        #self.conv3 = layers.Conv2D(filters=(3+self.out_dim) * self.vote_factor, kernel_size=1) 
         self.bn1 = layers.BatchNormalization(axis=-1)
         self.bn2 = layers.BatchNormalization(axis=-1)
         self.relu1 = layers.Activation('relu')
@@ -50,15 +53,22 @@ class VotingModule(layers.Layer):
         batch_size = seed_xyz.shape[0]
         num_seed = seed_xyz.shape[1]
         num_vote = num_seed*self.vote_factor
+
+
+        #seed_features = layers.Reshape((num_seed, 1, seed_features.shape[-1]))(seed_features) # Expand to use Conv2D
+
         net = self.relu1(self.bn1(self.conv1(seed_features))) 
         net = self.relu2(self.bn2(self.conv2(net))) 
         net = self.conv3(net) # (batch_size, num_seed, (3+out_dim)*vote_factor)                
-                
+
+        # Return from expansion
+        #net = layers.Reshape((num_seed, self.vote_factor*(3+self.out_dim)))(net)       
+        
+        
         # No need for transpose in Tensorflow, because it uses H,W,C indexing        
         net = layers.Reshape((num_seed, self.vote_factor, 3+self.out_dim))(net)
         #net = tf.expand_dims(net, axis=1)
         
-
         offset = net[:,:,:,0:3]
         #vote_xyz = tf.expand_dims(seed_xyz, axis = 2) + offset
         seed_xyz = layers.Reshape((num_seed, 1, 3))(seed_xyz)
