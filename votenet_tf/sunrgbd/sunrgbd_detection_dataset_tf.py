@@ -28,7 +28,8 @@ import tensorflow as tf
 import scipy.io as sio # to load .mat files for depth points
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
-DATA_DIR = os.path.dirname(os.path.dirname(BASE_DIR))
+#DATA_DIR = os.path.dirname(os.path.dirname(BASE_DIR))
+DATA_DIR = '/home/aiot/data'
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 import pc_util

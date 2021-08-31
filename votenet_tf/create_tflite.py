@@ -26,6 +26,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--checkpoint_path', default=None, help='Model checkpoint path [default: None]')
 parser.add_argument('--out_dir', default="tflite_models", help='Folder name where output tflite files are saved')
 parser.add_argument('--gpu_mem_limit', type=int, default=0, help='GPU memory usage')
+parser.add_argument('--use_rep_data', action='store_true', help='When iterating representative dataset, use saved data')
+parser.add_argument('--rep_data_dir', default='tflite_rep_data', help='Saved representative data directory')
 FLAGS = parser.parse_args()
 
 # Limit GPU Memory usage, 256MB suffices
@@ -40,13 +42,15 @@ if FLAGS.gpu_mem_limit:
         except RuntimeError as e:
             print(e)
 
-BATCH_SIZE = 8
-TEST_DATASET = SunrgbdDetectionVotesDataset_tfrecord('val', num_points=20000,
-    augment=False,  shuffle=True, batch_size=BATCH_SIZE,
-    use_color=False, use_height=True)
+BATCH_SIZE = 1
 
-test_ds = TEST_DATASET.preprocess()
-test_ds = test_ds.prefetch(BATCH_SIZE)
+if not FLAGS.use_rep_data:
+    TEST_DATASET = SunrgbdDetectionVotesDataset_tfrecord('val', num_points=20000,
+        augment=False,  shuffle=True, batch_size=BATCH_SIZE,
+        use_color=False, use_height=True)
+
+    test_ds = TEST_DATASET.preprocess()
+    test_ds = test_ds.prefetch(BATCH_SIZE)
 
 
 def preprocess_point_cloud(point_cloud):
@@ -61,17 +65,27 @@ def preprocess_point_cloud(point_cloud):
 
 def wrapper_representative_data_gen_mlp(keyword, base_model):
     def representative_data_gen_mlp():
-        for i in range(int(1000 / BATCH_SIZE)):
-            batch_data = next(iter(test_ds))
-            inputs = batch_data[0]
-            end_points = base_model(inputs, training=False)
-            print(i, "-th batch...")
-            yield [end_points[keyword + '_grouped_features']]
+        for i in range(int(800 / BATCH_SIZE)):
+            if not FLAGS.use_rep_data:            
+                batch_data = next(iter(test_ds))
+                inputs = batch_data[0]
+                end_points = base_model(inputs, training=False)
+                print(i, "-th batch...")
+                yield [end_points[keyword + '_grouped_features']]
+            else:
+                if (i * BATCH_SIZE) % 200 == 0:
+                    start = i * BATCH_SIZE
+                    end = start + 200                            
+                    np_feats = np.load(os.path.join(FLAGS.rep_data_dir, keyword + '_rep_' + str(start) + '_to_' + str(end) + '.npy'))
+                    feats = tf.convert_to_tensor(np_feats)
+                print(i, "-th batch...")
+                idx = (i * BATCH_SIZE) % 200
+                yield [feats[idx: idx+BATCH_SIZE,:,:,:]]
     return representative_data_gen_mlp
 
 def wrapper_representative_data_gen_voting(base_model):
     def representative_data_gen_voting():
-        for i in range(int(1000 / BATCH_SIZE)):
+        for i in range(int(800 / BATCH_SIZE)):
             batch_data = next(iter(test_ds))
             inputs = batch_data[0]
             end_points = base_model(inputs, training=False)
@@ -100,7 +114,7 @@ def tflite_convert(keyword, model, base_model, out_dir, mlp=True):
     converter.inference_output_type = tf.float32
     tflite_model = converter.convert()
 
-    with open(os.path.join(out_dir, keyword + '_quant_b8.tflite'), 'wb') as f:
+    with open(os.path.join(out_dir, keyword + '_quant.tflite'), 'wb') as f:
         f.write(tflite_model)
 
 if __name__=='__main__':
@@ -122,7 +136,7 @@ if __name__=='__main__':
         num_heading_bin=DC.num_heading_bin,
         num_size_cluster=DC.num_size_cluster,
         mean_size_arr=DC.mean_size_arr,
-        use_tflite=True)
+        use_tflite=False)
     print('Constructed model.')
     
     # Load checkpoint
