@@ -64,8 +64,8 @@ def nn_distance(pc1, pc2, l1smooth=False, delta=1.0, l1=False):
         dist2: (B,M) torch float32 tensor
         idx2: (B,M) torch int64 tensor
     """
-    N = pc1.shape[1]
-    M = pc2.shape[1]
+    N = tf.shape(pc1)[1]
+    M = tf.shape(pc2)[1]
     pc1_expand_tile = tf.tile(tf.expand_dims(pc1, axis=2), multiples=[1,1,M,1])
     pc2_expand_tile = tf.tile(tf.expand_dims(pc2, axis=1), multiples=[1,N,1,1])
     pc_diff = pc1_expand_tile - pc2_expand_tile

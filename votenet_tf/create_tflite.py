@@ -70,7 +70,7 @@ def wrapper_representative_data_gen_mlp(keyword, base_model):
                 batch_data = next(iter(test_ds))
                 inputs = batch_data[0]
                 end_points = base_model(inputs, training=False)
-                print(i, "-th batch...")
+                print("Using inference results", i, "-th batch...")
                 yield [end_points[keyword + '_grouped_features']]
             else:
                 if (i * BATCH_SIZE) % 200 == 0:
@@ -78,7 +78,7 @@ def wrapper_representative_data_gen_mlp(keyword, base_model):
                     end = start + 200                            
                     np_feats = np.load(os.path.join(FLAGS.rep_data_dir, keyword + '_rep_' + str(start) + '_to_' + str(end) + '.npy'))
                     feats = tf.convert_to_tensor(np_feats)
-                print(i, "-th batch...")
+                print("Using saved rep data", i, "-th batch...")
                 idx = (i * BATCH_SIZE) % 200
                 yield [feats[idx: idx+BATCH_SIZE,:,:,:]]
     return representative_data_gen_mlp
@@ -86,11 +86,24 @@ def wrapper_representative_data_gen_mlp(keyword, base_model):
 def wrapper_representative_data_gen_voting(base_model):
     def representative_data_gen_voting():
         for i in range(int(800 / BATCH_SIZE)):
-            batch_data = next(iter(test_ds))
-            inputs = batch_data[0]
-            end_points = base_model(inputs, training=False)
-            print(i, "-th batch...")
-            yield [tf.expand_dims(end_points['seed_features'], axis=-2)]
+            if not FLAGS.use_rep_data:
+                batch_data = next(iter(test_ds))
+                inputs = batch_data[0]
+                end_points = base_model(inputs, training=False)
+                print(i, "-th batch...")
+                yield [tf.expand_dims(end_points['seed_features'], axis=-2)]
+            else:
+                if (i * BATCH_SIZE) % 200 == 0:
+                    start = i * BATCH_SIZE
+                    end = start + 200                            
+                    np_feats = np.load(os.path.join(FLAGS.rep_data_dir, 'voting_rep_' + str(start) + '_to_' + str(end) + '.npy'))
+                    feats = tf.convert_to_tensor(np_feats)
+                    feats = tf.reshape(feats, (feats.shape[0], feats.shape[1], 1, feats.shape[2]))
+                print("Using saved rep data", i, "-th batch...")
+                idx = (i * BATCH_SIZE) % 200
+                
+                
+                yield [feats[idx: idx+BATCH_SIZE,:,:,:]]
     return representative_data_gen_voting
 
 # TFlite conversion
@@ -114,7 +127,7 @@ def tflite_convert(keyword, model, base_model, out_dir, mlp=True):
     converter.inference_output_type = tf.float32
     tflite_model = converter.convert()
 
-    with open(os.path.join(out_dir, keyword + '_quant.tflite'), 'wb') as f:
+    with open(os.path.join(out_dir, keyword + '_quant_test.tflite'), 'wb') as f:
         f.write(tflite_model)
 
 if __name__=='__main__':
@@ -180,7 +193,7 @@ if __name__=='__main__':
                     new_features = self.max_pool(self.sharedMLP(grouped_features))
                 elif self.nsample > 16:
                     new_features = self.max_pool2(self.max_pool(self.sharedMLP(grouped_features)))
-            else:
+            else:                
                 new_features = self.sharedMLP(grouped_features)
 
             return new_features
@@ -204,9 +217,42 @@ if __name__=='__main__':
             net = self.relu1(self.bn1(self.conv1(seed_features))) 
             net = self.relu2(self.bn2(self.conv2(net))) 
             net = self.conv3(net) # (batch_size, num_seed, (3+out_dim)*vote_factor)   
-            return net             
+            return net         
 
-    converting_layers = ['fp1']
+    class vaModule(tf.keras.Model)    :
+        def __init__(self, mlp_spec, input_shape, nsample=0):
+            super().__init__()
+            self.sharedMLP = tf_utils.SharedMLP(mlp_spec, bn=True, input_shape=input_shape)
+            self.nsample = nsample
+            if nsample:
+                self.max_pool = layers.MaxPooling2D(pool_size=(1, 16), strides=(1,16), data_format="channels_last")
+                self.max_pool2 = layers.MaxPooling2D(pool_size=(1, int(self.nsample/16)), strides=(1,int(self.nsample/16)), data_format="channels_last")
+
+            self.conv1 = layers.Conv2D(filters=128, kernel_size=1)        
+            self.conv2 = layers.Conv2D(filters=128, kernel_size=1)
+            self.conv3 = layers.Conv2D(filters=2+3+DC.num_heading_bin*2+DC.num_size_cluster*4+DC.num_class, kernel_size=1) 
+            self.bn1 = layers.BatchNormalization(axis=-1)
+            self.bn2 = layers.BatchNormalization(axis=-1)
+            self.relu1 = layers.Activation('relu')
+            self.relu2 = layers.Activation('relu')
+
+        def call(self, grouped_features):
+            if self.nsample:
+                if self.nsample == 16:
+                    new_features = self.max_pool(self.sharedMLP(grouped_features))
+                elif self.nsample > 16:
+                    new_features = self.max_pool2(self.max_pool(self.sharedMLP(grouped_features)))
+            else:                
+                new_features = self.sharedMLP(grouped_features)
+
+            # --------- PROPOSAL GENERATION ---------
+            net = self.relu1(self.bn1(self.conv1(new_features)))
+            net = self.relu2(self.bn2(self.conv2(net))) 
+            net = self.conv3(net) # (batch_size, num_proposal, 2+3+num_heading_bin*2+num_size_cluster*4)
+
+            return net
+
+    converting_layers = ['voting']
 
     if 'sa1' in converting_layers:    
         sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[2048,64,1+3])
@@ -261,8 +307,8 @@ if __name__=='__main__':
 
 
     if 'voting' in converting_layers:
-        voting = nnInVotingModule(vote_factor=1, seed_feature_dim=256)
-        dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,256])) # (B, num_seed, 1, 3)
+        voting = nnInVotingModule(vote_factor=1, seed_feature_dim=128*3)
+        dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,128*3])) # (B, num_seed, 1, 3)
         dummy_out = voting(dummy_in_voting_features)
         layer = voting
         layer.conv1.set_weights(net.vgen.conv1.get_weights())
@@ -274,11 +320,19 @@ if __name__=='__main__':
 
 
     if 'va' in converting_layers:
-        va_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 128], nsample=16, input_shape=[256,16,256+3])
-        dummy_in_va = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,256+3])) # (B, npoint, nsample, C+3)
+        va_mlp = vaModule(mlp_spec=[256*3, 128, 128, 128], nsample=16, input_shape=[256,16,128*3+3])
+        dummy_in_va = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,256*3+3])) # (B, npoint, nsample, C+3)
         dummy_out = va_mlp(dummy_in_va)
         layer = va_mlp.sharedMLP
-        layer.set_weights(net.pnet.vote_aggregation.mlp_module.get_weights())
+        layer.set_weights(net.pnet.mlp_module.get_weights())
+
+        layer = va_mlp
+        layer.conv1.set_weights(net.pnet.conv1.get_weights())
+        layer.conv2.set_weights(net.pnet.conv2.get_weights())
+        layer.conv3.set_weights(net.pnet.conv3.get_weights())
+        layer.bn1.set_weights(net.pnet.bn1.get_weights())
+        layer.bn2.set_weights(net.pnet.bn2.get_weights())
+
         tflite_convert('va', va_mlp, net, FLAGS.out_dir)
 
     if not os.path.exists(FLAGS.out_dir):

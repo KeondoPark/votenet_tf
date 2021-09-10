@@ -116,7 +116,8 @@ class QueryAndGroup(layers.Layer):
         
         grouped_xyz -= tf.expand_dims(new_xyz, axis=-2)
         if self.normalize_xyz:
-            grouped_xyz /= self.radius
+            #grouped_xyz /= self.radius
+            grouped_xyz = tf.divide(grouped_xyz, self.radius)
 
         if features is not None:
             grouped_features = tf_grouping.group_point(features, idx)
@@ -133,18 +134,17 @@ class QueryAndGroup(layers.Layer):
             ), "Cannot have not features and not use xyz as a feature!"
             new_features = grouped_xyz
         #print("Runtime for group_point: ", time.time() - start)
-        ret = [new_features]
-        #Keondo: Added for later use
-        ret.append(idx)
-
+        ret = new_features, idx
+        
         if self.ret_grouped_xyz:
-            ret.append(grouped_xyz)
+            ret = new_features, idx, grouped_xyz
+            #ret.append(grouped_xyz)
+        
         if self.ret_unique_cnt:
-            ret.append(unique_cnt)
-        if len(ret) == 1:
-            return ret[0]
-        else:
-            return tuple(ret)
+            ret = new_features, idx, grouped_xyz, unique_cnt
+            #ret.append(unique_cnt)
+        
+        return ret
 
 
 class GroupAll(layers.Layer):

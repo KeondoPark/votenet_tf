@@ -12,9 +12,14 @@ Author: Charles R. Qi and Or Litany
 import tensorflow as tf
 from tensorflow.keras import layers
 import numpy as np
+import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(BASE_DIR)
+
 
 class VotingModule(layers.Layer):
-    def __init__(self, vote_factor, seed_feature_dim):
+    def __init__(self, vote_factor, seed_feature_dim, use_tflite=False, tflite_name=None):
         """ Votes generation from seed point features.
 
         Args:
@@ -29,16 +34,28 @@ class VotingModule(layers.Layer):
         self.vote_factor = vote_factor
         self.in_dim = seed_feature_dim
         self.out_dim = self.in_dim # due to residual feature, in_dim has to be == out_dim
-        self.conv1 = layers.Conv1D(filters=self.in_dim, kernel_size=1)        
-        self.conv2 = layers.Conv1D(filters=self.in_dim, kernel_size=1)
-        self.conv3 = layers.Conv1D(filters=(3+self.out_dim) * self.vote_factor, kernel_size=1)
-        #self.conv1 = layers.Conv2D(filters=self.in_dim, kernel_size=1)        
-        #self.conv2 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
-        #self.conv3 = layers.Conv2D(filters=(3+self.out_dim) * self.vote_factor, kernel_size=1) 
-        self.bn1 = layers.BatchNormalization(axis=-1)
-        self.bn2 = layers.BatchNormalization(axis=-1)
-        self.relu1 = layers.Activation('relu')
-        self.relu2 = layers.Activation('relu')
+        self.use_tflite = use_tflite
+
+        if self.use_tflite:
+            #from pycoral.utils.edgetpu import make_interpreter
+            self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models", tflite_name)))                             
+            #self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))
+            self.interpreter.allocate_tensors()
+
+            # Get input and output tensors.
+            self.input_details = self.interpreter.get_input_details()
+            self.output_details = self.interpreter.get_output_details()
+        else:
+            #self.conv1 = layers.Conv1D(filters=self.in_dim, kernel_size=1)        
+            #self.conv2 = layers.Conv1D(filters=self.in_dim, kernel_size=1)
+            #self.conv3 = layers.Conv1D(filters=(3+self.out_dim) * self.vote_factor, kernel_size=1)
+            self.conv1 = layers.Conv2D(filters=self.in_dim, kernel_size=1)        
+            self.conv2 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
+            self.conv3 = layers.Conv2D(filters=(3+self.out_dim) * self.vote_factor, kernel_size=1) 
+            self.bn1 = layers.BatchNormalization(axis=-1)
+            self.bn2 = layers.BatchNormalization(axis=-1)
+            self.relu1 = layers.ReLU(6)
+            self.relu2 = layers.ReLU(6)
         
     def call(self, seed_xyz, seed_features):
         """ Forward pass.
@@ -49,20 +66,23 @@ class VotingModule(layers.Layer):
         Returns:
             vote_xyz: (batch_size, num_seed*vote_factor, 3)
             vote_features: (batch_size, num_seed*vote_factor, vote_feature_dim)
-        """
-        batch_size = seed_xyz.shape[0]
+        """        
         num_seed = seed_xyz.shape[1]
         num_vote = num_seed*self.vote_factor
 
+        seed_features = layers.Reshape((num_seed, 1, seed_features.shape[-1]))(seed_features) # Expand to use Conv2D
 
-        #seed_features = layers.Reshape((num_seed, 1, seed_features.shape[-1]))(seed_features) # Expand to use Conv2D
-
-        net = self.relu1(self.bn1(self.conv1(seed_features))) 
-        net = self.relu2(self.bn2(self.conv2(net))) 
-        net = self.conv3(net) # (batch_size, num_seed, (3+out_dim)*vote_factor)                
+        if self.use_tflite:
+            self.interpreter.set_tensor(self.input_details[0]['index'], seed_features)
+            self.interpreter.invoke()
+            net = self.interpreter.get_tensor(self.output_details[0]['index'])
+        else:
+            net = self.relu1(self.bn1(self.conv1(seed_features))) 
+            net = self.relu2(self.bn2(self.conv2(net))) 
+            net = self.conv3(net) # (batch_size, num_seed, (3+out_dim)*vote_factor)                
 
         # Return from expansion
-        #net = layers.Reshape((num_seed, self.vote_factor*(3+self.out_dim)))(net)       
+        net = layers.Reshape((num_seed, self.vote_factor * (3+self.out_dim)))(net)       
         
         
         # No need for transpose in Tensorflow, because it uses H,W,C indexing        

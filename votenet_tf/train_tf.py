@@ -43,9 +43,9 @@ sys.path.append(os.path.join(ROOT_DIR, 'models'))
 from tf_utils import BNMomentumScheduler
 from tf_visualizer import Visualizer as TfVisualizer
 from ap_helper_tf import APCalculator, parse_predictions, parse_groundtruths
+from collections import defaultdict
 
 import votenet_tf
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='sunrgbd', help='Dataset name. sunrgbd or scannet. [default: sunrgbd]')
@@ -144,14 +144,16 @@ if FLAGS.use_painted:
     num_input_channel += DATASET_CONFIG.num_class
 
 
-net = votenet_tf.VoteNet(num_class=DATASET_CONFIG.num_class,
-               num_heading_bin=DATASET_CONFIG.num_heading_bin,
-               num_size_cluster=DATASET_CONFIG.num_size_cluster,
-               mean_size_arr=DATASET_CONFIG.mean_size_arr,
-               num_proposal=FLAGS.num_target,
-               input_feature_dim=num_input_channel,
-               vote_factor=FLAGS.vote_factor,
-               sampling=FLAGS.cluster_sampling)
+mirrored_strategy = tf.distribute.MirroredStrategy()
+with mirrored_strategy.scope():
+    net = votenet_tf.VoteNet(num_class=DATASET_CONFIG.num_class,
+                num_heading_bin=DATASET_CONFIG.num_heading_bin,
+                num_size_cluster=DATASET_CONFIG.num_size_cluster,
+                mean_size_arr=DATASET_CONFIG.mean_size_arr,
+                num_proposal=FLAGS.num_target,
+                input_feature_dim=num_input_channel,
+                vote_factor=FLAGS.vote_factor,
+                sampling=FLAGS.cluster_sampling)
 
 #if torch.cuda.device_count() > 1:
 #  log_string("Let's use %d GPUs!" % (torch.cuda.device_count()))
@@ -162,10 +164,11 @@ net = votenet_tf.VoteNet(num_class=DATASET_CONFIG.num_class,
 
 #criterion = votenet_tf.get_loss
 import loss_helper_tf
-criterion = loss_helper_tf.get_loss
+with mirrored_strategy.scope():
+    criterion = loss_helper_tf.get_loss
 
-# Load the Adam optimizer # No weight decay in tf basic adam optimizer... so ignore
-optimizer = tf.keras.optimizers.Adam(learning_rate=BASE_LEARNING_RATE)
+    # Load the Adam optimizer # No weight decay in tf basic adam optimizer... so ignore
+    optimizer = tf.keras.optimizers.Adam(learning_rate=BASE_LEARNING_RATE)
 
 # Load checkpoint if there is any
 it = -1 # for the initialize value of `LambdaLR` and `BNMomentumScheduler`
@@ -176,17 +179,19 @@ if CHECKPOINT_PATH is None or not os.path.isdir(CHECKPOINT_PATH):
     print("Use defualt checkpoint path")
     CHECKPOINT_PATH = './log/tf_ckpt'
 
-manager = tf.train.CheckpointManager(ckpt, CHECKPOINT_PATH, max_to_keep=3)
-ckpt.restore(manager.latest_checkpoint)
-print("Start epoch:", ckpt.epoch)
-if manager.latest_checkpoint:
-    print("Restored from {}".format(manager.latest_checkpoint))
-    start_epoch = ckpt.epoch.numpy()
-else:
-    print("Initializing from scratch.")
 
-    #net.load_weights(CHECKPOINT_PATH)    
-    #log_string("-> loaded checkpoint %s"%(CHECKPOINT_PATH))
+with mirrored_strategy.scope():
+    manager = tf.train.CheckpointManager(ckpt, CHECKPOINT_PATH, max_to_keep=3)
+    ckpt.restore(manager.latest_checkpoint)
+    print("Start epoch:", ckpt.epoch)
+    if manager.latest_checkpoint:
+        print("Restored from {}".format(manager.latest_checkpoint))
+        start_epoch = ckpt.epoch.numpy()
+    else:
+        print("Initializing from scratch.")
+
+        #net.load_weights(CHECKPOINT_PATH)    
+        #log_string("-> loaded checkpoint %s"%(CHECKPOINT_PATH))
 
 
 # Decay Batchnorm momentum from 0.5 to 0.001
@@ -206,13 +211,6 @@ def get_current_lr(epoch):
 def adjust_learning_rate(optimizer, epoch):
     lr = get_current_lr(epoch)
     optimizer.learning_rate = lr
-"""
-def lr_schedule(epoch, lr):
-    for i,lr_decay_epoch in enumerate(LR_DECAY_STEPS):
-        if epoch >= lr_decay_epoch:
-            lr *= LR_DECAY_RATES[i]
-    return lr
-"""
 
 train_ds = TRAIN_DATASET.preprocess()
 train_ds = train_ds.prefetch(BATCH_SIZE)
@@ -303,127 +301,134 @@ label_dict = {0:'point_cloud', 1:'center_label', 2:'heading_class_label', 3:'hea
 
 # ------------------------------------------------------------------------- GLOBAL CONFIG END
 
-def train_one_epoch():
-    stat_dict = {} # collect statistics
-    adjust_learning_rate(optimizer, EPOCH_CNT)
-    bnm_scheduler.step() # decay BN momentum    
+def train_one_epoch(batch_data):     
 
     #inputs = tf.constant([[1.0,2.0,3.0,1.0],[3.0,2.0,1.0,3.0]])
     #inputs = tf.constant([[1.0,2.0,3.0,1.0]])
     #inputs = {'point_clouds':tf.expand_dims(inputs, axis=0)}
     #output = net(inputs, training=True)
-    #loss, end_points = criterion(output, DATASET_CONFIG)        \
+    #loss, end_points = criterion(output, DATASET_CONFIG)        \    
+     
+    config = tf.constant(DATASET_CONFIG.num_heading_bin, dtype=tf.int32), \
+        tf.constant(DATASET_CONFIG.num_size_cluster, dtype=tf.int32), \
+        tf.constant(DATASET_CONFIG.num_class, dtype=tf.int32), \
+        tf.constant(DATASET_CONFIG.mean_size_arr, dtype=tf.float32)
+    # Forward pass
+    with tf.GradientTape() as tape:
+
+        point_cloud, center_label, heading_class_label, heading_residual_label, size_class_label, \
+        size_residual_label, sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes = batch_data        
+        #for i, data in enumerate(batch_data):
+        #    print("==============================",label_dict[i])
+        #    if i == 8:
+        #        np.savetxt("tf_votes.csv", data[0].numpy(), delimiter=",")
+                        
+            #else:
+            #    print(data[0])
+
+        #exit(0)
+
+
+        end_points = net(point_cloud, training=True)                
+        # Compute loss and gradients, update parameters.
+
+        sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
+        sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
+        sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
+        sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
+        fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds, \
+        seed_inds, seed_xyz, seed_features, vote_xyz, vote_features, \
+        va_grouped_features, aggregated_vote_xyz, aggregated_vote_inds, objectness_scores, center, \
+        heading_scores, heading_residuals_normalized, heading_residuals, size_scores, size_residuals_normalized, \
+        size_residuals, sem_cls_scores = end_points
+
+        end_points = sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
+        sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
+        sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
+        sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
+        fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds, \
+        seed_inds, seed_xyz, seed_features, vote_xyz, vote_features, \
+        va_grouped_features, aggregated_vote_xyz, aggregated_vote_inds, objectness_scores, center, \
+        heading_scores, heading_residuals_normalized, heading_residuals, size_scores, size_residuals_normalized, \
+        size_residuals, sem_cls_scores, center_label, heading_class_label, heading_residual_label, \
+        size_class_label, size_residual_label, sem_cls_label, box_label_mask, vote_label, \
+        vote_label_mask, max_gt_bboxes
+        
+        loss, end_points = criterion(end_points, config)        
+
+    grads = tape.gradient(loss, net.trainable_weights)
+
+    optimizer.apply_gradients(zip(grads, net.trainable_weights))
+
+    return loss   #end_points['loss']
+
+def evaluate_one_epoch(batch_data):     
     
-    t_load = 0
-    t_fwd = 0
-    t_bwd = 0
+    # Forward pass
+    point_cloud, center_label, heading_class_label, heading_residual_label, size_class_label, \
+    size_residual_label, sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes = batch_data
+    end_points = net(point_cloud, training=False)
 
-    start = time.time()
+    sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
+    sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
+    sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
+    sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
+    fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds, \
+    seed_inds, seed_xyz, seed_features, vote_xyz, vote_features, \
+    va_grouped_features, aggregated_vote_xyz, aggregated_vote_inds, objectness_scores, center, \
+    heading_scores, heading_residuals_normalized, heading_residuals, size_scores, size_residuals_normalized, \
+    size_residuals, sem_cls_scores = end_points
 
-    for batch_idx, batch_data in enumerate(train_ds):                 
-        
-        # Forward pass
-        with tf.GradientTape() as tape:
-            inputs = batch_data[0]            
-            t_load += time.time() - start
-            start = time.time()
-            #for i, data in enumerate(batch_data):
-            #    print("==============================",label_dict[i])
-            #    if i == 8:
-            #        np.savetxt("tf_votes.csv", data[0].numpy(), delimiter=",")
-                            
-                #else:
-                #    print(data[0])
-
-            #exit(0)
-
-
-            end_points = net(inputs, training=True)
-            t_fwd += time.time() - start
-            start = time.time()
-            # Compute loss and gradients, update parameters.
-            for i, data in enumerate(batch_data):
-                if i == 0: continue #pass point cloud
-                end_points[label_dict[i]] = data
-            loss, end_points = criterion(end_points, DATASET_CONFIG)        
-
-        grads = tape.gradient(loss, net.trainable_weights)
-
-        optimizer.apply_gradients(zip(grads, net.trainable_weights))
-        
-        t_bwd += time.time() - start        
-
-        # Accumulate statistics and print out
-        for key in end_points:
-            if 'loss' in key or 'acc' in key or 'ratio' in key:
-                if key not in stat_dict: stat_dict[key] = 0
-                stat_dict[key] += end_points[key]
-
-        batch_interval = 50
-        if (batch_idx+1) % batch_interval == 0:            
-            log_string(' ---- batch: %03d ----' % (batch_idx+1))
-            #TRAIN_VISUALIZER.log_scalars({key:stat_dict[key]/batch_interval for key in stat_dict},
-            #    (EPOCH_CNT*len(TRAIN_DATASET)+(batch_idx))*BATCH_SIZE)
-            for key in sorted(stat_dict.keys()):
-                log_string('mean %s: %f'%(key, stat_dict[key]/batch_interval))
-                stat_dict[key] = 0
-        #if batch_idx == 9:
-        #    break
-
-        start = time.time()
-
-    log_string("Loading time:" + str(t_load))
-    log_string("Forward time:" + str(t_fwd))
-    log_string("Backward time:" +  str(t_bwd))
-
-
-def evaluate_one_epoch():
-    stat_dict = {} # collect statistics
-    ap_calculator = APCalculator(ap_iou_thresh=FLAGS.ap_iou_thresh,
-        class2type_map=DATASET_CONFIG.class2type)
+    end_points = sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
+        sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
+        sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
+        sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
+        fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds, \
+        seed_inds, seed_xyz, seed_features, vote_xyz, vote_features, \
+        va_grouped_features, aggregated_vote_xyz, aggregated_vote_inds, objectness_scores, center, \
+        heading_scores, heading_residuals_normalized, heading_residuals, size_scores, size_residuals_normalized, \
+        size_residuals, sem_cls_scores, center_label, heading_class_label, heading_residual_label, \
+        size_class_label, size_residual_label, sem_cls_label, box_label_mask, vote_label, \
+        vote_label_mask, max_gt_bboxes
     
-    for batch_idx, batch_data in enumerate(test_ds):        
-        if batch_idx % 10 == 0:
-            print('Eval batch: %d'%(batch_idx))
-        
-        # Forward pass
-        inputs = batch_data[0] 
-        end_points = net(inputs, training=False)
+    config = tf.constant(DATASET_CONFIG.num_heading_bin, dtype=tf.int32), \
+        tf.constant(DATASET_CONFIG.num_size_cluster, dtype=tf.int32), \
+        tf.constant(DATASET_CONFIG.num_class, dtype=tf.int32), \
+        tf.constant(DATASET_CONFIG.mean_size_arr, dtype=tf.float32)
 
-        # Compute loss
-        for i, data in enumerate(batch_data):
-            if i == 0: continue #pass point cloud
-            end_points[label_dict[i]] = data
-        loss, end_points = criterion(end_points, DATASET_CONFIG)        
+    loss, end_points = criterion(end_points, config)        
 
-        # Accumulate statistics and print out
-        for key in end_points:
-            if 'loss' in key or 'acc' in key or 'ratio' in key:
-                if key not in stat_dict: stat_dict[key] = 0
-                stat_dict[key] += end_points[key]
-
-        batch_pred_map_cls = parse_predictions(end_points, CONFIG_DICT)        
-        batch_gt_map_cls = parse_groundtruths(end_points, CONFIG_DICT) 
-        ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)    
+    return loss, end_points
          
-
-    # Log statistics
-    #TEST_VISUALIZER.log_scalars({key:stat_dict[key]/float(batch_idx+1) for key in stat_dict},
-    #    EPOCH_CNT*len(TRAIN_DATASET)*BATCH_SIZE)
-    for key in sorted(stat_dict.keys()):
-        log_string('eval mean %s: %f'%(key, stat_dict[key]/(float(batch_idx+1))))
-
-    # Evaluate average precision
-    metrics_dict = ap_calculator.compute_metrics()
-    for key in metrics_dict:
-        log_string('eval %s: %f'%(key, metrics_dict[key]))
-
-    mean_loss = stat_dict['loss']/float(batch_idx+1)
-    return mean_loss
-
-
 def train(start_epoch):
-    global EPOCH_CNT 
+    global EPOCH_CNT   
+
+    input_signature=[[     
+        tf.TensorSpec(shape=(None, NUM_POINT, 3+num_input_channel), dtype=tf.float32), #point cloud
+        tf.TensorSpec(shape=(None, 64, 3), dtype=tf.float32), #center label
+        tf.TensorSpec(shape=(None, 64), dtype=tf.int64), #heading class label
+        tf.TensorSpec(shape=(None, 64), dtype=tf.float32), #heading residual label
+        tf.TensorSpec(shape=(None, 64), dtype=tf.int64), #size_class_label
+        tf.TensorSpec(shape=(None, 64, 3), dtype=tf.float32), #size_residual_label
+        tf.TensorSpec(shape=(None, 64), dtype=tf.int64), #sem_cls_label
+        tf.TensorSpec(shape=(None, 64), dtype=tf.float32), #box_label_mask
+        tf.TensorSpec(shape=(None, NUM_POINT,9), dtype=tf.float32), #vote_label
+        tf.TensorSpec(shape=(None, NUM_POINT,), dtype=tf.int64), #vote_label_mask
+        tf.TensorSpec(shape=(None, 64,8), dtype=tf.float32), #max_gt_bboxes                           
+    ]]
+
+    # `run` replicates the provided computation and runs it
+    # with the distributed input.
+    @tf.function(experimental_relax_shapes=True, input_signature=input_signature)
+    def distributed_train_step(batch_data):
+        per_replica_losses = mirrored_strategy.run(train_one_epoch, args=(batch_data, ))
+        return mirrored_strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None)
+        
+
+    @tf.function(experimental_relax_shapes=True)
+    def distributed_eval_step(batch_data):
+        per_replica_losses, end_points = mirrored_strategy.run(evaluate_one_epoch, args=(batch_data,))
+        return mirrored_strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None), end_points
 
     for epoch in range(start_epoch, MAX_EPOCH):
         EPOCH_CNT = epoch
@@ -431,22 +436,100 @@ def train(start_epoch):
         log_string('Current learning rate: %f'%(get_current_lr(epoch)))
         log_string('Current BN decay momentum: %f'%(bnm_scheduler.lmbd(bnm_scheduler.last_epoch)))
         log_string(str(datetime.now()))  
+        
+        stat_dict = {} # collect statistics
+        adjust_learning_rate(optimizer, EPOCH_CNT)
+        bnm_scheduler.step() # decay BN momentum  
+        train_loss = tf.constant(0.0, tf.float32)
+        eval_loss = tf.constant(0.0, tf.float32)
 
-        train_one_epoch()
+        t_epoch = 0
+        start = time.time()
+        
+        for batch_idx, batch_data in enumerate(train_ds): 
+            train_loss += distributed_train_step(batch_data)
+            # Accumulate statistics and print out
+            #for key in end_points:
+            #    if 'loss' in key or 'acc' in key or 'ratio' in key:
+            #        if key not in stat_dict: stat_dict[key] = 0
+            #        stat_dict[key] += end_points[key]            
+            batch_interval = 50
+            if (batch_idx+1) % batch_interval == 0:            
+                log_string(' ---- batch: %03d ----' % (batch_idx+1))
+                log_string('mean loss: %f'%(train_loss/batch_interval))
+                train_loss = tf.constant(0.0, tf.float32)
+                #TRAIN_VISUALIZER.log_scalars({key:stat_dict[key]/batch_interval for key in stat_dict},
+                #    (EPOCH_CNT*len(TRAIN_DATASET)+(batch_idx))*BATCH_SIZE)
+                #for key in sorted(stat_dict.keys()):
+                #    log_string('mean %s: %f'%(key, stat_dict[key]/batch_interval))
+                #    stat_dict[key] = 0
+        
+        t_epoch = time.time() - start
+        log_string("1 Epoch training time:" + str(t_epoch))
+
         ckpt.epoch.assign_add(1)
         
         save_path = manager.save()
         log_string("Saved checkpoint for step {}: {}".format(int(ckpt.epoch), save_path))
-
+        
         #if EPOCH_CNT == 0 or EPOCH_CNT % 10 == 9: # Eval every 10 epochs
         if EPOCH_CNT % 20 == 19: # Eval every 20 epochs
-            loss = evaluate_one_epoch()            
-            print("loss {:1.2f}".format(loss.numpy()))
+            stat_dict = defaultdict(int) # collect statistics            
+            ap_calculator = APCalculator(ap_iou_thresh=FLAGS.ap_iou_thresh,
+                class2type_map=DATASET_CONFIG.class2type)     
+            for batch_idx, batch_data in enumerate(test_ds):                                           
+                if batch_idx % 10 == 0:
+                    print('Eval batch: %d'%(batch_idx)) 
+                
+                curr_loss, end_points = distributed_eval_step(batch_data)
+                eval_loss += curr_loss
+
+                sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
+                sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
+                sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
+                sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
+                fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds, \
+                seed_inds, seed_xyz, seed_features, vote_xyz, vote_features, \
+                va_grouped_features, aggregated_vote_xyz, aggregated_vote_inds, objectness_scores, center, \
+                heading_scores, heading_residuals_normalized, heading_residuals, size_scores, size_residuals_normalized, \
+                size_residuals, sem_cls_scores, center_label, heading_class_label, heading_residual_label, \
+                size_class_label, size_residual_label, sem_cls_label, box_label_mask, vote_label, \
+                vote_label_mask, max_gt_bboxes, vote_loss, objectness_loss, objectness_label, \
+                objectness_mask, object_assignment, pos_ratio, neg_ratio, center_loss, \
+                heading_cls_loss, heading_reg_loss, size_cls_loss, size_reg_loss, sem_cls_loss, \
+                box_loss, loss, obj_acc\
+                    = end_points
+
+                stat_dict['box_loss'] += box_loss
+                stat_dict['vote_loss'] += vote_loss
+                stat_dict['objectness_loss'] += objectness_loss
+                stat_dict['sem_cls_loss'] += sem_cls_loss
+                stat_dict['loss'] += loss
+                stat_dict['obj_acc'] += obj_acc
+                stat_dict['pos_ratio'] += pos_ratio
+                stat_dict['neg_ratio'] += neg_ratio
+
+                batch_pred_map_cls = parse_predictions(end_points, CONFIG_DICT)        
+                batch_gt_map_cls = parse_groundtruths(end_points, CONFIG_DICT) 
+                ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)    
+
+
+            # Log statistics
+            #TEST_VISUALIZER.log_scalars({key:stat_dict[key]/float(batch_idx+1) for key in stat_dict},
+            #    EPOCH_CNT*len(TRAIN_DATASET)*BATCH_SIZE)
+            for key in sorted(stat_dict.keys()):
+                log_string('eval mean %s: %f'%(key, stat_dict[key]/(float(batch_idx+1))))
+
+            # Evaluate average precision
+            metrics_dict = ap_calculator.compute_metrics()
+            for key in metrics_dict:
+                log_string('eval %s: %f'%(key, metrics_dict[key]))
+
+            #mean_loss = stat_dict['loss']/float(batch_idx+1)            
+               
+            #print("loss {:1.2f}".format(loss.numpy()))
         
 
-if __name__=='__main__':
-    #train(start_epoch)
-    #print(len(TRAIN_DATASET), len(TEST_DATASET))
-    #ret_dict = next(iter(TRAIN_DATASET))
-    #print(ret_dict)
+if __name__=='__main__':   
+
     train(start_epoch)

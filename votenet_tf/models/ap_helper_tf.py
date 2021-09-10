@@ -61,24 +61,42 @@ def parse_predictions(end_points, config_dict):
             where pred_list_i = [(pred_sem_cls, box_params, box_score)_j]
             where j = 0, ..., num of valid detections - 1 from sample input i
     """
-    
-    pred_center = end_points['center'] # B,num_proposal,3
-    K = end_points['heading_scores'].shape[1] #num_proposal
+    sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
+    sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
+    sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
+    sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
+    fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds, \
+    seed_inds, seed_xyz, seed_features, vote_xyz, vote_features, \
+    va_grouped_features, aggregated_vote_xyz, aggregated_vote_inds, objectness_scores, center, \
+    heading_scores, heading_residuals_normalized, heading_residuals, size_scores, size_residuals_normalized, \
+    size_residuals, sem_cls_scores, center_label, heading_class_label, heading_residual_label, \
+    size_class_label, size_residual_label, sem_cls_label, box_label_mask, vote_label, \
+    vote_label_mask, max_gt_bboxes, vote_loss, objectness_loss, objectness_label, \
+    objectness_mask, object_assignment, pos_ratio, neg_ratio, center_loss, \
+    heading_cls_loss, heading_reg_loss, size_cls_loss, size_reg_loss, sem_cls_loss, \
+    box_loss, loss, obj_acc\
+        = end_points
 
-    pred_heading_class = tf.math.argmax(end_points['heading_scores'], axis = -1) #(B, K)        
-    pred_heading_residual = tf.gather(end_points['heading_residuals'], axis=2, 
+
+    #pred_center = end_points['center'] # B,num_proposal,3
+    #K = end_points['heading_scores'].shape[1] #num_proposal
+    pred_center = center
+    K = tf.shape(heading_scores)[1] #num_proposal
+
+    pred_heading_class = tf.math.argmax(heading_scores, axis = -1) #(B, K)        
+    pred_heading_residual = tf.gather(heading_residuals, axis=2, 
                                     indices=tf.expand_dims(pred_heading_class, axis=-1), batch_dims=2) #(B, K, num_heading_bin) -> (B, K, 1)    
     pred_heading_residual = tf.squeeze(pred_heading_residual, axis=[2])       
 
-    pred_size_class = tf.math.argmax(end_points['size_scores'], axis=-1) # B,num_proposal
+    pred_size_class = tf.math.argmax(size_scores, axis=-1) # B,num_proposal
     
     # (B, K, 10, 3) -> (B, K, 1, 3)
-    pred_size_residual = tf.gather(end_points['size_residuals'], axis=2, 
+    pred_size_residual = tf.gather(size_residuals, axis=2, 
                                 indices=tf.expand_dims(pred_size_class, axis=-1), batch_dims=2)        
     pred_size_residual = tf.squeeze(pred_size_residual, axis=[2]) # B,num_proposal,3            
     
-    pred_sem_cls = tf.math.argmax(end_points['sem_cls_scores'], axis=-1) # B,num_proposal
-    sem_cls_probs = softmax(end_points['sem_cls_scores'].numpy()) # B,num_proposal,10
+    pred_sem_cls = tf.math.argmax(sem_cls_scores, axis=-1) # B,num_proposal
+    sem_cls_probs = softmax(sem_cls_scores.numpy()) # B,num_proposal,10
     pred_sem_cls_prob = np.max(sem_cls_probs,-1) # B,num_proposal
 
 
@@ -120,10 +138,10 @@ def parse_predictions(end_points, config_dict):
     print("(Torch)pred_sem_cls_prob:", pred_sem_cls_prob_torch[0])
     """
 
-    num_proposal = pred_center.shape[1] 
+    num_proposal = tf.shape(pred_center)[1] 
     # Since we operate in upright_depth coord for points, while util functions
     # assume upright_camera coord.
-    bsize = pred_center.shape[0]
+    bsize = tf.shape(pred_center)[0]
     pred_corners_3d_upright_camera = np.zeros((bsize, num_proposal, 8, 3))
     pred_center_upright_camera = flip_axis_to_camera(pred_center.numpy())
     for i in range(bsize):
@@ -135,7 +153,7 @@ def parse_predictions(end_points, config_dict):
             corners_3d_upright_camera = get_3d_box(box_size, heading_angle, pred_center_upright_camera[i,j,:])
             pred_corners_3d_upright_camera[i,j] = corners_3d_upright_camera
 
-    K = pred_center.shape[1] # K==num_proposal
+    K = tf.shape(pred_center)[1] # K==num_proposal
     nonempty_box_mask = np.ones((bsize, K))
 
     if config_dict['remove_empty_box']:
@@ -156,7 +174,7 @@ def parse_predictions(end_points, config_dict):
     # #============= Validation =======================
     #print("end_points['objectness_scores'][5]:", end_points['objectness_scores'][5])
     #============= Validation =======================  
-    obj_logits = tf.stop_gradient(end_points['objectness_scores']).numpy()
+    obj_logits = tf.stop_gradient(objectness_scores).numpy()
     obj_prob = softmax(obj_logits)[:,:,1] # (B,K)
     #============= Validation =======================
     #print("obj_prob[5]:", obj_prob[5])
@@ -177,7 +195,7 @@ def parse_predictions(end_points, config_dict):
                 config_dict['nms_iou'], config_dict['use_old_type_nms'])
             assert(len(pick)>0)
             pred_mask[i, nonempty_box_inds[pick]] = 1
-        end_points['pred_mask'] = pred_mask
+        #end_points['pred_mask'] = pred_mask
         # ---------- NMS output: pred_mask in (B,K) -----------
     elif config_dict['use_3d_nms'] and (not config_dict['cls_nms']):
         # ---------- NMS input: pred_with_prob in (B,K,7) -----------
@@ -198,7 +216,7 @@ def parse_predictions(end_points, config_dict):
             assert(len(pick)>0)
             pred_mask[i, nonempty_box_inds[pick]] = 1
 
-        end_points['pred_mask'] = pred_mask
+        #end_points['pred_mask'] = pred_mask
         # ---------- NMS output: pred_mask in (B,K) -----------
     elif config_dict['use_3d_nms'] and config_dict['cls_nms']:
         # ---------- NMS input: pred_with_prob in (B,K,8) -----------
@@ -222,7 +240,7 @@ def parse_predictions(end_points, config_dict):
             #============= Validation =======================
             #if i == 5: print("Pred mask:", pred_mask[i])
             #============= Validation =======================
-        end_points['pred_mask'] = pred_mask
+        #end_points['pred_mask'] = pred_mask
         # ---------- NMS output: pred_mask in (B,K) -----------
 
     batch_pred_map_cls = [] # a list (len: batch_size) of list (len: num of predictions per sample) of tuples of pred_cls, pred_box and conf (0-1)
@@ -236,7 +254,7 @@ def parse_predictions(end_points, config_dict):
         else:
             batch_pred_map_cls.append([(pred_sem_cls[i,j], pred_corners_3d_upright_camera[i,j], obj_prob[i,j]) \
                 for j in range(pred_center.shape[1]) if pred_mask[i,j]==1 and obj_prob[i,j]>config_dict['conf_thresh']])
-    end_points['batch_pred_map_cls'] = batch_pred_map_cls
+    #end_points['batch_pred_map_cls'] = batch_pred_map_cls
 
     return batch_pred_map_cls
 
@@ -257,13 +275,23 @@ def parse_groundtruths(end_points, config_dict):
             where gt_list_i = [(gt_sem_cls, gt_box_params)_j]
             where j = 0, ..., num of objects - 1 at sample input i
     """
-    center_label = end_points['center_label']
-    heading_class_label = end_points['heading_class_label']
-    heading_residual_label = end_points['heading_residual_label']
-    size_class_label = end_points['size_class_label']
-    size_residual_label = end_points['size_residual_label']
-    box_label_mask = end_points['box_label_mask']
-    sem_cls_label = end_points['sem_cls_label']
+
+    sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
+    sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
+    sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
+    sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
+    fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds, \
+    seed_inds, seed_xyz, seed_features, vote_xyz, vote_features, \
+    va_grouped_features, aggregated_vote_xyz, aggregated_vote_inds, objectness_scores, center, \
+    heading_scores, heading_residuals_normalized, heading_residuals, size_scores, size_residuals_normalized, \
+    size_residuals, sem_cls_scores, center_label, heading_class_label, heading_residual_label, \
+    size_class_label, size_residual_label, sem_cls_label, box_label_mask, vote_label, \
+    vote_label_mask, max_gt_bboxes, vote_loss, objectness_loss, objectness_label, \
+    objectness_mask, object_assignment, pos_ratio, neg_ratio, center_loss, \
+    heading_cls_loss, heading_reg_loss, size_cls_loss, size_reg_loss, sem_cls_loss, \
+    box_loss, loss, obj_acc\
+        = end_points
+
     bsize = center_label.shape[0]
 
     K2 = center_label.shape[1] # K2==MAX_NUM_OBJ
@@ -280,7 +308,7 @@ def parse_groundtruths(end_points, config_dict):
     batch_gt_map_cls = []
     for i in range(bsize):
         batch_gt_map_cls.append([(sem_cls_label[i,j].numpy(), gt_corners_3d_upright_camera[i,j]) for j in range(gt_corners_3d_upright_camera.shape[1]) if box_label_mask[i,j]==1])
-    end_points['batch_gt_map_cls'] = batch_gt_map_cls
+    #end_points['batch_gt_map_cls'] = batch_gt_map_cls
 
     return batch_gt_map_cls
 

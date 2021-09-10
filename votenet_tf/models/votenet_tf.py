@@ -44,16 +44,15 @@ class VoteNet(tf.keras.Model):
     """
 
     def __init__(self, num_class, num_heading_bin, num_size_cluster, mean_size_arr,
-        input_feature_dim=0, num_proposal=128, vote_factor=1, sampling='vote_fps', use_tflite=False):
+        input_feature_dim=0, num_proposal=tf.constant(128, dtype=tf.int32), vote_factor=1, sampling='vote_fps', use_tflite=False):
         super().__init__()
 
-        self.num_class = num_class
-        self.num_heading_bin = num_heading_bin
-        self.num_size_cluster = num_size_cluster
-        self.mean_size_arr = mean_size_arr
-        assert(mean_size_arr.shape[0] == self.num_size_cluster)
-        self.input_feature_dim = input_feature_dim
-        self.num_proposal = num_proposal
+        self.num_class = tf.constant(num_class, dtype=tf.int32)
+        self.num_heading_bin = tf.constant(num_heading_bin, dtype=tf.int32)
+        self.num_size_cluster = tf.constant(num_size_cluster, dtype=tf.int32)
+        self.mean_size_arr = tf.constant(mean_size_arr, dtype=tf.float32)        
+        self.input_feature_dim =  tf.constant(input_feature_dim, dtype=tf.int32)
+        self.num_proposal =  tf.constant(num_proposal, dtype=tf.int32)
         self.vote_factor = vote_factor
         self.sampling=sampling
 
@@ -61,11 +60,11 @@ class VoteNet(tf.keras.Model):
         self.backbone_net = Pointnet2Backbone(input_feature_dim=self.input_feature_dim, use_tflite=use_tflite)
 
         # Hough voting
-        self.vgen = VotingModule(self.vote_factor, 256)
+        self.vgen = VotingModule(self.vote_factor, seed_feature_dim=128*3)#, use_tflite=use_tflite, tflite_name='voting_quant.tflite')
 
         # Vote aggregation and detection
         self.pnet = ProposalModule(num_class, num_heading_bin, num_size_cluster,
-            mean_size_arr, num_proposal, sampling, use_tflite=use_tflite)
+            mean_size_arr, num_proposal, sampling, seed_feat_dim=128*3, use_tflite=use_tflite, tflite_name='va_quant.tflite')
 
     def call(self, inputs):
         """ Forward pass of the network
@@ -80,33 +79,53 @@ class VoteNet(tf.keras.Model):
                     Each point in the point-cloud MUST
                     be formated as (x, y, z, features...)
         Returns:
-            end_points: dict
+            end_points: list
         """
-        end_points = {}        
+        end_points = self.backbone_net(inputs)
 
-        batch_size = inputs.shape[0]
-
-        end_points = self.backbone_net(inputs, end_points)
+        sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
+        sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
+        sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
+        sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
+        fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds = end_points
                 
         # --------- HOUGH VOTING ---------
-        xyz = end_points['fp2_xyz']
-        features = end_points['fp2_features']
-        end_points['seed_inds'] = end_points['fp2_inds']
-        end_points['seed_xyz'] = xyz
-        end_points['seed_features'] = features
+        #xyz = end_points['fp2_xyz']
+        #features = end_points['fp2_features']
+        #end_points['seed_inds'] = end_points['fp2_inds']
+        #end_points['seed_xyz'] = xyz
+        #end_points['seed_features'] = features
+
+        seed_inds = fp2_inds
+        seed_xyz = fp2_xyz
+        seed_features = fp2_features        
         
-        start = time.time() 
-        xyz, features = self.vgen(xyz, features)
+        #start = time.time() 
+        xyz, features = self.vgen(seed_xyz, seed_features)
         #print("Runtime for Voting module:", time.time() - start)
         features_norm = tf.norm(features, ord=2, axis=1)
-        features = tf.divide(features, tf.expand_dims(features_norm, axis=1))
-        end_points['vote_xyz'] = xyz
-        end_points['vote_features'] = features
-        start = time.time() 
+        features = tf.divide(features, tf.expand_dims(features_norm, axis=1))        
+        #end_points['vote_xyz'] = xyz
+        #end_points['vote_features'] = features
+        vote_xyz = xyz
+        vote_features = features
+        #start = time.time() 
+
+
+        end_points = sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
+            sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
+            sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
+            sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
+            fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds, \
+            seed_inds, seed_xyz, seed_features, vote_xyz, vote_features
+
+
         end_points = self.pnet(xyz, features, end_points)
         #print("Runtime for Proposal module:", time.time() - start)
 
+        #return end_points
         return end_points
+
 
 
 if __name__=='__main__':

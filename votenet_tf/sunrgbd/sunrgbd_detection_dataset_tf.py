@@ -232,7 +232,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
 
         assert(num_points<=50000)        
         self.data_path = os.path.join(DATA_DIR,
-            'sunrgbd_pc_bbox_votes_50k_v1_%s'%(split_set))
+            'sunrgbd_pc_%s_tf'%(split_set))
 
         self.raw_data_path = os.path.join(ROOT_DIR, 'sunrgbd/sunrgbd_trainval')
         self.num_points = num_points
@@ -371,7 +371,8 @@ class SunrgbdDetectionVotesDataset_tfrecord():
             #point_votes_sampled[b] = point_votes_b[:self.num_points, 1:]
 
             target_bboxes_semcls[b,:n_box] = bboxes[b,:n_box,-1] # from 0 to 9
-                
+
+        """
         point_cloud = tf.convert_to_tensor(point_cloud, dtype=tf.float32)
         center_label = tf.convert_to_tensor(target_bboxes[:,:,0:3], dtype=tf.float32)
         heading_class_label = tf.convert_to_tensor(angle_classes, dtype=tf.int64)
@@ -385,6 +386,20 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         vote_label_mask = tf.convert_to_tensor(tf.cast(point_votes[:,:,0],dtype=tf.int64), dtype=tf.int64)
         
         max_gt_bboxes = tf.convert_to_tensor(max_bboxes, dtype=tf.float32)
+        """  
+        point_cloud = tf.constant(point_cloud, dtype=tf.float32)
+        center_label = tf.constant(target_bboxes[:,:,0:3], dtype=tf.float32)
+        heading_class_label = tf.constant(angle_classes, dtype=tf.int64)
+        heading_residual_label = tf.constant(angle_residuals, dtype=tf.float32)
+        size_class_label = tf.constant(size_classes, dtype=tf.int64)
+        
+        size_residual_label = tf.constant(size_residuals, dtype=tf.float32)
+        sem_cls_label = tf.constant(target_bboxes_semcls, dtype=tf.int64)
+        box_label_mask = tf.constant(target_bboxes_mask, dtype=tf.float32)
+        vote_label = tf.constant(point_votes[:,:,1:], dtype=tf.float32)
+        vote_label_mask = tf.constant(tf.cast(point_votes[:,:,0],dtype=tf.int64), dtype=tf.int64)
+        
+        max_gt_bboxes = tf.constant(max_bboxes, dtype=tf.float32) 
         
         output = point_cloud, center_label, heading_class_label, heading_residual_label, size_class_label, \
             size_residual_label, sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes

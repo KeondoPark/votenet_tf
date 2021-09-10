@@ -99,28 +99,46 @@ if __name__=='__main__':
         if (batch_idx * BATCH_SIZE) % 200 == 0:
             #sa1_feats = end_points['sa1_grouped_features']
             #sa2_feats = end_points['sa2_grouped_features']
-            #sa3_feats = end_points['sa3_grouped_features']
-            #sa4_feats = end_points['sa4_grouped_features']
+            sa3_feats = end_points['sa3_grouped_features']
+            sa4_feats = end_points['sa4_grouped_features']
             #fp1_feats = end_points['fp1_grouped_features']            
-            fp2_feats = end_points['fp1_grouped_features']            
+            #fp2_feats = end_points['fp2_grouped_features']            
+            voting_feats = end_points['seed_features'] 
+            va_feats = end_points['va_grouped_features'] 
 
         else:
             #sa1_feats = tf.concat([sa1_feats, end_points['sa1_grouped_features']], axis=0)
             #sa2_feats = tf.concat([sa2_feats, end_points['sa2_grouped_features']], axis=0)
-            #sa3_feats = tf.concat([sa3_feats, end_points['sa3_grouped_features']], axis=0)
-            #sa4_feats = tf.concat([sa4_feats, end_points['sa4_grouped_features']], axis=0)
+            sa3_feats = tf.concat([sa3_feats, end_points['sa3_grouped_features']], axis=0)
+            sa4_feats = tf.concat([sa4_feats, end_points['sa4_grouped_features']], axis=0)
             #fp1_feats = tf.concat([fp1_feats, end_points['fp1_grouped_features']], axis=0)
-            fp2_feats = tf.concat([fp2_feats, end_points['fp1_grouped_features']], axis=0)
+            #fp2_feats = tf.concat([fp2_feats, end_points['fp2_grouped_features']], axis=0)
+            voting_feats = tf.concat([voting_feats, end_points['seed_features'] ], axis=0)
+            va_feats = tf.concat([va_feats, end_points['va_grouped_features'] ], axis=0)
         
         if ((batch_idx+1) * BATCH_SIZE) % 200 == 0:
             end = (batch_idx+1) * BATCH_SIZE
             start = end - 200
-            #np.save(os.path.join(FLAGS.out_dir, 'sa1_rep_' + str(start) + '_to_' + str(end) + '.npy'), sa1_feats.numpy())
-            #np.save(os.path.join(FLAGS.out_dir, 'sa2_rep_' + str(start) + '_to_' + str(end) + '.npy'), sa2_feats.numpy())
-            #np.save(os.path.join(FLAGS.out_dir, 'sa3_rep_' + str(start) + '_to_' + str(end) + '.npy'), sa3_feats.numpy())
-            #np.save(os.path.join(FLAGS.out_dir, 'sa4_rep_' + str(start) + '_to_' + str(end) + '.npy'), sa4_feats.numpy())
-            #np.save(os.path.join(FLAGS.out_dir, 'fp1_rep_' + str(start) + '_to_' + str(end) + '.npy'), fp1_feats.numpy())
-            np.save(os.path.join(FLAGS.out_dir, 'fp2_rep_' + str(start) + '_to_' + str(end) + '.npy'), fp2_feats.numpy())
+            #npy_filename = 'sa1_rep_' + str(start) + '_to_' + str(end) + '.npy'
+            #np.save(os.path.join(FLAGS.out_dir, npy_filename), sa1_feats.numpy())
+            #npy_filename = 'sa2_rep_' + str(start) + '_to_' + str(end) + '.npy'
+            #np.save(os.path.join(FLAGS.out_dir, npy_filename), sa2_feats.numpy())
+            npy_filename = 'sa3_rep_' + str(start) + '_to_' + str(end) + '.npy'
+            np.save(os.path.join(FLAGS.out_dir, npy_filename), sa3_feats.numpy())
+            print(npy_filename, 'saved.')
+            npy_filename = 'sa4_rep_' + str(start) + '_to_' + str(end) + '.npy'
+            np.save(os.path.join(FLAGS.out_dir, npy_filename), sa4_feats.numpy())
+            print(npy_filename, 'saved.')
+            #npy_filename = 'fp1_rep_' + str(start) + '_to_' + str(end) + '.npy'
+            #np.save(os.path.join(FLAGS.out_dir, npy_filename), fp1_feats.numpy())
+            #npy_filename = 'fp2_rep_' + str(start) + '_to_' + str(end) + '.npy'
+            #np.save(os.path.join(FLAGS.out_dir, npy_filename), fp2_feats.numpy())
+            npy_filename = 'voting_rep_' + str(start) + '_to_' + str(end) + '.npy'
+            np.save(os.path.join(FLAGS.out_dir, npy_filename), voting_feats.numpy())
+            print(npy_filename, 'saved.')
+            npy_filename = 'va_rep_' + str(start) + '_to_' + str(end) + '.npy'
+            np.save(os.path.join(FLAGS.out_dir, npy_filename), va_feats.numpy())
+            print(npy_filename, 'saved.')
     
     
     

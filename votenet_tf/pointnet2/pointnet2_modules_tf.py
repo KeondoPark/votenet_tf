@@ -225,9 +225,9 @@ class PointnetSAModuleVotes(layers.Layer):
             self.output_details = self.interpreter.get_output_details()
         else:
             self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=bn, input_shape=[npoint, nsample, 3+mlp_spec[0]])        
-            self.max_pool = layers.MaxPooling2D(pool_size=(1, self.nsample), strides=1, data_format="channels_last")
-            #self.max_pool = layers.MaxPooling2D(pool_size=(1, 16), strides=(1,16), data_format="channels_last")
-            #self.max_pool2 = layers.MaxPooling2D(pool_size=(1, int(self.nsample/16)), strides=(1,int(self.nsample/16)), data_format="channels_last")
+            #self.max_pool = layers.MaxPooling2D(pool_size=(1, self.nsample), strides=1, data_format="channels_last")
+            self.max_pool = layers.MaxPooling2D(pool_size=(1, 16), strides=(1,16), data_format="channels_last")
+            self.max_pool2 = layers.MaxPooling2D(pool_size=(1, int(self.nsample/16)), strides=(1,int(self.nsample/16)), data_format="channels_last")
             self.avg_pool = layers.AveragePooling2D(pool_size=(1, self.nsample), strides=1, data_format="channels_last")        
 
     def call(self, xyz, features, inds=None, sample_type = 'fps_light'):
@@ -249,19 +249,19 @@ class PointnetSAModuleVotes(layers.Layer):
         if inds is None:
             
             if sample_type == 'fps':
-                start = time.time()
+                #start = time.time()
                 inds = tf_sampling.farthest_point_sample(self.npoint, xyz)                
                 #inds, batch_distances = pointnet2_utils.fps_light(xyz, self.npoint)
-                end = time.time()
+                #end = time.time()
                 #print("Runtime for FPS original", end - start)
         else:
             assert(inds.shape[1] == self.npoint)   
 
-        start = time.time()     
+        #start = time.time()     
         new_xyz = tf_sampling.gather_point(
             xyz, inds
         ) if self.npoint is not None else None
-        end = time.time()
+        #end = time.time()
         #print("Runtime for gather_op original", end - start)
 
         if not self.ret_unique_cnt:
@@ -277,7 +277,7 @@ class PointnetSAModuleVotes(layers.Layer):
                 xyz, new_xyz, features
             )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)
 
-        start = time.time()   
+        #start = time.time()   
         if self.use_tflite:
             self.interpreter.set_tensor(self.input_details[0]['index'], grouped_features)
             self.interpreter.invoke()
@@ -286,16 +286,16 @@ class PointnetSAModuleVotes(layers.Layer):
             new_features = self.mlp_module(
                     grouped_features
                 )  # (B, npoint, nsample, mlp[-1])
-            end = time.time()
+            #end = time.time()
             #print("Runtime for shared MLP", end - start)
 
             if self.pooling == 'max':
                 #new_features = layers.MaxPooling2D(pool_size=(1, tf.shape(new_features)[2]), strides=1, data_format="channels_last")(new_features)  # (B, npoint, 1, mlp[-1])
-                new_features = self.max_pool(new_features)  # (B, npoint, 1, mlp[-1])
-                #if self.nsample == 16:
-                #    new_features = self.max_pool(new_features)  # (B, npoint, 1, mlp[-1])
-                #elif self.nsample > 16:
-                #    new_features = self.max_pool2(self.max_pool(new_features))  # (B, npoint, 1, mlp[-1])
+                #new_features = self.max_pool(new_features)  # (B, npoint, 1, mlp[-1])
+                if self.nsample == 16:
+                    new_features = self.max_pool(new_features)  # (B, npoint, 1, mlp[-1])
+                elif self.nsample > 16:
+                    new_features = self.max_pool2(self.max_pool(new_features))  # (B, npoint, 1, mlp[-1])
             elif self.pooling == 'avg':
                 #new_features = layers.AvgPooling2D(pool_size=(1, tf.shape(new_features)[2]), strides=1, data_format="channels_last")(new_features) # (B, npoint, 1, mlp[-1])
                 new_features = self.avg_pool(new_features)  # (B, npoint, 1, mlp[-1])
@@ -308,7 +308,7 @@ class PointnetSAModuleVotes(layers.Layer):
             '''
         #new_features = tf.squeeze(new_features, axis=-2)  # (B, npoint, mlp[-1])
         new_features = layers.Reshape((self.npoint, new_features.shape[-1]))(new_features)
-        end = time.time()
+        #end = time.time()
         #print("Runtime for shared MLP and max pooling", end - start)
 
         if not self.ret_unique_cnt:
@@ -369,19 +369,19 @@ class PointnetSAModuleVotes_NoMLP(layers.Layer):
         if inds is None:
             
             if sample_type == 'fps':
-                start = time.time()
+                #start = time.time()
                 inds = tf_sampling.farthest_point_sample(self.npoint, xyz)                
                 #inds, batch_distances = pointnet2_utils.fps_light(xyz, self.npoint)
-                end = time.time()
+                #end = time.time()
                 #print("Runtime for FPS original", end - start)
         else:
             assert(inds.shape[1] == self.npoint)   
 
-        start = time.time()     
+        #start = time.time()     
         new_xyz = tf_sampling.gather_point(
             xyz, inds
         ) if self.npoint is not None else None
-        end = time.time()
+        #end = time.time()
         #print("Runtime for gather_op original", end - start)
 
         if not self.ret_unique_cnt:        
@@ -390,8 +390,7 @@ class PointnetSAModuleVotes_NoMLP(layers.Layer):
                 xyz, new_xyz, features            
             )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)
         else:
-            grouped_features, ball_query_idx, grouped_xyz, unique_cnt = self.grouper(
-            
+            grouped_features, ball_query_idx, grouped_xyz, unique_cnt = self.grouper(            
                 xyz, new_xyz, features
             )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)
         
@@ -533,19 +532,19 @@ class PointnetFPModule(layers.Layer):
         """
 
         if known is not None:            
-            start = time.time()
+            #start = time.time()
             dist, idx = tf_interpolate.three_nn(unknown, known)
-            dist_recip = 1.0 / (dist + 1e-8)
+            dist_recip = tf.divide(tf.constant(1.0, dtype=tf.float32), (dist + 1e-8))
             norm = tf.reduce_sum(dist_recip, axis=2, keepdims=True)
-            weight = dist_recip / norm  # (B, n, 3)
-            end = time.time()
+            weight = tf.divide(dist_recip, norm)  # (B, n, 3)
+            #end = time.time()
             #print("Runtime for Threenn original", end - start)
             
-            start = time.time() 
+            #start = time.time() 
             interpolated_feats = tf_interpolate.three_interpolate(
                 known_feats, idx, weight
             )
-            end = time.time()
+            #end = time.time()
             #print("Runtime for Inverse three_interpolate original: ", end - start)
 
         else:
@@ -556,6 +555,7 @@ class PointnetFPModule(layers.Layer):
                                    axis=2)  #(B, n, C2 + C1)
         else:
             prop_features = interpolated_feats
+        """
         start = time.time()
         #new_features = tf.expand_dims(new_features, axis=-2)
         prop_features = layers.Reshape((prop_features.shape[1], 1, prop_features.shape[2]))(prop_features)
@@ -569,6 +569,8 @@ class PointnetFPModule(layers.Layer):
 
         #return tf.squeeze(new_features, axis=-2)   
         return layers.Reshape((res_features.shape[1], res_features.shape[-1]))(res_features), prop_features
+        """
+        return prop_features, prop_features
 '''
 class PointnetLFPModuleMSG(nn.Module):
     """ Modified based on _PointnetSAModuleBase and PointnetSAModuleMSG
