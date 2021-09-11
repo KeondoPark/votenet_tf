@@ -420,18 +420,14 @@ def get_loss(end_points, config):
         end_points: dict
     """    
 
-    sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
-        sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
-        sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
-        sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
-        fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds, \
-        seed_inds, seed_xyz, seed_features, vote_xyz, vote_features, \
-        va_grouped_features, aggregated_vote_xyz, aggregated_vote_inds, objectness_scores, center, \
-        heading_scores, heading_residuals_normalized, heading_residuals, size_scores, size_residuals_normalized, \
-        size_residuals, sem_cls_scores, center_label, heading_class_label, heading_residual_label, \
-        size_class_label, size_residual_label, sem_cls_label, box_label_mask, vote_label, \
-        vote_label_mask, max_gt_bboxes = end_points
-
+    res_from_backbone, res_from_voting, res_from_pnet, from_inputs = end_points
+    seed_inds, seed_xyz, seed_features, vote_xyz, vote_features = res_from_voting
+    aggregated_vote_xyz, aggregated_vote_inds, objectness_scores, center, heading_scores, \
+        heading_residuals_normalized, heading_residuals, size_scores, size_residuals_normalized, size_residuals, \
+        sem_cls_scores, va_grouped_features = res_from_pnet
+    center_label, heading_class_label, heading_residual_label, size_class_label, size_residual_label, \
+        sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes \
+        = from_inputs
 
     # Vote loss
     vote_loss = compute_vote_loss(seed_xyz, vote_xyz, seed_inds, vote_label_mask, vote_label)
@@ -484,21 +480,13 @@ def get_loss(end_points, config):
     #end_points['obj_acc'] = obj_acc
     
 
+    from_loss = vote_loss, objectness_loss, objectness_label, objectness_mask, object_assignment, \
+        pos_ratio, neg_ratio, center_loss, heading_cls_loss, heading_reg_loss, \
+        size_cls_loss, size_reg_loss, sem_cls_loss, box_loss, loss, \
+        obj_acc
 
-    end_points = sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
-        sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
-        sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
-        sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
-        fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds, \
-        seed_inds, seed_xyz, seed_features, vote_xyz, vote_features, \
-        va_grouped_features, aggregated_vote_xyz, aggregated_vote_inds, objectness_scores, center, \
-        heading_scores, heading_residuals_normalized, heading_residuals, size_scores, size_residuals_normalized, \
-        size_residuals, sem_cls_scores, center_label, heading_class_label, heading_residual_label, \
-        size_class_label, size_residual_label, sem_cls_label, box_label_mask, vote_label, \
-        vote_label_mask, max_gt_bboxes, vote_loss, objectness_loss, objectness_label, \
-        objectness_mask, object_assignment, pos_ratio, neg_ratio, center_loss, \
-        heading_cls_loss, heading_reg_loss, size_cls_loss, size_reg_loss, sem_cls_loss, \
-        box_loss, loss, obj_acc
+
+    end_points = res_from_backbone, res_from_voting, res_from_pnet, from_inputs, from_loss
 
     #print("loss:", loss)
     return loss, end_points

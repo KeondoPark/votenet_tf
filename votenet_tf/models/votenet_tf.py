@@ -60,11 +60,11 @@ class VoteNet(tf.keras.Model):
         self.backbone_net = Pointnet2Backbone(input_feature_dim=self.input_feature_dim, use_tflite=use_tflite)
 
         # Hough voting
-        self.vgen = VotingModule(self.vote_factor, seed_feature_dim=128*3)#, use_tflite=use_tflite, tflite_name='voting_quant.tflite')
+        self.vgen = VotingModule(self.vote_factor, seed_feature_dim=128*3, use_tflite=use_tflite, tflite_name='voting_quant_test.tflite')
 
         # Vote aggregation and detection
         self.pnet = ProposalModule(num_class, num_heading_bin, num_size_cluster,
-            mean_size_arr, num_proposal, sampling, seed_feat_dim=128*3, use_tflite=use_tflite, tflite_name='va_quant.tflite')
+            mean_size_arr, num_proposal, sampling, seed_feat_dim=128*3, use_tflite=use_tflite, tflite_name='va_quant_test.tflite')
 
     def call(self, inputs):
         """ Forward pass of the network
@@ -81,13 +81,13 @@ class VoteNet(tf.keras.Model):
         Returns:
             end_points: list
         """
-        end_points = self.backbone_net(inputs)
+        res_from_backbone = self.backbone_net(inputs)
 
         sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
         sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
         sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
         sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
-        fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds = end_points
+        fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds = res_from_backbone
                 
         # --------- HOUGH VOTING ---------
         #xyz = end_points['fp2_xyz']
@@ -111,16 +111,10 @@ class VoteNet(tf.keras.Model):
         vote_features = features
         #start = time.time() 
 
+        res_from_voting = seed_inds, seed_xyz, seed_features, vote_xyz, vote_features
+        end_points = res_from_backbone, res_from_voting
 
-        end_points = sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
-            sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
-            sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
-            sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
-            fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds, \
-            seed_inds, seed_xyz, seed_features, vote_xyz, vote_features
-
-
-        end_points = self.pnet(xyz, features, end_points)
+        end_points = self.pnet(vote_xyz, vote_features, end_points)
         #print("Runtime for Proposal module:", time.time() - start)
 
         #return end_points

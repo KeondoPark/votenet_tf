@@ -30,6 +30,7 @@ from ap_helper_tf import APCalculator, parse_predictions, parse_groundtruths
 
 import votenet_tf
 from votenet_tf import dump_results
+from collections import defaultdict
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='sunrgbd', help='Dataset name. sunrgbd or scannet. [default: sunrgbd]')
@@ -142,13 +143,11 @@ CONFIG_DICT = {'remove_empty_box': (not FLAGS.faster_eval), 'use_3d_nms':FLAGS.u
     'per_class_proposal': FLAGS.per_class_proposal, 'conf_thresh':FLAGS.conf_thresh,
     'dataset_config':DATASET_CONFIG}
 
-label_dict = {0:'point_cloud', 1:'center_label', 2:'heading_class_label', 3:'heading_residual_label', 4:'size_class_label',\
-    5:'size_residual_label', 6:'sem_cls_label', 7:'box_label_mask', 8:'vote_label', 9:'vote_label_mask', 10: 'max_gt_bboxes'}
 
 # ------------------------------------------------------------------------- GLOBAL CONFIG END
 
 def evaluate_one_epoch():
-    stat_dict = {} # collect statistics
+    stat_dict = defaultdict(int) # collect statistics            
     ap_calculator_list = [APCalculator(iou_thresh, DATASET_CONFIG.class2type) \
         for iou_thresh in AP_IOU_THRESHOLDS]
     start = time.time()
@@ -161,29 +160,47 @@ def evaluate_one_epoch():
             start = time.time()
         start2 = time.time()
         # Forward pass
-        inputs = batch_data[0] 
-        end_points = net(inputs, training=False)
-        end_points['point_clouds'] = inputs
+        point_cloud, center_label, heading_class_label, heading_residual_label, size_class_label, \
+            size_residual_label, sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes = batch_data
+        end_points = net(point_cloud, training=False)
+        res_from_backbone, res_from_voting, res_from_pnet = end_points
+       
 
-        # Compute loss
-        for i, data in enumerate(batch_data):
-            if i == 0: continue #pass point cloud
-            end_points[label_dict[i]] = data
-        loss, end_points = criterion(end_points, DATASET_CONFIG)        
+        from_inputs = center_label, heading_class_label, heading_residual_label, size_class_label, size_residual_label, \
+            sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes
+        end_points = res_from_backbone, res_from_voting, res_from_pnet, from_inputs
 
-        # Accumulate statistics and print out
-        for key in end_points:
-            if 'loss' in key or 'acc' in key or 'ratio' in key:
-                if key not in stat_dict: stat_dict[key] = 0
-                stat_dict[key] += end_points[key]
+        config = tf.constant(DATASET_CONFIG.num_heading_bin, dtype=tf.int32), \
+            tf.constant(DATASET_CONFIG.num_size_cluster, dtype=tf.int32), \
+            tf.constant(DATASET_CONFIG.num_class, dtype=tf.int32), \
+            tf.constant(DATASET_CONFIG.mean_size_arr, dtype=tf.float32)
+        loss, end_points = criterion(end_points, config)        
+
+        res_from_backbone, res_from_voting, res_from_pnet, from_inputs, from_loss = end_points
+        vote_loss, objectness_loss, objectness_label, objectness_mask, object_assignment, \
+        pos_ratio, neg_ratio, center_loss, heading_cls_loss, heading_reg_loss, \
+        size_cls_loss, size_reg_loss, sem_cls_loss, box_loss, loss, \
+            obj_acc = from_loss
+
+        stat_dict['box_loss'] += box_loss
+        stat_dict['vote_loss'] += vote_loss
+        stat_dict['objectness_loss'] += objectness_loss
+        stat_dict['sem_cls_loss'] += sem_cls_loss
+        stat_dict['loss'] += loss
+        stat_dict['obj_acc'] += obj_acc
+        stat_dict['pos_ratio'] += pos_ratio
+        stat_dict['neg_ratio'] += neg_ratio
         end2 = time.time()
         log_string('inference time: ' +  str(end2 - start2))        
 
-        batch_pred_map_cls = parse_predictions(end_points, CONFIG_DICT)        
+        batch_pred_map_cls, pred_mask = parse_predictions(end_points, CONFIG_DICT)        
         batch_gt_map_cls = parse_groundtruths(end_points, CONFIG_DICT) 
         for ap_calculator in ap_calculator_list:
             ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)    
-         
+        
+        for_dump = point_cloud, batch_pred_map_cls, batch_gt_map_cls, pred_mask
+        end_points = res_from_backbone, res_from_voting, res_from_pnet, from_inputs, from_loss, for_dump
+
         # Dump evaluation results for visualization
         if batch_idx == 0:
             dump_results(end_points, DUMP_DIR, DATASET_CONFIG)

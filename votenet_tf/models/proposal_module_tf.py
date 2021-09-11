@@ -17,7 +17,7 @@ import pointnet2_utils_tf
 from tf_ops.sampling import tf_sampling
 import tf_utils
 
-def decode_scores(net, end_points, num_class, num_heading_bin, num_size_cluster, mean_size_arr):
+def decode_scores(net, aggregated_vote_xyz, aggregated_vote_inds, va_grouped_features, num_class, num_heading_bin, num_size_cluster, mean_size_arr):
     """
     Args:
         net: (B, num_proposal, 2+3+num_heading_bin*2+num_size_cluster*4)
@@ -30,18 +30,9 @@ def decode_scores(net, end_points, num_class, num_heading_bin, num_size_cluster,
                 
     """
 
-    sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
-    sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
-    sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
-    sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
-    fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds, \
-    seed_inds, seed_xyz, seed_features, vote_xyz, vote_features, \
-    va_grouped_features, aggregated_vote_xyz, aggregated_vote_inds = end_points
 
-
-    #net_transposed = tf.transpose(net, perm=[0,2,1]) # (batch_size, 1024, ..)    
-    batch_size = net.shape[0]
-    num_proposal = net.shape[1]
+    #net_transposed = tf.transpose(net, perm=[0,2,1]) # (batch_size, 1024, ..)        
+    num_proposal = tf.shape(net)[1]
 
     objectness_scores = net[:,:,0:2]
     #end_points['objectness_scores'] = objectness_scores    
@@ -73,17 +64,11 @@ def decode_scores(net, end_points, num_class, num_heading_bin, num_size_cluster,
     sem_cls_scores = net[:,:,5+num_heading_bin*2+num_size_cluster*4:] # B x num_proposal x 10
     #end_points['sem_cls_scores'] = sem_cls_scores    
 
-    end_points = sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
-        sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
-        sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
-        sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
-        fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds, \
-        seed_inds, seed_xyz, seed_features, vote_xyz, vote_features, \
-        va_grouped_features, aggregated_vote_xyz, aggregated_vote_inds, objectness_scores, center, \
+    res_from_pnet = aggregated_vote_xyz, aggregated_vote_inds, objectness_scores, center, \
         heading_scores, heading_residuals_normalized, heading_residuals, size_scores, size_residuals_normalized, \
-        size_residuals, sem_cls_scores
+        size_residuals, sem_cls_scores, va_grouped_features
         
-    return end_points
+    return res_from_pnet
 
 
 class ProposalModule(layers.Layer):
@@ -161,12 +146,8 @@ class ProposalModule(layers.Layer):
             scores: (B,num_proposal,2+3+NH*2+NS*4) 
         """
 
-        sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
-        sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
-        sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
-        sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
-        fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds, \
-        seed_inds, seed_xyz, seed_features, vote_xyz, vote_features = end_points
+        res_from_backbone, res_from_voting = end_points
+        seed_inds, seed_xyz, seed_features, vote_xyz, vote_features = res_from_voting
 
         if self.sampling == 'vote_fps':
             # Farthest point sampling (FPS) on votes
@@ -177,12 +158,12 @@ class ProposalModule(layers.Layer):
         elif self.sampling == 'seed_fps': 
             # FPS on seed and choose the votes corresponding to the seeds
             # This gets us a slightly better coverage of *object* votes than vote_fps (which tends to get more cluster votes)
-            sample_inds = tf_sampling.farthest_point_sample(self.num_proposal, end_points['seed_xyz'])
+            sample_inds = tf_sampling.farthest_point_sample(self.num_proposal, seed_xyz)
             xyz, features, fps_inds, _, _ = self.vote_aggregation(xyz, features, sample_inds)
         elif self.sampling == 'random':
             # Random sampling from the votes
-            num_seed = end_points['seed_xyz'].shape[1]
-            batch_size = end_points['seed_xyz'].shape[0]
+            num_seed = seed_xyz.shape[1]
+            batch_size = seed_xyz.shape[0]
             seed_pts = np.random.randint(low=0, high=num_seed, size=(batch_size, self.num_proposal)).astype('float32')
             sample_inds = tf.constant(seed_pts)
             xyz, features, fps_inds, _, _ = self.vote_aggregation(xyz, features, sample_inds)
@@ -212,16 +193,10 @@ class ProposalModule(layers.Layer):
 
         aggregated_vote_xyz = xyz
         aggregated_vote_inds = sample_inds
+        
+        res_from_pnet = decode_scores(net, aggregated_vote_xyz, aggregated_vote_inds, va_grouped_features, self.num_class, self.num_heading_bin, self.num_size_cluster, self.mean_size_arr)        
 
-        end_points = sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
-            sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
-            sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
-            sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
-            fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds, \
-            seed_inds, seed_xyz, seed_features, vote_xyz, vote_features, \
-            va_grouped_features, aggregated_vote_xyz, aggregated_vote_inds
-
-        end_points = decode_scores(net, end_points, self.num_class, self.num_heading_bin, self.num_size_cluster, self.mean_size_arr)
+        end_points = res_from_backbone, res_from_voting, res_from_pnet
 
         return end_points
 

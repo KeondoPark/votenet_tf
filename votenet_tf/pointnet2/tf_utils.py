@@ -117,8 +117,7 @@ class _ConvBase(layers.Layer):
                 strides=stride,
                 padding=padding,
                 use_bias=bias if bias else None,
-                bias_initializer=init if bias else None,
-                activation=activation if activation is not None else None,
+                bias_initializer=init if bias else None,                
                 data_format=data_format,
                 input_shape =input_shape
             )
@@ -131,8 +130,7 @@ class _ConvBase(layers.Layer):
                 strides=stride,
                 padding=padding,
                 use_bias=bias if bias else None,
-                bias_initializer=init if bias else None,
-                activation=activation if activation is not None else None,
+                bias_initializer=init if bias else None,                
                 data_format=data_format                
             )
 
@@ -142,12 +140,17 @@ class _ConvBase(layers.Layer):
             self.bn_unit = layers.BatchNormalization(axis=1 if data_format=="channels_first" else -1, 
                                 name=name + "bn",
                                 momentum=0.9, epsilon=0.001)
+
+        if activation == 'relu':
+            self.act = layers.ReLU()
+        elif activation =='relu6':
+            self.act = layers.ReLU(6)
     
     def call(self, inputs):
         if self.bn:
-            return self.bn_unit(self.conv_unit(inputs))
+            return self.act(self.bn_unit(self.conv_unit(inputs)))
         else:
-            return self.conv_unit(inputs)
+            return self.act(self.conv_unit(inputs))
 
 
 """

@@ -40,7 +40,7 @@ class Pointnet2Backbone(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True,
                 use_tflite=use_tflite,
-                tflite_name='sa1_quant.tflite'
+                tflite_name='sa1_quant_test.tflite'
             )
 
         self.sa2 = PointnetSAModuleVotes(
@@ -51,7 +51,7 @@ class Pointnet2Backbone(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True,
                 use_tflite=use_tflite,
-                tflite_name='sa2_quant.tflite'
+                tflite_name='sa2_quant_test.tflite'
             )
 
         self.sa3 = PointnetSAModuleVotes(
@@ -62,7 +62,7 @@ class Pointnet2Backbone(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True,
                 use_tflite=use_tflite,
-                tflite_name='sa3_quant.tflite'
+                tflite_name='sa3_quant_test.tflite'
             )
 
         self.sa4 = PointnetSAModuleVotes(
@@ -73,7 +73,7 @@ class Pointnet2Backbone(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True,
                 use_tflite=use_tflite,
-                tflite_name='sa4_quant.tflite'
+                tflite_name='sa4_quant_test.tflite'
             )
 
         self.fp1 = PointnetFPModule(mlp=[256+256,256,256], m=512)
@@ -170,12 +170,13 @@ class Pointnet2Backbone(layers.Layer):
         #end_points['fp2_inds'] = end_points['sa1_inds'][:,0:num_seed] # indices among the entire input point clouds
         fp2_inds = sa1_inds[:,0:num_seed]
         
-
-        return sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
+        res_from_backbone = sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
             sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
             sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
             sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
             fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds
+
+        return res_from_backbone
 
 
 if __name__=='__main__':

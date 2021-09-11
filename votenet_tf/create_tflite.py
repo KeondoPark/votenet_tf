@@ -71,7 +71,27 @@ def wrapper_representative_data_gen_mlp(keyword, base_model):
                 inputs = batch_data[0]
                 end_points = base_model(inputs, training=False)
                 print("Using inference results", i, "-th batch...")
-                yield [end_points[keyword + '_grouped_features']]
+
+                res_from_backbone, res_from_voting, res_from_pnet = end_points
+                sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
+                sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
+                sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
+                sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
+                fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds = res_from_backbone
+
+                aggregated_vote_xyz, aggregated_vote_inds, objectness_scores, center, \
+                    heading_scores, heading_residuals_normalized, heading_residuals, size_scores, size_residuals_normalized, \
+                    size_residuals, sem_cls_scores, va_grouped_features = res_from_pnet
+
+                feature_dict = {'sa1':sa1_grouped_features,
+                        'sa2':sa2_grouped_features,
+                        'sa3':sa3_grouped_features,
+                        'sa4':sa4_grouped_features,
+                        'fp1':fp1_grouped_features,
+                        'fp2':fp2_grouped_features,
+                        'va': va_grouped_features}
+                yield [feature_dict[keyword]]
+                #yield [end_points[keyword + '_grouped_features']]
             else:
                 if (i * BATCH_SIZE) % 200 == 0:
                     start = i * BATCH_SIZE
@@ -91,7 +111,11 @@ def wrapper_representative_data_gen_voting(base_model):
                 inputs = batch_data[0]
                 end_points = base_model(inputs, training=False)
                 print(i, "-th batch...")
-                yield [tf.expand_dims(end_points['seed_features'], axis=-2)]
+
+                res_from_backbone, res_from_voting, res_from_pnet = end_points
+                seed_inds, seed_xyz, seed_features, vote_xyz, vote_features = res_from_voting
+                #yield [tf.expand_dims(end_points['seed_features'], axis=-2)]
+                yield [tf.expand_dims(seed_features, axis=-2)]
             else:
                 if (i * BATCH_SIZE) % 200 == 0:
                     start = i * BATCH_SIZE
@@ -210,8 +234,8 @@ if __name__=='__main__':
             self.conv3 = layers.Conv2D(filters=(3+self.out_dim) * self.vote_factor, kernel_size=1) 
             self.bn1 = layers.BatchNormalization(axis=-1)
             self.bn2 = layers.BatchNormalization(axis=-1)
-            self.relu1 = layers.Activation('relu')
-            self.relu2 = layers.Activation('relu')
+            self.relu1 = layers.ReLU(6)
+            self.relu2 = layers.ReLU(6)
         
         def call(self, seed_features):
             net = self.relu1(self.bn1(self.conv1(seed_features))) 
@@ -233,8 +257,8 @@ if __name__=='__main__':
             self.conv3 = layers.Conv2D(filters=2+3+DC.num_heading_bin*2+DC.num_size_cluster*4+DC.num_class, kernel_size=1) 
             self.bn1 = layers.BatchNormalization(axis=-1)
             self.bn2 = layers.BatchNormalization(axis=-1)
-            self.relu1 = layers.Activation('relu')
-            self.relu2 = layers.Activation('relu')
+            self.relu1 = layers.ReLU(6)
+            self.relu2 = layers.ReLU(6)
 
         def call(self, grouped_features):
             if self.nsample:
@@ -252,8 +276,7 @@ if __name__=='__main__':
 
             return net
 
-    converting_layers = ['voting']
-
+    converting_layers = ['va']
     if 'sa1' in converting_layers:    
         sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[2048,64,1+3])
         dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,2048,64,4])) # (B, npoint, nsample, C+3)
@@ -264,7 +287,7 @@ if __name__=='__main__':
         tflite_convert('sa1', sa1_mlp, net, FLAGS.out_dir)
 
     if 'sa2' in converting_layers:
-        sa2_mlp = SharedMLPModel(mlp_spec=[128, 128, 128, 256], nsample=32, input_shape=[1024,32,128+3])
+        sa2_mlp = SharedMLPModel(mlp_spec=[128, 128, 128, 128], nsample=32, input_shape=[1024,32,128+3])
         dummy_in_sa2 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,32,128+3])) # (B, npoint, nsample, C+3)
         dummy_out = sa2_mlp(dummy_in_sa2)
         layer = sa2_mlp.sharedMLP
@@ -272,16 +295,16 @@ if __name__=='__main__':
         tflite_convert('sa2', sa2_mlp, net, FLAGS.out_dir)
 
     if 'sa3' in converting_layers:
-        sa3_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16, input_shape=[512,16,256+3])
-        dummy_in_sa3 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,512,16,256+3])) # (B, npoint, nsample, C+3)
+        sa3_mlp = SharedMLPModel(mlp_spec=[128, 128, 128, 128], nsample=16, input_shape=[512,16,256+3])
+        dummy_in_sa3 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,512,16,128+3])) # (B, npoint, nsample, C+3)
         dummy_out = sa3_mlp(dummy_in_sa3)
         layer = sa3_mlp.sharedMLP
         layer.set_weights(net.backbone_net.sa3.mlp_module.get_weights())
         tflite_convert('sa3', sa3_mlp, net, FLAGS.out_dir)
 
     if 'sa4' in converting_layers:
-        sa4_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16, input_shape=[256,16,256+3])
-        dummy_in_sa4 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,256+3])) # (B, npoint, nsample, C+3)
+        sa4_mlp = SharedMLPModel(mlp_spec=[128, 128, 128, 128], nsample=16, input_shape=[256,16,256+3])
+        dummy_in_sa4 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,128+3])) # (B, npoint, nsample, C+3)
         dummy_out = sa4_mlp(dummy_in_sa4)
         layer = sa4_mlp.sharedMLP
         layer.set_weights(net.backbone_net.sa4.mlp_module.get_weights())
@@ -320,8 +343,8 @@ if __name__=='__main__':
 
 
     if 'va' in converting_layers:
-        va_mlp = vaModule(mlp_spec=[256*3, 128, 128, 128], nsample=16, input_shape=[256,16,128*3+3])
-        dummy_in_va = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,256*3+3])) # (B, npoint, nsample, C+3)
+        va_mlp = vaModule(mlp_spec=[128*3, 128, 128, 128], nsample=16, input_shape=[256,16,128*3+3])
+        dummy_in_va = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,128*3+3])) # (B, npoint, nsample, C+3)
         dummy_out = va_mlp(dummy_in_va)
         layer = va_mlp.sharedMLP
         layer.set_weights(net.pnet.mlp_module.get_weights())

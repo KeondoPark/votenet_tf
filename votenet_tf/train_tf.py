@@ -332,27 +332,11 @@ def train_one_epoch(batch_data):
         end_points = net(point_cloud, training=True)                
         # Compute loss and gradients, update parameters.
 
-        sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
-        sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
-        sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
-        sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
-        fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds, \
-        seed_inds, seed_xyz, seed_features, vote_xyz, vote_features, \
-        va_grouped_features, aggregated_vote_xyz, aggregated_vote_inds, objectness_scores, center, \
-        heading_scores, heading_residuals_normalized, heading_residuals, size_scores, size_residuals_normalized, \
-        size_residuals, sem_cls_scores = end_points
+        res_from_backbone, res_from_voting, res_from_pnet = end_points
+        from_inputs = center_label, heading_class_label, heading_residual_label, size_class_label, size_residual_label, \
+            sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes
 
-        end_points = sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
-        sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
-        sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
-        sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
-        fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds, \
-        seed_inds, seed_xyz, seed_features, vote_xyz, vote_features, \
-        va_grouped_features, aggregated_vote_xyz, aggregated_vote_inds, objectness_scores, center, \
-        heading_scores, heading_residuals_normalized, heading_residuals, size_scores, size_residuals_normalized, \
-        size_residuals, sem_cls_scores, center_label, heading_class_label, heading_residual_label, \
-        size_class_label, size_residual_label, sem_cls_label, box_label_mask, vote_label, \
-        vote_label_mask, max_gt_bboxes
+        end_points = res_from_backbone, res_from_voting, res_from_pnet, from_inputs
         
         loss, end_points = criterion(end_points, config)        
 
@@ -369,27 +353,11 @@ def evaluate_one_epoch(batch_data):
     size_residual_label, sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes = batch_data
     end_points = net(point_cloud, training=False)
 
-    sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
-    sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
-    sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
-    sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
-    fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds, \
-    seed_inds, seed_xyz, seed_features, vote_xyz, vote_features, \
-    va_grouped_features, aggregated_vote_xyz, aggregated_vote_inds, objectness_scores, center, \
-    heading_scores, heading_residuals_normalized, heading_residuals, size_scores, size_residuals_normalized, \
-    size_residuals, sem_cls_scores = end_points
+    res_from_backbone, res_from_voting, res_from_pnet = end_points
 
-    end_points = sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
-        sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
-        sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
-        sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
-        fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds, \
-        seed_inds, seed_xyz, seed_features, vote_xyz, vote_features, \
-        va_grouped_features, aggregated_vote_xyz, aggregated_vote_inds, objectness_scores, center, \
-        heading_scores, heading_residuals_normalized, heading_residuals, size_scores, size_residuals_normalized, \
-        size_residuals, sem_cls_scores, center_label, heading_class_label, heading_residual_label, \
-        size_class_label, size_residual_label, sem_cls_label, box_label_mask, vote_label, \
-        vote_label_mask, max_gt_bboxes
+    from_inputs = center_label, heading_class_label, heading_residual_label, size_class_label, size_residual_label, \
+            sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes
+    end_points = res_from_backbone, res_from_voting, res_from_pnet, from_inputs
     
     config = tf.constant(DATASET_CONFIG.num_heading_bin, dtype=tf.int32), \
         tf.constant(DATASET_CONFIG.num_size_cluster, dtype=tf.int32), \
@@ -436,8 +404,7 @@ def train(start_epoch):
         log_string('Current learning rate: %f'%(get_current_lr(epoch)))
         log_string('Current BN decay momentum: %f'%(bnm_scheduler.lmbd(bnm_scheduler.last_epoch)))
         log_string(str(datetime.now()))  
-        
-        stat_dict = {} # collect statistics
+                
         adjust_learning_rate(optimizer, EPOCH_CNT)
         bnm_scheduler.step() # decay BN momentum  
         train_loss = tf.constant(0.0, tf.float32)
@@ -484,21 +451,11 @@ def train(start_epoch):
                 curr_loss, end_points = distributed_eval_step(batch_data)
                 eval_loss += curr_loss
 
-                sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
-                sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
-                sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
-                sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
-                fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds, \
-                seed_inds, seed_xyz, seed_features, vote_xyz, vote_features, \
-                va_grouped_features, aggregated_vote_xyz, aggregated_vote_inds, objectness_scores, center, \
-                heading_scores, heading_residuals_normalized, heading_residuals, size_scores, size_residuals_normalized, \
-                size_residuals, sem_cls_scores, center_label, heading_class_label, heading_residual_label, \
-                size_class_label, size_residual_label, sem_cls_label, box_label_mask, vote_label, \
-                vote_label_mask, max_gt_bboxes, vote_loss, objectness_loss, objectness_label, \
-                objectness_mask, object_assignment, pos_ratio, neg_ratio, center_loss, \
-                heading_cls_loss, heading_reg_loss, size_cls_loss, size_reg_loss, sem_cls_loss, \
-                box_loss, loss, obj_acc\
-                    = end_points
+                res_from_backbone, res_from_voting, res_from_pnet, from_inputs, from_loss = end_points
+                vote_loss, objectness_loss, objectness_label, objectness_mask, object_assignment, \
+                pos_ratio, neg_ratio, center_loss, heading_cls_loss, heading_reg_loss, \
+                size_cls_loss, size_reg_loss, sem_cls_loss, box_loss, loss, \
+                    obj_acc = from_loss
 
                 stat_dict['box_loss'] += box_loss
                 stat_dict['vote_loss'] += vote_loss
@@ -509,7 +466,7 @@ def train(start_epoch):
                 stat_dict['pos_ratio'] += pos_ratio
                 stat_dict['neg_ratio'] += neg_ratio
 
-                batch_pred_map_cls = parse_predictions(end_points, CONFIG_DICT)        
+                batch_pred_map_cls, pred_mask = parse_predictions(end_points, CONFIG_DICT)        
                 batch_gt_map_cls = parse_groundtruths(end_points, CONFIG_DICT) 
                 ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)    
 
