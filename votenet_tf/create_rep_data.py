@@ -77,7 +77,7 @@ if __name__=='__main__':
         num_heading_bin=DC.num_heading_bin,
         num_size_cluster=DC.num_size_cluster,
         mean_size_arr=DC.mean_size_arr,
-        use_tflite=True)
+        use_tflite=False)
     print('Constructed model.')
     
     # Load checkpoint
@@ -96,33 +96,47 @@ if __name__=='__main__':
         inputs = batch_data[0]
         end_points = net(inputs, training=False)
         print(batch_idx, "-th batch...")
+        res_from_backbone, res_from_voting, res_from_pnet = end_points
+        sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
+        sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
+        sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
+        sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
+        fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds = res_from_backbone
+
+        seed_inds, seed_xyz, seed_features, vote_xyz, vote_features = res_from_voting
+
+        aggregated_vote_xyz, aggregated_vote_inds, objectness_scores, center, \
+            heading_scores, heading_residuals_normalized, heading_residuals, size_scores, size_residuals_normalized, \
+            size_residuals, sem_cls_scores, va_grouped_features = res_from_pnet
         if (batch_idx * BATCH_SIZE) % 200 == 0:
-            #sa1_feats = end_points['sa1_grouped_features']
-            #sa2_feats = end_points['sa2_grouped_features']
-            sa3_feats = end_points['sa3_grouped_features']
-            sa4_feats = end_points['sa4_grouped_features']
+            sa1_feats = sa1_grouped_features
+            sa2_feats = sa2_grouped_features
+            sa3_feats = sa3_grouped_features
+            sa4_feats = sa4_grouped_features
             #fp1_feats = end_points['fp1_grouped_features']            
             #fp2_feats = end_points['fp2_grouped_features']            
-            voting_feats = end_points['seed_features'] 
-            va_feats = end_points['va_grouped_features'] 
+            voting_feats = seed_features 
+            va_feats = va_grouped_features
 
         else:
-            #sa1_feats = tf.concat([sa1_feats, end_points['sa1_grouped_features']], axis=0)
-            #sa2_feats = tf.concat([sa2_feats, end_points['sa2_grouped_features']], axis=0)
-            sa3_feats = tf.concat([sa3_feats, end_points['sa3_grouped_features']], axis=0)
-            sa4_feats = tf.concat([sa4_feats, end_points['sa4_grouped_features']], axis=0)
+            sa1_feats = tf.concat([sa1_feats, sa1_grouped_features], axis=0)
+            sa2_feats = tf.concat([sa2_feats, sa2_grouped_features], axis=0)
+            sa3_feats = tf.concat([sa3_feats, sa3_grouped_features], axis=0)
+            sa4_feats = tf.concat([sa4_feats, sa4_grouped_features], axis=0)
             #fp1_feats = tf.concat([fp1_feats, end_points['fp1_grouped_features']], axis=0)
             #fp2_feats = tf.concat([fp2_feats, end_points['fp2_grouped_features']], axis=0)
-            voting_feats = tf.concat([voting_feats, end_points['seed_features'] ], axis=0)
-            va_feats = tf.concat([va_feats, end_points['va_grouped_features'] ], axis=0)
+            voting_feats = tf.concat([voting_feats, seed_features], axis=0)
+            va_feats = tf.concat([va_feats, va_grouped_features], axis=0)
         
         if ((batch_idx+1) * BATCH_SIZE) % 200 == 0:
             end = (batch_idx+1) * BATCH_SIZE
             start = end - 200
-            #npy_filename = 'sa1_rep_' + str(start) + '_to_' + str(end) + '.npy'
-            #np.save(os.path.join(FLAGS.out_dir, npy_filename), sa1_feats.numpy())
-            #npy_filename = 'sa2_rep_' + str(start) + '_to_' + str(end) + '.npy'
-            #np.save(os.path.join(FLAGS.out_dir, npy_filename), sa2_feats.numpy())
+            npy_filename = 'sa1_rep_' + str(start) + '_to_' + str(end) + '.npy'
+            np.save(os.path.join(FLAGS.out_dir, npy_filename), sa1_feats.numpy())
+            print(npy_filename, 'saved.')
+            npy_filename = 'sa2_rep_' + str(start) + '_to_' + str(end) + '.npy'
+            np.save(os.path.join(FLAGS.out_dir, npy_filename), sa2_feats.numpy())
+            print(npy_filename, 'saved.')
             npy_filename = 'sa3_rep_' + str(start) + '_to_' + str(end) + '.npy'
             np.save(os.path.join(FLAGS.out_dir, npy_filename), sa3_feats.numpy())
             print(npy_filename, 'saved.')
