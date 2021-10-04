@@ -81,40 +81,25 @@ class VoteNet(tf.keras.Model):
         Returns:
             end_points: list
         """
-        res_from_backbone = self.backbone_net(inputs)
-
-        sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
-        sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
-        sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
-        sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
-        fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds = res_from_backbone
-                
+        end_points = self.backbone_net(inputs)
+        
         # --------- HOUGH VOTING ---------
         #xyz = end_points['fp2_xyz']
         #features = end_points['fp2_features']
-        #end_points['seed_inds'] = end_points['fp2_inds']
-        #end_points['seed_xyz'] = xyz
-        #end_points['seed_features'] = features
-
-        seed_inds = fp2_inds
-        seed_xyz = fp2_xyz
-        seed_features = fp2_features        
+        end_points['seed_inds'] = end_points['fp2_inds']
+        end_points['seed_xyz'] = end_points['fp2_xyz']
+        end_points['seed_features'] = end_points['fp2_features']
         
         #start = time.time() 
-        xyz, features = self.vgen(seed_xyz, seed_features)
+        xyz, features = self.vgen(end_points['seed_xyz'], end_points['seed_features'])
         #print("Runtime for Voting module:", time.time() - start)
         features_norm = tf.norm(features, ord=2, axis=1)
         features = tf.divide(features, tf.expand_dims(features_norm, axis=1))        
-        #end_points['vote_xyz'] = xyz
-        #end_points['vote_features'] = features
-        vote_xyz = xyz
-        vote_features = features
+        end_points['vote_xyz'] = xyz
+        end_points['vote_features'] = features        
+        
         #start = time.time() 
-
-        res_from_voting = seed_inds, seed_xyz, seed_features, vote_xyz, vote_features
-        end_points = res_from_backbone, res_from_voting
-
-        end_points = self.pnet(vote_xyz, vote_features, end_points)
+        end_points = self.pnet(xyz, features, end_points)
         #print("Runtime for Proposal module:", time.time() - start)
 
         #return end_points

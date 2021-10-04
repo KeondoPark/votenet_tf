@@ -514,8 +514,7 @@ class PointnetFPModule(layers.Layer):
 
     def call(
             self, unknown, known,
-            unknow_feats, known_feats,
-            grouped_xyz, inds
+            unknow_feats, known_feats
     ):
         r"""
         Parameters

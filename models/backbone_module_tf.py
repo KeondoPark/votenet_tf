@@ -109,74 +109,66 @@ class Pointnet2Backbone(layers.Layer):
                 XXX_features: float32 Tensor of shape (B,K,D)
                 XXX-inds: int64 Tensor of shape (B,K) values in [0,N-1]
         """        
-
+        if not end_points: end_points = {}
         xyz, features = self._break_up_pc(pointcloud)
 
         # --------- 4 SET ABSTRACTION LAYERS ---------
         #xyz, features, fps_inds = self.sa1(xyz, features)
         #print("========================== SA1 ===============================")
         sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features = self.sa1(xyz, features, sample_type='fps')
-        #end_points['sa1_inds'] = fps_inds
-        #end_points['sa1_xyz'] = xyz
-        #end_points['sa1_features'] = features
+        end_points['sa1_xyz'] = sa1_xyz
+        end_points['sa1_features'] = sa1_features
+        end_points['sa1_inds'] = sa1_inds        
         #end_points['sa1_ball_query_idx'] = ball_query_idx
-        #end_points['sa1_grouped_features'] = grouped_features
+        end_points['sa1_grouped_features'] = sa1_grouped_features
 
         #print("========================== SA2 ===============================")
         #xyz, features, fps_inds = self.sa2(xyz, features) # this fps_inds is just 0,1,...,1023
         sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features = self.sa2(sa1_xyz, sa1_features, sample_type='fps') # this fps_inds is just 0,1,...,1023
-        #end_points['sa2_inds'] = fps_inds
-        #end_points['sa2_xyz'] = xyz
-        #end_points['sa2_features'] = features
+        end_points['sa2_xyz'] = sa2_xyz
+        end_points['sa2_features'] = sa2_features
+        end_points['sa2_inds'] = sa2_inds        
         #end_points['sa2_ball_query_idx'] = ball_query_idx
-        #end_points['sa2_grouped_features'] = grouped_features
+        end_points['sa2_grouped_features'] = sa2_grouped_features
 
         #print("========================== SA3 ===============================")
         #xyz, features, fps_inds = self.sa3(xyz, features) # this fps_inds is just 0,1,...,511
         sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features = self.sa3(sa2_xyz, sa2_features, sample_type='fps') # this fps_inds is just 0,1,...,511
-        #end_points['sa3_inds'] = fps_inds
-        #end_points['sa3_xyz'] = xyz
-        #end_points['sa3_features'] = features
+        end_points['sa3_xyz'] = sa3_xyz
+        end_points['sa3_features'] = sa3_features
+        end_points['sa3_inds'] = sa3_inds        
         #end_points['sa3_ball_query_idx'] = ball_query_idx
-        #end_points['sa3_grouped_features'] = grouped_features
+        end_points['sa3_grouped_features'] = sa3_grouped_features
 
 
         #print("========================== SA4 ===============================")
         #xyz, features, fps_inds = self.sa4(xyz, features) # this fps_inds is just 0,1,...,255
         sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features = self.sa4(sa3_xyz, sa3_features, sample_type='fps') # this fps_inds is just 0,1,...,255
-        #end_points['sa4_inds'] = fps_inds
-        #end_points['sa4_xyz'] = xyz
-        #end_points['sa4_features'] = features
+        end_points['sa4_xyz'] = sa4_xyz
+        end_points['sa4_features'] = sa4_features
+        end_points['sa4_inds'] = sa4_inds        
         #end_points['sa4_ball_query_idx'] = ball_query_idx
-        #end_points['sa4_grouped_features'] = grouped_features
+        end_points['sa4_grouped_features'] = sa4_grouped_features
 
 
         # --------- 2 FEATURE UPSAMPLING LAYERS --------
         #features = self.fp1(end_points['sa3_xyz'], end_points['sa4_xyz'], end_points['sa3_features'], end_points['sa4_features'])
         #features = self.fp2(end_points['sa2_xyz'], end_points['sa3_xyz'], end_points['sa2_features'], features)
         #print("========================== FP1 ===============================")
-        #features, prop_features = self.fp1(end_points['sa3_xyz'], end_points['sa4_xyz'], end_points['sa3_features'], end_points['sa4_features'], end_points['sa4_ball_query_idx'], end_points['sa4_inds'])
-        fp1_features, fp1_grouped_features = self.fp1(sa3_xyz, sa4_xyz, sa3_features, sa4_features, sa4_ball_query_idx, sa4_inds)
-        #end_points['fp1_grouped_features'] = prop_features
+        features, prop_features = self.fp1(end_points['sa3_xyz'], end_points['sa4_xyz'], end_points['sa3_features'], end_points['sa4_features'])
+        #fp1_features, fp1_grouped_features = self.fp1(sa3_xyz, sa4_xyz, sa3_features, sa4_features, sa4_ball_query_idx, sa4_inds)
+        end_points['fp1_grouped_features'] = prop_features
         #end_points.append(prop_features) #20
         
         #print("========================== FP2 ===============================")
-        fp2_features, fp2_grouped_features = self.fp2(sa2_xyz, sa3_xyz, sa2_features, fp1_features, sa3_ball_query_idx, sa3_inds)
-        #end_points['fp2_features'] = features
-        #end_points['fp2_grouped_features'] = prop_features
-        #end_points['fp2_xyz'] = end_points['sa2_xyz']
-        fp2_xyz = sa2_xyz        
+        fp2_features, fp2_grouped_features = self.fp1(end_points['sa2_xyz'], end_points['sa3_xyz'], end_points['sa2_features'], features)        
+        end_points['fp2_features'] = fp2_features
+        end_points['fp2_grouped_features'] = fp2_grouped_features
+        end_points['fp2_xyz'] = end_points['sa2_xyz']        
         num_seed = sa2_inds.shape[1]
-        #end_points['fp2_inds'] = end_points['sa1_inds'][:,0:num_seed] # indices among the entire input point clouds
-        fp2_inds = sa1_inds[:,0:num_seed]
+        end_points['fp2_inds'] = end_points['sa1_inds'][:,0:num_seed] # indices among the entire input point clouds        
         
-        res_from_backbone = sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features, \
-            sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features, \
-            sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features, \
-            sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features, \
-            fp1_grouped_features, fp2_features, fp2_grouped_features, fp2_xyz, fp2_inds
-
-        return res_from_backbone
+        return end_points
 
 
 if __name__=='__main__':

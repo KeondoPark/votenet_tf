@@ -62,30 +62,23 @@ def parse_predictions(end_points, config_dict):
             where j = 0, ..., num of valid detections - 1 from sample input i
     """    
 
-    res_from_backbone, res_from_voting, res_from_pnet, from_inputs, from_loss = end_points
-    aggregated_vote_xyz, aggregated_vote_inds, objectness_scores, center, \
-        heading_scores, heading_residuals_normalized, heading_residuals, size_scores, size_residuals_normalized, \
-        size_residuals, sem_cls_scores, va_grouped_features = res_from_pnet
-
-    #pred_center = end_points['center'] # B,num_proposal,3
-    #K = end_points['heading_scores'].shape[1] #num_proposal
-    pred_center = center
-    K = tf.shape(heading_scores)[1] #num_proposal
-
-    pred_heading_class = tf.math.argmax(heading_scores, axis = -1) #(B, K)        
-    pred_heading_residual = tf.gather(heading_residuals, axis=2, 
+    pred_center = end_points['center'] # B,num_proposal,3
+    K = tf.shape(end_points['heading_scores'])[1] #num_proposal
+    
+    pred_heading_class = tf.math.argmax(end_points['heading_scores'], axis = -1) #(B, K)        
+    pred_heading_residual = tf.gather(end_points['heading_residuals'], axis=2, 
                                     indices=tf.expand_dims(pred_heading_class, axis=-1), batch_dims=2) #(B, K, num_heading_bin) -> (B, K, 1)    
     pred_heading_residual = tf.squeeze(pred_heading_residual, axis=[2])       
 
-    pred_size_class = tf.math.argmax(size_scores, axis=-1) # B,num_proposal
+    pred_size_class = tf.math.argmax(end_points['size_scores'], axis=-1) # B,num_proposal
     
     # (B, K, 10, 3) -> (B, K, 1, 3)
-    pred_size_residual = tf.gather(size_residuals, axis=2, 
+    pred_size_residual = tf.gather(end_points['size_residuals'], axis=2, 
                                 indices=tf.expand_dims(pred_size_class, axis=-1), batch_dims=2)        
     pred_size_residual = tf.squeeze(pred_size_residual, axis=[2]) # B,num_proposal,3            
     
-    pred_sem_cls = tf.math.argmax(sem_cls_scores, axis=-1) # B,num_proposal
-    sem_cls_probs = softmax(sem_cls_scores.numpy()) # B,num_proposal,10
+    pred_sem_cls = tf.math.argmax(end_points['sem_cls_scores'], axis=-1) # B,num_proposal
+    sem_cls_probs = softmax(end_points['sem_cls_scores'].numpy()) # B,num_proposal,10
     pred_sem_cls_prob = np.max(sem_cls_probs,-1) # B,num_proposal
 
 
@@ -163,7 +156,7 @@ def parse_predictions(end_points, config_dict):
     # #============= Validation =======================
     #print("end_points['objectness_scores'][5]:", end_points['objectness_scores'][5])
     #============= Validation =======================  
-    obj_logits = tf.stop_gradient(objectness_scores).numpy()
+    obj_logits = tf.stop_gradient(end_points['objectness_scores']).numpy()
     obj_prob = softmax(obj_logits)[:,:,1] # (B,K)
     #============= Validation =======================
     #print("obj_prob[5]:", obj_prob[5])
@@ -265,26 +258,23 @@ def parse_groundtruths(end_points, config_dict):
             where j = 0, ..., num of objects - 1 at sample input i
     """    
 
-    res_from_backbone, res_from_voting, res_from_pnet, from_inputs, from_loss = end_points
-    center_label, heading_class_label, heading_residual_label, size_class_label, size_residual_label, \
-            sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes = from_inputs
+    bsize = end_points['center_label'].shape[0]
+    K2 = end_points['center_label'].shape[1] # K2==MAX_NUM_OBJ
+    box_label_mask = end_points['box_label_mask']
 
-    bsize = center_label.shape[0]
-
-    K2 = center_label.shape[1] # K2==MAX_NUM_OBJ
     gt_corners_3d_upright_camera = np.zeros((bsize, K2, 8, 3))
-    gt_center_upright_camera = flip_axis_to_camera(center_label[:,:,0:3].numpy())
+    gt_center_upright_camera = flip_axis_to_camera(end_points['center_label'][:,:,0:3].numpy())
     for i in range(bsize):
         for j in range(K2):
             if box_label_mask[i,j] == 0: continue
-            heading_angle = config_dict['dataset_config'].class2angle(heading_class_label[i,j].numpy(), heading_residual_label[i,j].numpy())
-            box_size = config_dict['dataset_config'].class2size(int(size_class_label[i,j].numpy()), size_residual_label[i,j].numpy())
+            heading_angle = config_dict['dataset_config'].class2angle(end_points['heading_class_label'][i,j].numpy(), end_points['heading_residual_label'][i,j].numpy())
+            box_size = config_dict['dataset_config'].class2size(int(end_points['size_class_label'][i,j].numpy()), end_points['size_residual_label'][i,j].numpy())
             corners_3d_upright_camera = get_3d_box(box_size, heading_angle, gt_center_upright_camera[i,j,:])
             gt_corners_3d_upright_camera[i,j] = corners_3d_upright_camera
 
     batch_gt_map_cls = []
     for i in range(bsize):
-        batch_gt_map_cls.append([(sem_cls_label[i,j].numpy(), gt_corners_3d_upright_camera[i,j]) for j in range(gt_corners_3d_upright_camera.shape[1]) if box_label_mask[i,j]==1])
+        batch_gt_map_cls.append([(end_points['sem_cls_label'][i,j].numpy(), gt_corners_3d_upright_camera[i,j]) for j in range(gt_corners_3d_upright_camera.shape[1]) if box_label_mask[i,j]==1])
     #end_points['batch_gt_map_cls'] = batch_gt_map_cls
 
     return batch_gt_map_cls
