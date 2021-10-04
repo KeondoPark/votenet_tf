@@ -40,7 +40,7 @@ class Pointnet2Backbone(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True,
                 use_tflite=use_tflite,
-                tflite_name='sa1_quant_test.tflite'
+                tflite_name='sa1_quant.tflite'
             )
 
         self.sa2 = PointnetSAModuleVotes(
@@ -51,7 +51,7 @@ class Pointnet2Backbone(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True,
                 use_tflite=use_tflite,
-                tflite_name='sa2_quant_test.tflite'
+                tflite_name='sa2_quant.tflite'
             )
 
         self.sa3 = PointnetSAModuleVotes(
@@ -62,7 +62,7 @@ class Pointnet2Backbone(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True,
                 use_tflite=use_tflite,
-                tflite_name='sa3_quant_test.tflite'
+                tflite_name='sa3_quant.tflite'
             )
 
         self.sa4 = PointnetSAModuleVotes(
@@ -73,7 +73,7 @@ class Pointnet2Backbone(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True,
                 use_tflite=use_tflite,
-                tflite_name='sa4_quant_test.tflite'
+                tflite_name='sa4_quant.tflite'
             )
 
         self.fp1 = PointnetFPModule(mlp=[256+256,256,256], m=512)
