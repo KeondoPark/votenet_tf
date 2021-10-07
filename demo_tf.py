@@ -90,18 +90,18 @@ if __name__=='__main__':
     
     # Load checkpoint
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
-    inside_checkpoint=tf.train.list_variables(tf.train.latest_checkpoint(checkpoint_path))
-    for node in inside_checkpoint:
-        print(node)
+    #inside_checkpoint=tf.train.list_variables(tf.train.latest_checkpoint(checkpoint_path))
+    #for node in inside_checkpoint:
+    #    print(node)
 
     if FLAGS.use_tflite:
-        fp1 = tf.train.Checkpoint(fp1=net.backbone_net.fp1)
-        fp2 = tf.train.Checkpoint(fp2=net.backbone_net.fp2)  
+        #fp1 = tf.train.Checkpoint(fp1=net.backbone_net.fp1)
+        #fp2 = tf.train.Checkpoint(fp2=net.backbone_net.fp2)  
         restore_list = []  
         #restore_list.append(tf.train.Checkpoint(backbone_net=fp1))
         #restore_list.append(tf.train.Checkpoint(backbone_net=fp2))
-        restore_list.append(tf.train.Checkpoint(pnet=net.pnet))
-        restore_list.append(tf.train.Checkpoint(vgen=net.vgen))
+        #restore_list.append(tf.train.Checkpoint(pnet=net.pnet))
+        #restore_list.append(tf.train.Checkpoint(vgen=net.vgen))
         
         for layer in restore_list:
             new_root = tf.train.Checkpoint(net=layer)
@@ -142,9 +142,10 @@ if __name__=='__main__':
     type2class={'bed':0, 'table':1, 'sofa':2, 'chair':3, 'toilet':4, 'desk':5, 'dresser':6, 'night_stand':7, 'bookshelf':8, 'bathtub':9, 'person':10}
     class2type = {type2class[t]:t for t in type2class}
 
+    print(pred_map_cls[0])
     for pred in pred_map_cls[0]:
-        print('-'*20)
-        print('class:', class2type[pred[0].numpy()])
+        print('-'*20)        
+        print('class:', class2type[pred[0]])
         print('conf:', pred[2])
         #print('coords', pred[1])
 

@@ -16,7 +16,7 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
 sys.path.append(BASE_DIR)
-from backbone_module_tf import Pointnet2Backbone
+from backbone_module_tf import Pointnet2Backbone, Pointnet2Backbone_p
 from voting_module_tf import VotingModule
 from proposal_module_tf import ProposalModule
 from dump_helper_tf import dump_results
@@ -57,7 +57,7 @@ class VoteNet(tf.keras.Model):
         self.sampling=sampling
 
         # Backbone point feature learning
-        self.backbone_net = Pointnet2Backbone(input_feature_dim=self.input_feature_dim, use_tflite=use_tflite)
+        self.backbone_net = Pointnet2Backbone_p(input_feature_dim=self.input_feature_dim, use_tflite=use_tflite)
 
         # Hough voting
         self.vgen = VotingModule(self.vote_factor, seed_feature_dim=128, use_tflite=use_tflite, tflite_name='voting_quant.tflite')

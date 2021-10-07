@@ -224,7 +224,7 @@ class PointnetSAModuleVotes(layers.Layer):
             self.input_details = self.interpreter.get_input_details()
             self.output_details = self.interpreter.get_output_details()
         else:
-            self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=bn, activation='relu6', input_shape=[npoint, nsample, 3+mlp_spec[0]])        
+            self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=bn, activation='relu6', input_shape=[npoint, nsample, mlp_spec[0]])        
             #self.max_pool = layers.MaxPooling2D(pool_size=(1, self.nsample), strides=1, data_format="channels_last")
             self.max_pool = layers.MaxPooling2D(pool_size=(1, 16), strides=(1,16), data_format="channels_last")
             self.max_pool2 = layers.MaxPooling2D(pool_size=(1, int(self.nsample/16)), strides=(1,int(self.nsample/16)), data_format="channels_last")
@@ -318,9 +318,8 @@ class PointnetSAModuleVotes(layers.Layer):
             return new_xyz, new_features, inds, unique_cnt
 
 
-class PointnetSAModuleVotes_NoMLP(layers.Layer):
-    ''' Modified based on _PointnetSAModuleBase and PointnetSAModuleMSG
-    with extra support for returning point indices for getting their GT votes '''
+class SamplingAndGrouping(layers.Layer):
+    ''' Only sampling and grouping part in PointnetSAModuleVotes '''
 
     def __init__(
             self,
@@ -360,14 +359,13 @@ class PointnetSAModuleVotes_NoMLP(layers.Layer):
 
         Returns
         -------
-        new_xyz : (B, npoint, 3) tensor of the new features' xyz
-        new_features : (B, \sum_k(mlps[k][-1]), npoint) tensor of the new_features descriptors
+        new_xyz : (B, npoint, 3) tensor of the new features' xyz        
         inds: (B, npoint) tensor of the inds
         ball_quer_idx: (B, npoint, nsample) Index of ball queried points
+        grouped_features: (B, npoint, nsample, C+3) Required to create tflite
         """
         
-        if inds is None:
-            
+        if inds is None:            
             if sample_type == 'fps':
                 #start = time.time()
                 inds = tf_sampling.farthest_point_sample(self.npoint, xyz)                
@@ -395,11 +393,47 @@ class PointnetSAModuleVotes_NoMLP(layers.Layer):
             )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)
         
 
-        if not self.ret_unique_cnt:
-            #return new_xyz, new_features, inds
+        if not self.ret_unique_cnt:            
             return new_xyz, inds, ball_query_idx, grouped_features
         else:
             return new_xyz, inds, unique_cnt
+
+class PointnetMLP(layers.Layer):
+    ''' Only shareMLP and maxpooling in PointnetSAModuleVotes '''
+
+    def __init__(
+            self,
+            *,            
+            npoint: int = None,            
+            nsample: int = None,            
+            use_xyz: bool = True,                                    
+            mlp: List[int], 
+    ):
+        super().__init__()
+
+        self.nsample = nsample        
+        self.npoint = npoint
+
+        mlp_spec = mlp
+        if use_xyz and len(mlp_spec)>0:
+            mlp_spec[0] += 3  
+
+        self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=bn, activation='relu6', input_shape=[npoint, nsample, mlp_spec[0]])        
+        self.max_pool = layers.MaxPooling2D(pool_size=(1, 16), strides=(1,16), data_format="channels_last")
+        self.max_pool2 = layers.MaxPooling2D(pool_size=(1, int(self.nsample/16)), strides=(1,int(self.nsample/16)), data_format="channels_last")        
+        
+    def call(self, features):
+        new_features = self.mlp_module(features)
+
+        if self.nsample == 16:
+            new_features = self.max_pool(new_features)  # (B, npoint, 1, mlp[-1])
+        elif self.nsample > 16:
+            new_features = self.max_pool2(self.max_pool(new_features))  # (B, npoint, 1, mlp[-1])
+
+        new_features = layers.Reshape((self.npoint, new_features.shape[-1]))(new_features)
+
+        return new_features
+
 '''
 class PointnetSAModuleMSGVotes(nn.Module):
     """ Modified based on _PointnetSAModuleBase and PointnetSAModuleMSG

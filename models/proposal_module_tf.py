@@ -90,7 +90,7 @@ class ProposalModule(layers.Layer):
         """
         self.npoint = self.num_proposal
         self.nsample = 16
-        self.vote_aggregation = PointnetSAModuleVotes_NoMLP( 
+        self.vote_aggregation = SamplingAndGrouping( 
                 npoint=self.num_proposal,
                 radius=0.3,
                 nsample=self.nsample,                
