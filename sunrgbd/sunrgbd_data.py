@@ -62,6 +62,11 @@ class sunrgbd_object(object):
         img_filename = os.path.join(self.image_dir, '%06d.jpg'%(idx))
         return sunrgbd_utils.load_image(img_filename)
 
+    def get_image2(self, idx):
+        "This returns PIL.Image result"
+        img_filename = os.path.join(self.image_dir, '%06d.jpg'%(idx))
+        return Image.open(img_filename)
+
     def get_depth(self, idx): 
         depth_filename = os.path.join(self.depth_dir, '%06d.mat'%(idx))
         return sunrgbd_utils.load_depth_points_mat(depth_filename)
@@ -265,8 +270,7 @@ def extract_sunrgbd_data(idx_filename, split, output_folder, num_point=20000,
                 point_votes = point_votes)
 
 def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=20000,
-    type_whitelist=DEFAULT_TYPE_WHITELIST,
-    use_v1=False, skip_empty_scene=True):
+    type_whitelist=DEFAULT_TYPE_WHITELIST, use_v1=False, skip_empty_scene=True, pointpainting=False):
     """ Same as extract_sunrgbd_data EXCEPT
 
     Args:
@@ -306,6 +310,18 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
         }
 
         return tf.train.Example(features=tf.train.Features(feature=feature))
+
+    def run_semantic_segmentation(image, sess, input_size):        
+        width, height = image.size
+        resize_ratio = 1.0 * input_size / max(width, height)
+        target_size = (int(resize_ratio * width), int(resize_ratio * height))
+        resized_image = image.convert('RGB').resize(target_size, Image.ANTIALIAS)
+        batch_seg_map = sess.run(
+            'SemanticProbabilities:0',
+            feed_dict={'ImageTensor:0': [np.asarray(resized_image)]})
+        seg_map = batch_seg_map[0]
+        return seg_map
+
     dataset = sunrgbd_object('/home/aiot/data/sunrgbd_trainval', split, use_v1=use_v1)
     data_idx_list = [int(line.rstrip()) for line in open(idx_filename)]
 
@@ -319,6 +335,20 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
     n_shards = int(len(data_idx_list) / n_pc_shard) + (1 if len(data_idx_list) % n_pc_shard != 0 else 0)
 
     MAX_NUM_OBJ = 64
+
+    # Load semantic segmentation model(Written and trained in TF1.15)
+    if pointpainting:
+        INPUT_SIZE = 513
+        with tf.compat.v1.gfile.GFile('sunrgbd_ade20k_8.pb', "rb") as f:
+            graph_def = tf.compat.v1.GraphDef()
+            graph_def.ParseFromString(f.read())
+        
+        myGraph = tf.compat.v1.Graph()
+        with myGraph.as_default():
+            tf.compat.v1.import_graph_def(graph_def, name='')
+
+        sess = tf.compat.v1.Session(graph=myGraph)
+
 
     for shard in tqdm(range(n_shards)):
         tfrecords_shard_path = os.path.join(output_folder, "{}_{}.records".format("sunrgbd", '%.5d-of-%.5d' % (shard, n_shards - 1)))
@@ -355,6 +385,35 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                 pc_upright_depth = dataset.get_depth(data_idx)
                 pc_upright_depth_subsampled = pc_util.random_sampling(pc_upright_depth, num_point)
 
+                if pointpainting:
+                    ########## Add 2D segmentation result to point cloud(Point Painting) ##########
+                    # Project points to image
+                    calib = dataset.get_calibration(data_idx)
+                    uv,d = calib.project_upright_depth_to_image(pc_upright_depth_subsampled[:,0:3])        
+                    
+                    # Run image segmentation result and get result
+                    img = dataset.get_image2(data_idx)        
+                    pred_prob = run_semantic_segmentation(img, sess, INPUT_SIZE) # (h, w, num_class)     
+                    
+                    h, w, _ = img.shape        
+
+                    pc_shape = pc_upright_depth_subsampled.shape #(N, 3 + features)
+                    painted_shape = list(pc_shape).extend([num_sunrgbd_class]) #(N, 3 + features + image seg classification)
+                    painted = np.zeros(painted_shape)                
+
+                    # Find the mapping from image to point cloud
+                    uv[:,0] = uv[:,0] / img.shape[1] * w
+                    uv[:,1] = uv[:,1] / img.shape[0] * h
+
+                    uv[:,0] = np.minimum(w-1, uv[:,0])
+                    uv[:,1] = np.minimum(h-1, uv[:,1])
+
+                    # Append segmentation score to each point
+                    painted = np.concatenate([pc_upright_depth_subsampled[:,:3],\
+                                            pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]], axis=-1)
+                    
+                    ######################################################################################################
+
                 #np.savez_compressed(os.path.join(output_folder,'%06d_pc.npz'%(data_idx)),
                 #    pc=pc_upright_depth_subsampled)
                 #np.save(os.path.join(output_folder, '%06d_bbox.npy'%(data_idx)), obbs)
@@ -388,7 +447,10 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                         print('ERROR ----',  data_idx, obj.classname)
                 #np.savez_compressed(os.path.join(output_folder, '%06d_votes.npz'%(data_idx)),
                 #    point_votes = point_votes)
-                tf_example = create_example(pc_upright_depth_subsampled, obbs, point_votes, n_valid_box)
+                if pointpainting:
+                    tf_example = create_example(painted, obbs, point_votes, n_valid_box) 
+                else:
+                    tf_example = create_example(pc_upright_depth_subsampled, obbs, point_votes, n_valid_box)
                 writer.write(tf_example.SerializeToString())
 
 def get_box3d_dim_statistics(idx_filename,
@@ -440,6 +502,7 @@ if __name__=='__main__':
     parser.add_argument('--gen_v1_data', action='store_true', help='Generate V1 dataset.')
     parser.add_argument('--gen_v2_data', action='store_true', help='Generate V2 dataset.')
     parser.add_argument('--tfrecord', action='store_true', help='Generate TFRecord dataset.')
+    parser.add_argument('--painted', action='store_true', help='Generate point painted TFRecord dataset.')
     args = parser.parse_args()
 
     if args.viz:
@@ -473,9 +536,20 @@ if __name__=='__main__':
     if args.tfrecord:
         extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/train_data_idx.txt'),
             split = 'training',
-            output_folder = os.path.join(os.path.dirname(os.path.dirname(BASE_DIR)), 'sunrgbd_pc_bbox_votes_50k_v1_train'),
+            output_folder = os.path.join(os.path.dirname(os.path.dirname(BASE_DIR)), 'sunrgbd_pc_train_tf'),
             num_point=50000, use_v1=True, skip_empty_scene=False)
         extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/val_data_idx.txt'),
             split = 'training',
-            output_folder = os.path.join(os.path.dirname(os.path.dirname(BASE_DIR)), 'sunrgbd_pc_bbox_votes_50k_v1_val'),
+            output_folder = os.path.join(os.path.dirname(os.path.dirname(BASE_DIR)), 'sunrgbd_pc_val_tf'),
             num_point=50000, use_v1=True, skip_empty_scene=False)
+
+    if args.painted:
+        assert args.tfrecord, "Need to set tfrecord flag as True"
+        extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/train_data_idx.txt'),
+            split = 'training',
+            output_folder = os.path.join(os.path.dirname(os.path.dirname(BASE_DIR)), 'sunrgbd_pc_train_painted_tf'),
+            num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True)
+        extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/val_data_idx.txt'),
+            split = 'training',
+            output_folder = os.path.join(os.path.dirname(os.path.dirname(BASE_DIR)), 'sunrgbd_pc_val_painted_tf'),
+            num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True)

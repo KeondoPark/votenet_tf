@@ -12,7 +12,7 @@ import sys
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'pointnet2'))
-from pointnet2_modules_tf import PointnetSAModuleVotes, PointnetSAModuleVotes_NoMLP
+from pointnet2_modules_tf import PointnetSAModuleVotes, SamplingAndGrouping
 import pointnet2_utils_tf
 from tf_ops.sampling import tf_sampling
 import tf_utils

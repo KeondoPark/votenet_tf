@@ -17,7 +17,7 @@ sys.path.append(ROOT_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 sys.path.append(os.path.join(ROOT_DIR, 'pointnet2'))
 
-from pointnet2_modules_tf import PointnetSAModuleVotes, PointnetFPModule
+from pointnet2_modules_tf import PointnetSAModuleVotes, PointnetFPModule, SamplingAndGrouping, PointnetMLP
 
 class Pointnet2Backbone(layers.Layer):
     r"""
@@ -199,7 +199,7 @@ class Pointnet2Backbone_p(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True                
             )
-        self.sa1_mlp = PointnetMLP(mlp=[input_feature_dim, 64, 64, 128])
+        self.sa1_mlp = PointnetMLP(mlp=[input_feature_dim, 64, 64, 128], nsample=64)
         
         self.sa2 = SamplingAndGrouping(
                 npoint=512,
@@ -208,7 +208,7 @@ class Pointnet2Backbone_p(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True                
             )
-        self.sa2_mlp = PointnetMLP(mlp=[128, 128, 128, 128])
+        self.sa2_mlp = PointnetMLP(mlp=[128, 128, 128, 128], nsample=32)
 
         self.sa3 = SamplingAndGrouping(
                 npoint=256,
@@ -217,7 +217,7 @@ class Pointnet2Backbone_p(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True                
             )
-        self.sa3_mlp = PointnetMLP(mlp=[128, 128, 128, 128])
+        self.sa3_mlp = PointnetMLP(mlp=[128, 128, 128, 128], nsample=16)
 
         self.sa4 = SamplingAndGrouping(
                 npoint=128,
@@ -226,7 +226,7 @@ class Pointnet2Backbone_p(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True                
             )
-        self.sa4_mlp = PointnetMLP(mlp=[128, 128, 128, 128])
+        self.sa4_mlp = PointnetMLP(mlp=[128, 128, 128, 128], nsample=16)
 
         self.fp1 = PointnetFPModule(mlp=[256+256,256,256], m=512)
                 #use_tflite=use_tflite, tflite_name='fp1_quant.tflite')
@@ -249,10 +249,10 @@ class Pointnet2Backbone_p(layers.Layer):
         #xyz = pc[..., 0:3]
         #features = pc[..., 3:] if pc.shape[-1] > 3 else None        
 
-        xyz1 = pc[:, :10000,0:3]
-        features1 =  pc[:, :10000, 3:]
-        xyz2 = pc[:, 10000:, 0:3]
-        features2 =  pc[:, 10000:, 3:]
+        xyz1 = pc[:, ::2,0:3]
+        features1 =  pc[:, ::2, 3:]
+        xyz2 = pc[:, 1::2, 0:3]
+        features2 =  pc[:, 1::2, 3:]
 
         return xyz1, features1, xyz2, features2
 
@@ -347,24 +347,32 @@ class Pointnet2Backbone_p(layers.Layer):
         sa3_features = layers.Concatenate(axis=1)([sa3_features1, sa3_features2])
         sa2_features = layers.Concatenate(axis=1)([sa2_features1, sa2_features2])
 
-        sa4_xyz = layers.Concatenate(axis=1)([sa4_xyz, sa4_xyz])
-        sa3_xyz = layers.Concatenate(axis=1)([sa3_xyz, sa3_xyz])
-        sa2_xyz = layers.Concatenate(axis=1)([sa2_xyz, sa2_xyz])
+        sa4_xyz = layers.Concatenate(axis=1)([sa4_xyz1, sa4_xyz2])
+        sa3_xyz = layers.Concatenate(axis=1)([sa3_xyz1, sa3_xyz2])
+        sa2_xyz = layers.Concatenate(axis=1)([sa2_xyz1, sa2_xyz2])
 
         sa2_inds = layers.Concatenate(axis=1)([sa2_inds1, sa2_inds2])
         sa1_inds = layers.Concatenate(axis=1)([sa1_inds1, sa1_inds2])
 
         # --------- 2 FEATURE UPSAMPLING LAYERS --------
-        #features = self.fp1(end_points['sa3_xyz'], end_points['sa4_xyz'], end_points['sa3_features'], end_points['sa4_features'])
-        #features = self.fp2(end_points['sa2_xyz'], end_points['sa3_xyz'], end_points['sa2_features'], features)
         #print("========================== FP1 ===============================")
-        features, prop_features = self.fp1(sa3_xyz, sa4_xyz, sa3_features, sa4_features)
+        fp1_features, fp1_grouped_features = self.fp1(sa3_xyz, sa4_xyz, sa3_features, sa4_features)
+        #fp1_features1, fp1_grouped_features1 = self.fp1(sa3_xyz1, sa4_xyz1, sa3_features1, sa4_features1)
+        #fp1_features2, fp1_grouped_features2 = self.fp1(sa3_xyz2, sa4_xyz2, sa3_features2, sa4_features2)
         #fp1_features, fp1_grouped_features = self.fp1(sa3_xyz, sa4_xyz, sa3_features, sa4_features, sa4_ball_query_idx, sa4_inds)
-        end_points['fp1_grouped_features'] = prop_features
         #end_points.append(prop_features) #20
         
         #print("========================== FP2 ===============================")
-        fp2_features, fp2_grouped_features = self.fp1(sa2_xyz, sa3_xyz, sa2_features, features)        
+        fp2_features, fp2_grouped_features = self.fp2(sa2_xyz, sa3_xyz, sa2_features, fp1_features)        
+        #fp2_features1, fp2_grouped_features1 = self.fp2(sa2_xyz1, sa3_xyz1, sa2_features1, fp1_features1)        
+        #fp2_features2, fp2_grouped_features2 = self.fp2(sa2_xyz2, sa3_xyz2, sa2_features2, fp1_features2) 
+        
+        
+        #fp2_features = layers.Concatenate(axis=1)([fp2_features1, fp2_features2])
+        #fp2_grouped_features = layers.Concatenate(axis=1)([fp2_grouped_features1, fp2_grouped_features2])
+        #fp1_grouped_features = layers.Concatenate(axis=1)([fp1_grouped_features1, fp1_grouped_features2])
+
+        end_points['fp1_grouped_features'] = fp1_grouped_features
         end_points['fp2_features'] = fp2_features
         end_points['fp2_grouped_features'] = fp2_grouped_features
         end_points['fp2_xyz'] = sa2_xyz        

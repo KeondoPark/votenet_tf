@@ -408,6 +408,7 @@ class PointnetMLP(layers.Layer):
             nsample: int = None,            
             use_xyz: bool = True,                                    
             mlp: List[int], 
+            bn: bool = True
     ):
         super().__init__()
 
@@ -430,7 +431,7 @@ class PointnetMLP(layers.Layer):
         elif self.nsample > 16:
             new_features = self.max_pool2(self.max_pool(new_features))  # (B, npoint, 1, mlp[-1])
 
-        new_features = layers.Reshape((self.npoint, new_features.shape[-1]))(new_features)
+        new_features = layers.Reshape((-1, new_features.shape[-1]))(new_features)
 
         return new_features
 

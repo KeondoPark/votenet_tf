@@ -224,11 +224,11 @@ class BNMomentumScheduler(object):
 
         self.last_epoch = epoch
         for layer in self.model.layers:            
-            if hasattr(layer, 'sa1'):
-                reset_momentum(layer.sa1.mlp_module)
-                reset_momentum(layer.sa2.mlp_module)
-                reset_momentum(layer.sa3.mlp_module)
-                reset_momentum(layer.sa4.mlp_module)
+            if hasattr(layer, 'sa1_mlp'):
+                reset_momentum(layer.sa1_mlp.mlp_module)
+                reset_momentum(layer.sa2_mlp.mlp_module)
+                reset_momentum(layer.sa3_mlp.mlp_module)
+                reset_momentum(layer.sa4_mlp.mlp_module)
                 reset_momentum(layer.fp1.mlp)
                 reset_momentum(layer.fp2.mlp)
 
