@@ -20,7 +20,8 @@ import sys
 import cv2
 import argparse
 from PIL import Image
-DATA_DIR = '/home/aiot/data'
+#DATA_DIR = '/home/aiot/data'
+DATA_DIR = '/home/keondopark'
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, '../utils/'))
@@ -317,12 +318,24 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
         target_size = (int(resize_ratio * width), int(resize_ratio * height))
         resized_image = image.convert('RGB').resize(target_size, Image.ANTIALIAS)
         batch_seg_map = sess.run(
-            'SemanticProbabilities:0',
+            ['SemanticProbabilities:0',
+            'SemanticPredictions:0'],
             feed_dict={'ImageTensor:0': [np.asarray(resized_image)]})
-        seg_map = batch_seg_map[0]
-        return seg_map
+        resized_seg_prob = batch_seg_map[0][0] # (height * resize_ratio, width * resize_ratio, num_class)
+        resized_seg_class = batch_seg_map[1][0] # (height * resize_ratio, width * resize_ratio)
 
-    dataset = sunrgbd_object('/home/aiot/data/sunrgbd_trainval', split, use_v1=use_v1)
+        # Map segmentation result to original image size
+        x = (np.array(range(height)) * resize_ratio).astype(np.int)
+        y = (np.array(range(width)) * resize_ratio).astype(np.int)
+
+        xv, yv = np.meshgrid(x, y, indexing='ij') # xv, yv has shape (height, width)
+
+        seg_prob = resized_seg_prob[xv, yv]
+        seg_class = resized_seg_class[xv, yv]
+
+        return seg_prob, seg_class
+
+    dataset = sunrgbd_object(os.path.join(DATA_DIR,'sunrgbd_trainval'), split, use_v1=use_v1)
     data_idx_list = [int(line.rstrip()) for line in open(idx_filename)]
 
     #output_folder = os.path.join(os.path.dirname(os.path.dirname(BASE_DIR)), output_folder)
@@ -335,11 +348,12 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
     n_shards = int(len(data_idx_list) / n_pc_shard) + (1 if len(data_idx_list) % n_pc_shard != 0 else 0)
 
     MAX_NUM_OBJ = 64
+    num_sunrgbd_class = len(DEFAULT_TYPE_WHITELIST)
 
     # Load semantic segmentation model(Written and trained in TF1.15)
     if pointpainting:
         INPUT_SIZE = 513
-        with tf.compat.v1.gfile.GFile('sunrgbd_ade20k_8.pb', "rb") as f:
+        with tf.compat.v1.gfile.GFile('../test/saved_model/sunrgbd_ade20k_9.pb', "rb") as f:
             graph_def = tf.compat.v1.GraphDef()
             graph_def.ParseFromString(f.read())
         
@@ -383,34 +397,49 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                 n_valid_box = cnt
                     
                 pc_upright_depth = dataset.get_depth(data_idx)
-                pc_upright_depth_subsampled = pc_util.random_sampling(pc_upright_depth, num_point)
+                pc_upright_depth_subsampled = pc_util.random_sampling(pc_upright_depth, num_point)                
 
                 if pointpainting:
                     ########## Add 2D segmentation result to point cloud(Point Painting) ##########
                     # Project points to image
                     calib = dataset.get_calibration(data_idx)
-                    uv,d = calib.project_upright_depth_to_image(pc_upright_depth_subsampled[:,0:3])        
+                    uv,d = calib.project_upright_depth_to_image(pc_upright_depth_subsampled[:,0:3]) #uv: (N, 2)
                     
                     # Run image segmentation result and get result
                     img = dataset.get_image2(data_idx)        
-                    pred_prob = run_semantic_segmentation(img, sess, INPUT_SIZE) # (h, w, num_class)     
+                    pred_prob, pred_class = run_semantic_segmentation(img, sess, INPUT_SIZE) # (w, h, num_class)     
+
+                    pred_prob = pred_prob[:,:,1:(num_sunrgbd_class+1)] # 0 is background class
                     
-                    h, w, _ = img.shape        
+                    w, h = img.size        
 
                     pc_shape = pc_upright_depth_subsampled.shape #(N, 3 + features)
                     painted_shape = list(pc_shape).extend([num_sunrgbd_class]) #(N, 3 + features + image seg classification)
                     painted = np.zeros(painted_shape)                
 
                     # Find the mapping from image to point cloud
-                    uv[:,0] = uv[:,0] / img.shape[1] * w
-                    uv[:,1] = uv[:,1] / img.shape[0] * h
+                    #uv[:,0] = uv[:,0] / img.size[1] * w
+                    #uv[:,1] = uv[:,1] / img.size[0] * h
 
-                    uv[:,0] = np.minimum(w-1, uv[:,0])
-                    uv[:,1] = np.minimum(h-1, uv[:,1])
+                    #uv[:,0] = np.minimum(w-1, uv[:,0]) # 0 corresponds to width
+                    #uv[:,1] = np.minimum(h-1, uv[:,1]) # 1 corresponds to height
+                    uv[:,0] = np.rint(uv[:,0] - 1)
+                    uv[:,1] = np.rint(uv[:,1] - 1)
+
+                    #print("maximum value of uv, Expected:", w-1, h-1, "Actual:", max(uv[:,0]), max(uv[:,1]))
+                    #print("Minimum of uv", min(uv[:,0]), min(uv[:,1]))
+
+                    projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
+                    isBg = np.where(projected_class > 0, 1, 0) # Point belongs to background?
+                    isBg = np.expand_dims(isBg, axis=-1)
+                    #print("is background shape", isBg.shape)
 
                     # Append segmentation score to each point
                     painted = np.concatenate([pc_upright_depth_subsampled[:,:3],\
-                                            pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]], axis=-1)
+                                            pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)],
+                                            isBg], axis=-1)
+                    
+                    #print("painted shape", painted.shape)
                     
                     ######################################################################################################
 
@@ -451,7 +480,7 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                     tf_example = create_example(painted, obbs, point_votes, n_valid_box) 
                 else:
                     tf_example = create_example(pc_upright_depth_subsampled, obbs, point_votes, n_valid_box)
-                writer.write(tf_example.SerializeToString())
+                writer.write(tf_example.SerializeToString())                
 
 def get_box3d_dim_statistics(idx_filename,
     type_whitelist=DEFAULT_TYPE_WHITELIST,
@@ -533,7 +562,7 @@ if __name__=='__main__':
             output_folder = os.path.join(BASE_DIR, 'sunrgbd_pc_bbox_votes_50k_v2_val'),
             save_votes=True, num_point=50000, use_v1=False, skip_empty_scene=False)
 
-    if args.tfrecord:
+    if args.tfrecord and not args.painted:
         extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/train_data_idx.txt'),
             split = 'training',
             output_folder = os.path.join(os.path.dirname(os.path.dirname(BASE_DIR)), 'sunrgbd_pc_train_tf'),

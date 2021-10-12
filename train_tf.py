@@ -125,12 +125,12 @@ if FLAGS.dataset == 'sunrgbd':
     DATASET_CONFIG = SunrgbdDatasetConfig()
     TRAIN_DATASET = SunrgbdDetectionVotesDataset_tfrecord('train', num_points=NUM_POINT,
         augment=True, shuffle=True, batch_size=BATCH_SIZE,
-        use_color=FLAGS.use_color, use_height=(not FLAGS.no_height))
-        #use_painted=FLAGS.use_painted)
+        use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
+        use_painted=FLAGS.use_painted)
     TEST_DATASET = SunrgbdDetectionVotesDataset_tfrecord('val', num_points=NUM_POINT,
         augment=False,  shuffle=False, batch_size=BATCH_SIZE,
-        use_color=FLAGS.use_color, use_height=(not FLAGS.no_height))
-        #use_painted=FLAGS.use_painted)
+        use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
+        use_painted=FLAGS.use_painted)
 else:
     print('Unknown dataset %s. Exiting...'%(FLAGS.dataset))
     exit(-1)
@@ -141,7 +141,9 @@ num_input_channel = int(FLAGS.use_color)*3 + int(not FLAGS.no_height)*1
 
 ### Point Paiting : Sementation score is appended at the end of point cloud
 if FLAGS.use_painted:
-    num_input_channel += DATASET_CONFIG.num_class
+    # Probabilties that each point belongs to each class + is the point belong to background(Boolean)
+    num_input_channel += DATASET_CONFIG.num_class + 1 
+    
 
 
 mirrored_strategy = tf.distribute.MirroredStrategy()
@@ -218,73 +220,6 @@ train_ds = train_ds.prefetch(BATCH_SIZE)
 test_ds = TEST_DATASET.preprocess()
 test_ds = test_ds.prefetch(BATCH_SIZE)
 
-"""
-train_ds = tf.data.Dataset.from_generator(lambda: (ret for ret in TRAIN_DATASET),
-    output_types=({
-                    'point_clouds': tf.float32,    
-                    'center_label': tf.float32,
-                    'heading_class_label': tf.int32,
-                    'heading_residual_label': tf.float32,
-                    'size_class_label': tf.int32,
-                    'size_residual_label': tf.float32,
-                    'sem_cls_label': tf.int32,
-                    'box_label_mask': tf.float32,
-                    'vote_label': tf.float32,
-                    'vote_label_mask': tf.int32,
-                    'scan_idx': tf.int32,
-                    'max_gt_bboxes': tf.float32
-                }),
-    output_shapes = ({
-        'point_clouds':tf.TensorShape((NUM_POINT,num_input_channel+3)),    
-        'center_label':tf.TensorShape((64,3)),
-        'heading_class_label':tf.TensorShape((64,)),
-        'heading_residual_label': tf.TensorShape((64,)),
-        'size_class_label': tf.TensorShape((64,)),
-        'size_residual_label': tf.TensorShape((64,3)),
-        'sem_cls_label': tf.TensorShape((64,)),
-        'box_label_mask': tf.TensorShape((64,)),
-        'vote_label': tf.TensorShape((NUM_POINT,9)),
-        'vote_label_mask': tf.TensorShape((NUM_POINT,)),
-        'scan_idx': tf.TensorShape(()),
-        'max_gt_bboxes': tf.TensorShape((64,8))
-    })
-    )
-                
-train_ds = train_ds.batch(BATCH_SIZE).prefetch(2).shuffle(len(TRAIN_DATASET))
-
-test_ds = tf.data.Dataset.from_generator(lambda: (ret for ret in TEST_DATASET),
-    output_types=({
-                    'point_clouds': tf.float32,    
-                    'center_label': tf.float32,
-                    'heading_class_label': tf.int32,
-                    'heading_residual_label': tf.float32,
-                    'size_class_label': tf.int32,
-                    'size_residual_label': tf.float32,
-                    'sem_cls_label': tf.int32,
-                    'box_label_mask': tf.float32,
-                    'vote_label': tf.float32,
-                    'vote_label_mask': tf.int32,
-                    'scan_idx': tf.int32,
-                    'max_gt_bboxes': tf.float32
-                }),
-    output_shapes = ({
-        'point_clouds':tf.TensorShape((NUM_POINT,num_input_channel+3)),    
-        'center_label':tf.TensorShape((64,3)),
-        'heading_class_label':tf.TensorShape((64,)),
-        'heading_residual_label': tf.TensorShape((64,)),
-        'size_class_label': tf.TensorShape((64,)),
-        'size_residual_label': tf.TensorShape((64,3)),
-        'sem_cls_label': tf.TensorShape((64,)),
-        'box_label_mask': tf.TensorShape((64,)),
-        'vote_label': tf.TensorShape((NUM_POINT,9)),
-        'vote_label_mask': tf.TensorShape((NUM_POINT,)),
-        'scan_idx': tf.TensorShape(()),
-        'max_gt_bboxes': tf.TensorShape((64,8))
-    })
-    )
-                
-test_ds = test_ds.batch(BATCH_SIZE).prefetch(2)
-"""
 # TFBoard Visualizers
 TRAIN_VISUALIZER = TfVisualizer(FLAGS, 'train')
 TEST_VISUALIZER = TfVisualizer(FLAGS, 'test')
@@ -384,13 +319,13 @@ def train(start_epoch):
     @tf.function(experimental_relax_shapes=True, input_signature=input_signature)
     def distributed_train_step(batch_data):
         per_replica_losses = mirrored_strategy.run(train_one_epoch, args=(batch_data, ))
-        return mirrored_strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None)
+        return mirrored_strategy.reduce(tf.distribute.ReduceOp.MEAN, per_replica_losses, axis=None)
         
 
     @tf.function(experimental_relax_shapes=True)
     def distributed_eval_step(batch_data):
         per_replica_losses, end_points = mirrored_strategy.run(evaluate_one_epoch, args=(batch_data,))
-        return mirrored_strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None), end_points
+        return mirrored_strategy.reduce(tf.distribute.ReduceOp.MEAN, per_replica_losses, axis=None), end_points
 
     for epoch in range(start_epoch, MAX_EPOCH):
         EPOCH_CNT = epoch
@@ -434,7 +369,7 @@ def train(start_epoch):
         log_string("Saved checkpoint for step {}: {}".format(int(ckpt.epoch), save_path))
         
         #if EPOCH_CNT == 0 or EPOCH_CNT % 10 == 9: # Eval every 10 epochs
-        if EPOCH_CNT % 20 == 19: # Eval every 20 epochs
+        if EPOCH_CNT % 20 == 19: # Eval every 20 epochs        
             stat_dict = defaultdict(int) # collect statistics            
             ap_calculator = APCalculator(ap_iou_thresh=FLAGS.ap_iou_thresh,
                 class2type_map=DATASET_CONFIG.class2type)     

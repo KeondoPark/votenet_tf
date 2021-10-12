@@ -112,6 +112,7 @@ class Pointnet2Backbone(layers.Layer):
         """        
         if not end_points: end_points = {}
         xyz, features = self._break_up_pc(pointcloud)
+        print(features.shape)
 
         # --------- 4 SET ABSTRACTION LAYERS ---------
         #xyz, features, fps_inds = self.sa1(xyz, features)

@@ -228,11 +228,19 @@ N_BOX = MAX_NUM_OBJ = 64 # same as MAX_NUM_OBJ in sunrgbd_data.py
 class SunrgbdDetectionVotesDataset_tfrecord():
     def __init__(self, split_set='train', num_points=20000,
         use_color=False, use_height=False, 
-        augment=False, batch_size=8, shuffle=True):
+        augment=False, batch_size=8, shuffle=True,
+        use_painted=False):
 
-        assert(num_points<=50000)        
-        self.data_path = os.path.join(DATA_DIR,
-            'sunrgbd_pc_%s_tf'%(split_set))
+        assert(num_points<=50000)
+        self.use_painted = use_painted
+        self.dim_features = 6        
+        if self.use_painted:
+            self.dim_features = 3 + 10 + 1
+
+        if self.use_painted:
+            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf'%(split_set))
+        else:
+            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_tf'%(split_set))
 
         self.raw_data_path = os.path.join(ROOT_DIR, 'sunrgbd/sunrgbd_trainval')
         self.num_points = num_points
@@ -258,7 +266,8 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         self.type_mean_size_np = np.zeros((DC.num_class, 3))
         for i in range(self.num_class):
             self.type_mean_size_np[i,:] = DC.type_mean_size[DC.class2type[i]]
-        print("type_mean_size_np:", self.type_mean_size_np)
+        
+        
         
     def preprocess(self):
            
@@ -281,9 +290,138 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         
         return self.dataset
 
+    def _parse_function(self, example_proto):
+        feature_description = {    
+            'point_cloud': tf.io.FixedLenFeature([N_POINT*self.dim_features], tf.float32),    
+            'bboxes': tf.io.FixedLenFeature([N_BOX*8],tf.float32),
+            'point_votes': tf.io.FixedLenFeature([N_POINT*10], tf.float32),    
+            'n_valid_box': tf.io.FixedLenFeature([], tf.int64)
+        }
+        # Parse the input tf.train.Example proto using the dictionary above.
+        return tf.io.parse_single_example(example_proto, feature_description)
+
+    def reshape_tensor(self, features):        
+        point_cloud = tf.reshape(features['point_cloud'], [-1, N_POINT, self.dim_features])    
+        bboxes = tf.reshape(features['bboxes'], [-1, N_BOX, 8])
+        point_votes = tf.reshape(features['point_votes'], [-1, N_POINT, 10])
+        n_valid_box = tf.reshape(features['n_valid_box'], [-1])
+        
+        return point_cloud, bboxes, point_votes, n_valid_box
+
+    def preprocess_color(self, point_cloud, bboxes, point_votes, n_valid_box):    
+        # Not used
+        MEAN_COLOR_RGB=tf.constant([0.5,0.5,0.5])
+        point_cloud = point_cloud[:,:,0:6]
+        pc_coord = point_cloud[:,:,:3]
+        pc_RGB = point_cloud[:,:,3:]-MEAN_COLOR_RGB
+        point_cloud = tf.concat((pc_coord, pc_RGB), axis=-1)
+        return point_cloud, bboxes, point_votes, n_valid_box
+
+    def do_not_preprocess_color(self, point_cloud, bboxes, point_votes, n_valid_box):
+        #point_cloud = point_cloud[:,:,0:3]        
+        return point_cloud, bboxes, point_votes, n_valid_box
+
+    def preprocess_height(self, point_cloud, bboxes, votes, n_valid_box):
+        y_coords = point_cloud[:, :, 2]
+        y_coords = tf.sort(y_coords, direction='DESCENDING', axis=-1)
+        floor_height = y_coords[:, int(0.99*N_POINT), None]         
+        height = point_cloud[:,:,2] - tf.tile(floor_height, [1,N_POINT])        
+        point_cloud = tf.concat([point_cloud, tf.expand_dims(height, axis=-1)], axis=-1) # (N,4) or (N,7)
+        #point_cloud = tf.concat([point_cloud[:,:,:3], tf.expand_dims(height, axis=-1)], axis=-1) # (N,4) or (N,7)
+        return point_cloud, bboxes, votes, n_valid_box
+
+    
+    def augment_tensor(self, point_cloud, bboxes, point_votes, n_valid_box):
+        pi = 3.141592653589793
+        # Flipping along the YZ plane
+        if tf.random.uniform(shape=[]) > 0.5:        
+        #if True:
+            pc_flip = -1 * point_cloud[:,:,0,None]
+            point_cloud = tf.concat((pc_flip, point_cloud[:,:,1:]), axis=-1)
+            bboxes_flip = -1 * bboxes[:,:,0,None]
+            bboxes_angle = pi -1 * bboxes[:,:,6,None]
+            bboxes = tf.concat((bboxes_flip, bboxes[:,:,1:6], bboxes_angle, bboxes[:,:,7:]), axis=-1)  
+            votes1_flip = -1 * point_votes[:,:,1,None]
+            votes4_flip = -1 * point_votes[:,:,4,None]
+            votes7_flip = -1 * point_votes[:,:,7,None]
+            point_votes = tf.concat((point_votes[:,:,0,None], votes1_flip, point_votes[:,:,2:4], votes4_flip, point_votes[:,:,5:7], votes7_flip, point_votes[:,:,8:]), axis=-1)
+            
+        pc_coords = point_cloud[:,:,0:3]    
+        pc_height = point_cloud[:,:,-1,None]
+        
+        # Keep painting information separately
+        if self.use_painted:            
+            pc_painting = point_cloud[:,:,3:-1]
+        
+        # Rotation along up-axis/Z-axis
+        rot_angle = (tf.random.uniform(shape=[])*pi/3) - pi/6    
+        #rot_angle = (0.1*pi/3) - pi/6    
+        c = tf.math.cos(rot_angle)
+        s = tf.math.sin(rot_angle)
+        rot_mat = tf.transpose(tf.convert_to_tensor([[c, -s, 0], [s, c, 0], [0,0,1]]), [1,0])
+            
+        point_votes_end1 = tf.matmul(pc_coords + point_votes[:,:,1:4], rot_mat)
+        point_votes_end2 = tf.matmul(pc_coords + point_votes[:,:,4:7], rot_mat)
+        point_votes_end3 = tf.matmul(pc_coords + point_votes[:,:,7:10], rot_mat)
+        
+        pc_coords = tf.matmul(pc_coords, rot_mat)    
+        
+        bboxes_coords = tf.matmul(bboxes[:,:,0:3], rot_mat)
+        bboxes_angle = bboxes[:,:,6,None] - rot_angle    
+        
+        votes0 = point_votes[:,:,0,None]
+        votes1 = point_votes_end1 - pc_coords
+        votes2 = point_votes_end2 - pc_coords
+        votes3 = point_votes_end3 - pc_coords
+
+        # Augment point cloud scale: 0.85x-1.15x
+        scale_ratio = tf.random.uniform(shape=[])*0.3+0.85
+        #scale_ratio = 0.1*0.3+0.85    
+        pc_coords = pc_coords * scale_ratio
+        bboxes_coords = bboxes_coords * scale_ratio
+        bboxes_edges = bboxes[:,:,3:6]
+        bboxes_edges = bboxes_edges * scale_ratio
+        votes1 = votes1 * scale_ratio
+        votes2 = votes2 * scale_ratio
+        votes3 = votes3 * scale_ratio    
+        
+        if self.use_height:
+            pc_height = pc_height * scale_ratio
+        
+        # Augment RGB color
+        if self.use_color:
+            MEAN_COLOR_RGB=tf.constant([0.5,0.5,0.5])
+            rgb_color = point_cloud[:,:,3:6] + MEAN_COLOR_RGB
+            rgb_color = rgb_color * (1+0.4*tf.random.uniform([3])-0.2) # brightness change for each channel
+            rgb_color = rgb_color + (0.1*tf.random.uniform([3])-0.05) # color shift for each channel
+            rgb_color = rgb_color + tf.expand_dims((0.05*tf.random.uniform([B, N_POINT])-0.025), -1) # jittering on each pixel        
+            rgb_color = tf.clip_by_value(rgb_color, 0, 1)
+            # randomly drop out 30% of the points' colors
+            rgb_color = rgb_color * tf.expand_dims(tf.where(tf.random.uniform([B, N_POINT])>0.3, 1.0, 0.0),-1)
+            rgb_color = rgb_color - MEAN_COLOR_RGB
+            point_cloud = tf.concat((pc_coords, rgb_color, pc_height), axis=-1)
+        else:
+            if self.use_painted:
+                point_cloud = tf.concat((pc_coords, pc_painting, pc_height), axis=-1)
+            else:
+                point_cloud = tf.concat((pc_coords, pc_height), axis=-1)
+
+        # Keep painting information separately
+        
+            
+        bboxes = tf.concat((bboxes_coords, bboxes_edges, bboxes_angle, bboxes[:,:,7:]), axis=-1)
+        point_votes = tf.concat((votes0, votes1, votes2, votes3, point_votes[:,:,10:]), axis=-1)           
+        
+        return point_cloud, bboxes, point_votes, n_valid_box
+
     def sample_points(self, point_cloud, bboxes, point_votes, n_valid_box):
         
         n_pc = point_cloud.shape[1]
+        #if self.use_painted:
+        #    indices = tf.where(point_cloud[:,:,-2]==0)
+        #    bg_points = tf.gather_nd(point_cloud, indices)
+
+
         choice_indices = tf.random.uniform([self.num_points], minval=0, maxval=n_pc, dtype=tf.int64)
         choice_indices = tf.tile(tf.expand_dims(choice_indices,0), [tf.shape(point_cloud)[0],1])
         
@@ -415,122 +553,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         return point_cloud, center_label, heading_class_label, heading_residual_label, size_class_label, \
             size_residual_label, sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes
     
-                
-    def reshape_tensor(self, features):
-        
-        point_cloud = tf.reshape(features['point_cloud'], [-1, N_POINT, 6])    
-        bboxes = tf.reshape(features['bboxes'], [-1, N_BOX, 8])
-        point_votes = tf.reshape(features['point_votes'], [-1, N_POINT, 10])
-        n_valid_box = tf.reshape(features['n_valid_box'], [-1])
-        
-        return point_cloud, bboxes, point_votes, n_valid_box
 
-    def preprocess_height(self, point_cloud, bboxes, votes, n_valid_box):
-        y_coords = point_cloud[:, :, 2]    
-        y_coords = tf.sort(y_coords, direction='DESCENDING', axis=-1)
-        floor_height = y_coords[:, int(0.99*N_POINT), None]         
-        height = point_cloud[:,:,2] - tf.tile(floor_height, [1,N_POINT])
-        point_cloud = tf.concat([point_cloud, tf.expand_dims(height, axis=-1)], axis=-1) # (N,4) or (N,7)
-        return point_cloud, bboxes, votes, n_valid_box
-
-    def preprocess_color(self, point_cloud, bboxes, point_votes, n_valid_box):    
-        MEAN_COLOR_RGB=tf.constant([0.5,0.5,0.5])
-        point_cloud = point_cloud[:,:,0:6]
-        pc_coord = point_cloud[:,:,:3]
-        pc_RGB = point_cloud[:,:,3:]-MEAN_COLOR_RGB
-        point_cloud = tf.concat((pc_coord, pc_RGB), axis=-1)
-        return point_cloud, bboxes, point_votes, n_valid_box
-
-    def do_not_preprocess_color(self, point_cloud, bboxes, point_votes, n_valid_box):
-        point_cloud = point_cloud[:,:,0:3]        
-        return point_cloud, bboxes, point_votes, n_valid_box
-
-    
-    def augment_tensor(self, point_cloud, bboxes, point_votes, n_valid_box):
-        pi = 3.141592653589793
-        # Flipping along the YZ plane
-        if tf.random.uniform(shape=[]) > 0.5:        
-        #if True:
-            pc_flip = -1 * point_cloud[:,:,0,None]
-            point_cloud = tf.concat((pc_flip, point_cloud[:,:,1:]), axis=-1)
-            bboxes_flip = -1 * bboxes[:,:,0,None]
-            bboxes_angle = pi -1 * bboxes[:,:,6,None]
-            bboxes = tf.concat((bboxes_flip, bboxes[:,:,1:6], bboxes_angle, bboxes[:,:,7:]), axis=-1)  
-            votes1_flip = -1 * point_votes[:,:,1,None]
-            votes4_flip = -1 * point_votes[:,:,4,None]
-            votes7_flip = -1 * point_votes[:,:,7,None]
-            point_votes = tf.concat((point_votes[:,:,0,None], votes1_flip, point_votes[:,:,2:4], votes4_flip, point_votes[:,:,5:7], votes7_flip, point_votes[:,:,8:]), axis=-1)
-            
-        pc_coords = point_cloud[:,:,0:3]    
-        pc_height = point_cloud[:,:,-1,None]
-        
-        # Rotation along up-axis/Z-axis
-        rot_angle = (tf.random.uniform(shape=[])*pi/3) - pi/6    
-        #rot_angle = (0.1*pi/3) - pi/6    
-        c = tf.math.cos(rot_angle)
-        s = tf.math.sin(rot_angle)
-        rot_mat = tf.transpose(tf.convert_to_tensor([[c, -s, 0], [s, c, 0], [0,0,1]]), [1,0])
-            
-        point_votes_end1 = tf.matmul(pc_coords + point_votes[:,:,1:4], rot_mat)
-        point_votes_end2 = tf.matmul(pc_coords + point_votes[:,:,4:7], rot_mat)
-        point_votes_end3 = tf.matmul(pc_coords + point_votes[:,:,7:10], rot_mat)
-        
-        pc_coords = tf.matmul(pc_coords, rot_mat)    
-        
-        bboxes_coords = tf.matmul(bboxes[:,:,0:3], rot_mat)
-        bboxes_angle = bboxes[:,:,6,None] - rot_angle    
-        
-        votes0 = point_votes[:,:,0,None]
-        votes1 = point_votes_end1 - pc_coords
-        votes2 = point_votes_end2 - pc_coords
-        votes3 = point_votes_end3 - pc_coords
-
-        # Augment point cloud scale: 0.85x-1.15x
-        scale_ratio = tf.random.uniform(shape=[])*0.3+0.85
-        #scale_ratio = 0.1*0.3+0.85    
-        pc_coords = pc_coords * scale_ratio
-        bboxes_coords = bboxes_coords * scale_ratio
-        bboxes_edges = bboxes[:,:,3:6]
-        bboxes_edges = bboxes_edges * scale_ratio
-        votes1 = votes1 * scale_ratio
-        votes2 = votes2 * scale_ratio
-        votes3 = votes3 * scale_ratio    
-        
-        if self.use_height:
-            pc_height = pc_height * scale_ratio
-        
-        # Augment RGB color
-        if self.use_color:
-            MEAN_COLOR_RGB=tf.constant([0.5,0.5,0.5])
-            rgb_color = point_cloud[:,:,3:6] + MEAN_COLOR_RGB
-            rgb_color = rgb_color * (1+0.4*tf.random.uniform([3])-0.2) # brightness change for each channel
-            rgb_color = rgb_color + (0.1*tf.random.uniform([3])-0.05) # color shift for each channel
-            rgb_color = rgb_color + tf.expand_dims((0.05*tf.random.uniform([B, N_POINT])-0.025), -1) # jittering on each pixel        
-            rgb_color = tf.clip_by_value(rgb_color, 0, 1)
-            # randomly drop out 30% of the points' colors
-            rgb_color = rgb_color * tf.expand_dims(tf.where(tf.random.uniform([B, N_POINT])>0.3, 1.0, 0.0),-1)
-            rgb_color = rgb_color - MEAN_COLOR_RGB
-            point_cloud = tf.concat((pc_coords, rgb_color, pc_height), axis=-1)
-        else:
-            point_cloud = tf.concat((pc_coords, pc_height), axis=-1)
-            
-        bboxes = tf.concat((bboxes_coords, bboxes_edges, bboxes_angle, bboxes[:,:,7:]), axis=-1)
-        point_votes = tf.concat((votes0, votes1, votes2, votes3, point_votes[:,:,10:]), axis=-1)           
-        
-        return point_cloud, bboxes, point_votes, n_valid_box
-
-
-
-    def _parse_function(self, example_proto):
-        feature_description = {    
-            'point_cloud': tf.io.FixedLenFeature([N_POINT*6], tf.float32),    
-            'bboxes': tf.io.FixedLenFeature([N_BOX*8],tf.float32),
-            'point_votes': tf.io.FixedLenFeature([N_POINT*10], tf.float32),    
-            'n_valid_box': tf.io.FixedLenFeature([], tf.int64)
-        }
-        # Parse the input tf.train.Example proto using the dictionary above.
-        return tf.io.parse_single_example(example_proto, feature_description)
-        
 
 def viz_votes(pc, point_votes, point_votes_mask):
     """ Visualize point votes and point votes mask labels
