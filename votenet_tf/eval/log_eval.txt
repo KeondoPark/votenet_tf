@@ -1,3 +1,4 @@
+
 Namespace(DUMP_DIR='eval', ap_iou_thresholds='0.25', batch_size=8, checkpoint_path='/home/gundo0102/votenet_tf/tf_ckpt/210817', cluster_sampling='vote_fps', conf_thresh=0.05, dataset='sunrgbd', dump_dir='eval', faster_eval=True, nms_iou=0.25, no_height=False, num_point=20000, num_target=256, per_class_proposal=True, shuffle_dataset=False, use_3d_nms=True, use_cls_nms=True, use_color=False, use_old_type_nms=False, use_painted=False, use_sunrgbd_v2=False, use_tflite=True, vote_factor=1)
 2021-08-25 07:20:53.973618
 Eval batch: 0 5.7664923667907715
@@ -197,3 +198,4 @@ inference time: 114.28575277328491
 inference time: 114.5436999797821
 inference time: 116.5538284778595
 inference time: 114.5224232673645
+
