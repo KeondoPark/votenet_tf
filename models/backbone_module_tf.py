@@ -17,7 +17,7 @@ sys.path.append(ROOT_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 sys.path.append(os.path.join(ROOT_DIR, 'pointnet2'))
 
-from pointnet2_modules_tf import PointnetSAModuleVotes, PointnetFPModule, SamplingAndGrouping, PointnetMLP
+from pointnet2_modules_tf import PointnetSAModuleVotes, PointnetFPModule, SamplingAndGrouping, PointnetMLP, SamplingAndAttention
 
 class Pointnet2Backbone(layers.Layer):
     r"""
@@ -86,8 +86,8 @@ class Pointnet2Backbone(layers.Layer):
         #xyz = pc[..., 0:3]
         #features = pc[..., 3:] if pc.shape[-1] > 3 else None        
 
-        xyz = pc[:,:,0:3]
-        features =  pc[:,:, 3:]
+        xyz = pc[:,:,0:4]
+        features =  pc[:,:, 4:]
 
         return xyz, features
 
@@ -117,7 +117,7 @@ class Pointnet2Backbone(layers.Layer):
         # --------- 4 SET ABSTRACTION LAYERS ---------
         #xyz, features, fps_inds = self.sa1(xyz, features)
         #print("========================== SA1 ===============================")
-        sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features = self.sa1(xyz, features, sample_type='fps')
+        sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features = self.sa1(xyz, features, sample_type='fps', bg=True)
         end_points['sa1_xyz'] = sa1_xyz
         end_points['sa1_features'] = sa1_features
         end_points['sa1_inds'] = sa1_inds        
@@ -202,6 +202,7 @@ class Pointnet2Backbone_p(layers.Layer):
             )
         self.sa1_mlp = PointnetMLP(mlp=[input_feature_dim, 64, 64, 128], nsample=64)
         
+        
         self.sa2 = SamplingAndGrouping(
                 npoint=512,
                 radius=0.4,
@@ -210,7 +211,16 @@ class Pointnet2Backbone_p(layers.Layer):
                 normalize_xyz=True                
             )
         self.sa2_mlp = PointnetMLP(mlp=[128, 128, 128, 128], nsample=32)
-
+        """
+        self.sa2 = SamplingAndAttention(
+                npoint=512,
+                radius=0.4,
+                nsample=32,                
+                use_xyz=True,
+                normalize_xyz=True                
+            )
+        self.sa2_mlp = PointnetMLP(mlp=[128, 128, 128, 128], nsample=32)
+        """
         self.sa3 = SamplingAndGrouping(
                 npoint=256,
                 radius=0.8,
@@ -219,7 +229,18 @@ class Pointnet2Backbone_p(layers.Layer):
                 normalize_xyz=True                
             )
         self.sa3_mlp = PointnetMLP(mlp=[128, 128, 128, 128], nsample=16)
+        """
+        self.sa3 = SamplingAndAttention(
+            npoint=256,
+            radius=0.8,
+            nsample=16,
+            use_xyz=True,
+            normalize_xyz=True
+        )
 
+        self.sa3_mlp = PointnetMLP(mlp=[128, 128, 128, 128], nsample=16)        
+        """
+        
         self.sa4 = SamplingAndGrouping(
                 npoint=128,
                 radius=1.2,
@@ -228,12 +249,38 @@ class Pointnet2Backbone_p(layers.Layer):
                 normalize_xyz=True                
             )
         self.sa4_mlp = PointnetMLP(mlp=[128, 128, 128, 128], nsample=16)
+        """
 
+        self.sa4 = SamplingAndAttention(
+            npoint=128,
+            radius=1.2,
+            nsample=16,
+            use_xyz=True,
+            normalize_xyz=True
+        )        
+        self.sa4_mlp = PointnetMLP(mlp=[128, 128, 128, 128], nsample=16)
+        """
         self.fp1 = PointnetFPModule(mlp=[256+256,256,256], m=512)
                 #use_tflite=use_tflite, tflite_name='fp1_quant.tflite')
         self.fp2 = PointnetFPModule(mlp=[256+256,256,256], m=1024)
                 #use_tflite=use_tflite, tflite_name='fp2_quant_b8.tflite')
+        self.use_tflite = use_tflite
 
+        if self.use_tflite:
+            self.sa1_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa1_quant_test.tflite')))
+            self.sa2_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa2_quant_test.tflite')))
+            self.sa3_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa3_quant_test.tflite')))
+            self.sa4_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa4_quant_test.tflite')))
+
+            #self.sa1_input_details = self.sa1_interpreter.get_input_details()
+            #self.sa2_input_details = self.sa2_interpreter.get_input_details()
+            #self.sa3_input_details = self.sa3_interpreter.get_input_details()
+            #self.sa4_input_details = self.sa4_interpreter.get_input_details()
+
+            #self.sa1_output_details = self.sa1_interpreter.get_output_details()
+            #self.sa2_output_details = self.sa2_interpreter.get_output_details()
+            #self.sa3_output_details = self.sa3_interpreter.get_output_details()
+            #self.sa4_output_details = self.sa4_interpreter.get_output_details()
         """
         self.sa2_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa3_quant.tflite')))
         self.sa2_interpreter.allocate_tensors()
@@ -247,20 +294,21 @@ class Pointnet2Backbone_p(layers.Layer):
         self.loop = asyncio.get_event_loop()
         """
     def _break_up_pc(self, pc):
-        #xyz = pc[..., 0:3]
-        #features = pc[..., 3:] if pc.shape[-1] > 3 else None        
+        xyz = pc[:,:,0:4]
+        features =  pc[:,:, 4:]
 
-        xyz1 = pc[:, ::2,0:3]
-        features1 =  pc[:, ::2, 3:]
-        xyz2 = pc[:, 1::2, 0:3]
-        features2 =  pc[:, 1::2, 3:]
+        return xyz, features
 
-        return xyz1, features1, xyz2, features2
-
-    def call_tflite(self, grouped_features):
-        self.sa2_interpreter.set_tensor(self.input_details[0]['index'], grouped_features)
-        self.sa2_interpreter.invoke()
-        return self.sa2_interpreter.get_tensor(self.output_details[0]['index'])
+    def call_tflite(self, interpreter, grouped_features):
+        interpreter.allocate_tensors()
+        input_details = interpreter.get_input_details()
+        output_details = interpreter.get_output_details()
+        interpreter.set_tensor(input_details[0]['index'], grouped_features)
+        interpreter.invoke()
+        return interpreter.get_tensor(output_details[0]['index'])
+        #self.sa2_interpreter.set_tensor(self.input_details[0]['index'], grouped_features)
+        #self.sa2_interpreter.invoke()
+        #return self.sa2_interpreter.get_tensor(self.output_details[0]['index'])
 
     async def wrapper_tflite(self, grouped_features):
         features = await self.loop.run_in_executor(self._executor, \
@@ -287,15 +335,48 @@ class Pointnet2Backbone_p(layers.Layer):
                 XXX-inds: int64 Tensor of shape (B,K) values in [0,N-1]
         """        
         if not end_points: end_points = {}
-        xyz1, features1, xyz2, features2 = self._break_up_pc(pointcloud)
-
+        xyz, features = self._break_up_pc(pointcloud)
+        
         # --------- 4 SET ABSTRACTION LAYERS ---------
         #xyz, features, fps_inds = self.sa1(xyz, features)
         #print("========================== SA1 ===============================")
-        sa1_xyz1, sa1_inds1, sa1_ball_query_idx1, sa1_grouped_features1 = self.sa1(xyz1, features1, sample_type='fps')
-        sa1_features1 = self.sa1_mlp(sa1_grouped_features1)
-        sa1_xyz2, sa1_inds2, sa1_ball_query_idx2, sa1_grouped_features2 = self.sa1(xyz2, features2, sample_type='fps')
-        sa1_features2 = self.sa1_mlp(sa1_grouped_features2)
+        #Sample more background points
+        sa1_xyz1, sa1_inds1, sa1_ball_query_idx1, sa1_grouped_features1 = self.sa1(xyz, features, sample_type='fps', bg=True, wght=0.01, isFront=1)
+        if self.use_tflite:
+            sa1_features1 = self.call_tflite(self.sa1_interpreter, sa1_grouped_features1)
+        else:           
+            sa1_features1 = self.sa1_mlp(sa1_grouped_features1)
+        
+        """
+        ## Filter selected points from first sampling... doesn't increase the accuracy
+        b = tf.shape(xyz)[0]
+        n = tf.shape(xyz)[1]
+        m = 1024
+        full_inds = tf.tile(tf.expand_dims(tf.range(0, n), axis=0), multiples=(b,1))#(b, n)
+        batch_id = tf.expand_dims(tf.tile(tf.expand_dims(tf.range(0,b), axis=-1), multiples=(1,m)), axis=-1) #(b, m, 1)
+        
+        #Prepare index for scatter
+        sa1_expand = tf.expand_dims(sa1_inds1, axis=-1) #(b, m, 1)
+        indices = tf.concat([batch_id, sa1_expand], -1) #(b, m, 2)
+        indices = tf.reshape(indices, [b*m, 2]) # (b*m, 2)
+        updates = tf.ones((b*m,))
+        #shape = tf.constant([b, n])
+        scatter = tf.scatter_nd(indices, updates, [b,n]) # (b, n) 1 where sa1_inds exists, 0 in other places
+        idx = tf.ones([b,n]) - scatter         
+        idx = tf.reshape(tf.where(idx==1), (b,n-m,2)) #(b, n-m, 2)
+        remain_inds = tf.gather_nd(full_inds, idx) #(b, n-m)
+
+        xyz = tf.gather(xyz, axis=1, indices=remain_inds, batch_dims=1) #(b, n-m, 4)
+        features = tf.gather(features, axis=1, indices=remain_inds, batch_dims=1) #(b, n-m, C)
+        print(xyz.shape)
+        """
+
+        #Sample more painted points
+        sa1_xyz2, sa1_inds2, sa1_ball_query_idx2, sa1_grouped_features2 = self.sa1(xyz, features, sample_type='fps', bg=True, wght=4, isFront=0)
+        if self.use_tflite:
+            sa1_features2 = self.call_tflite(self.sa1_interpreter, sa1_grouped_features2)
+        else:        
+            sa1_features2 = self.sa1_mlp(sa1_grouped_features2)
         end_points['sa1_xyz1'] = sa1_xyz1
         end_points['sa1_features1'] = sa1_features1
         end_points['sa1_inds1'] = sa1_inds1               
@@ -303,12 +384,20 @@ class Pointnet2Backbone_p(layers.Layer):
         end_points['sa1_xyz2'] = sa1_xyz2
         end_points['sa1_features2'] = sa1_features2
         end_points['sa1_inds2'] = sa1_inds2               
-        end_points['sa1_grouped_features1'] = sa1_grouped_features2
+        end_points['sa1_grouped_features2'] = sa1_grouped_features2        
 
         sa2_xyz1, sa2_inds1, sa2_ball_query_idx1, sa2_grouped_features1 = self.sa2(sa1_xyz1, sa1_features1, sample_type='fps')
-        sa2_features1 = self.sa2_mlp(sa2_grouped_features1)
+        if self.use_tflite:
+            sa2_features1 = self.call_tflite(self.sa2_interpreter, sa2_grouped_features1)
+        else:          
+            sa2_features1 = self.sa2_mlp(sa2_grouped_features1)
+
         sa2_xyz2, sa2_inds2, sa2_ball_query_idx2, sa2_grouped_features2 = self.sa2(sa1_xyz2, sa1_features2, sample_type='fps')
-        sa2_features2 = self.sa2_mlp(sa2_grouped_features2)
+        if self.use_tflite:
+            sa2_features2 = self.call_tflite(self.sa2_interpreter, sa2_grouped_features2)
+        else:  
+            sa2_features2 = self.sa2_mlp(sa2_grouped_features2)
+
         end_points['sa2_xyz1'] = sa2_xyz1
         end_points['sa2_features1'] = sa2_features1
         end_points['sa2_inds1'] = sa2_inds1               
@@ -316,12 +405,20 @@ class Pointnet2Backbone_p(layers.Layer):
         end_points['sa2_xyz2'] = sa2_xyz2
         end_points['sa2_features2'] = sa2_features2
         end_points['sa2_inds2'] = sa2_inds2               
-        end_points['sa2_grouped_features1'] = sa2_grouped_features2
+        end_points['sa2_grouped_features2'] = sa2_grouped_features2
 
         sa3_xyz1, sa3_inds1, sa3_ball_query_idx1, sa3_grouped_features1 = self.sa3(sa2_xyz1, sa2_features1, sample_type='fps')
-        sa3_features1 = self.sa3_mlp(sa3_grouped_features1)
+        if self.use_tflite:
+            sa3_features1 = self.call_tflite(self.sa3_interpreter, sa3_grouped_features1)
+        else:  
+            sa3_features1 = self.sa3_mlp(sa3_grouped_features1)
+
         sa3_xyz2, sa3_inds2, sa3_ball_query_idx2, sa3_grouped_features2 = self.sa3(sa2_xyz2, sa2_features2, sample_type='fps')
-        sa3_features2 = self.sa3_mlp(sa3_grouped_features2)
+        if self.use_tflite:
+            sa3_features2 = self.call_tflite(self.sa3_interpreter, sa3_grouped_features2)
+        else:  
+            sa3_features2 = self.sa3_mlp(sa3_grouped_features2)
+
         end_points['sa3_xyz1'] = sa3_xyz1
         end_points['sa3_features1'] = sa3_features1
         end_points['sa3_inds1'] = sa3_inds1               
@@ -329,12 +426,19 @@ class Pointnet2Backbone_p(layers.Layer):
         end_points['sa3_xyz2'] = sa3_xyz2
         end_points['sa3_features2'] = sa3_features2
         end_points['sa3_inds2'] = sa3_inds2               
-        end_points['sa3_grouped_features1'] = sa3_grouped_features2
+        end_points['sa3_grouped_features2'] = sa3_grouped_features2
 
         sa4_xyz1, sa4_inds1, sa4_ball_query_idx1, sa4_grouped_features1 = self.sa4(sa3_xyz1, sa3_features1, sample_type='fps')
-        sa4_features1 = self.sa4_mlp(sa4_grouped_features1)
+        if self.use_tflite:
+            sa4_features1 = self.call_tflite(self.sa4_interpreter, sa4_grouped_features1)
+        else:  
+            sa4_features1 = self.sa4_mlp(sa4_grouped_features1)
+
         sa4_xyz2, sa4_inds2, sa4_ball_query_idx2, sa4_grouped_features2 = self.sa4(sa3_xyz2, sa3_features2, sample_type='fps')
-        sa4_features2 = self.sa4_mlp(sa4_grouped_features2)
+        if self.use_tflite:
+            sa4_features2 = self.call_tflite(self.sa4_interpreter, sa4_grouped_features2)
+        else:  
+            sa4_features2 = self.sa4_mlp(sa4_grouped_features2)
         end_points['sa4_xyz1'] = sa4_xyz1
         end_points['sa4_features1'] = sa4_features1
         end_points['sa4_inds1'] = sa4_inds1               
@@ -342,7 +446,7 @@ class Pointnet2Backbone_p(layers.Layer):
         end_points['sa4_xyz2'] = sa4_xyz2
         end_points['sa4_features2'] = sa4_features2
         end_points['sa4_inds2'] = sa4_inds2               
-        end_points['sa4_grouped_features1'] = sa4_grouped_features2
+        end_points['sa4_grouped_features2'] = sa4_grouped_features2
 
         sa4_features = layers.Concatenate(axis=1)([sa4_features1, sa4_features2])
         sa3_features = layers.Concatenate(axis=1)([sa3_features1, sa3_features2])

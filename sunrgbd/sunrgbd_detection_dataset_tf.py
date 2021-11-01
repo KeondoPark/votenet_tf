@@ -242,6 +242,8 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         else:
             self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_tf'%(split_set))
 
+        print(self.data_path)
+
         self.raw_data_path = os.path.join(ROOT_DIR, 'sunrgbd/sunrgbd_trainval')
         self.num_points = num_points
         self.augment = augment
@@ -326,10 +328,8 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         y_coords = tf.sort(y_coords, direction='DESCENDING', axis=-1)
         floor_height = y_coords[:, int(0.99*N_POINT), None]         
         height = point_cloud[:,:,2] - tf.tile(floor_height, [1,N_POINT])        
-        point_cloud = tf.concat([point_cloud, tf.expand_dims(height, axis=-1)], axis=-1) # (N,4) or (N,7)
-        #point_cloud = tf.concat([point_cloud[:,:,:3], tf.expand_dims(height, axis=-1)], axis=-1) # (N,4) or (N,7)
+        point_cloud = tf.concat([point_cloud, tf.expand_dims(height, axis=-1)], axis=-1) # (N,4) or (N,7)        
         return point_cloud, bboxes, votes, n_valid_box
-
     
     def augment_tensor(self, point_cloud, bboxes, point_votes, n_valid_box):
         pi = 3.141592653589793
@@ -414,13 +414,8 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         
         return point_cloud, bboxes, point_votes, n_valid_box
 
-    def sample_points(self, point_cloud, bboxes, point_votes, n_valid_box):
-        
-        n_pc = point_cloud.shape[1]
-        #if self.use_painted:
-        #    indices = tf.where(point_cloud[:,:,-2]==0)
-        #    bg_points = tf.gather_nd(point_cloud, indices)
-
+    def sample_points(self, point_cloud, bboxes, point_votes, n_valid_box):        
+        n_pc = point_cloud.shape[1]        
 
         choice_indices = tf.random.uniform([self.num_points], minval=0, maxval=n_pc, dtype=tf.int64)
         choice_indices = tf.tile(tf.expand_dims(choice_indices,0), [tf.shape(point_cloud)[0],1])

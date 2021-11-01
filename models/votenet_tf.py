@@ -57,14 +57,14 @@ class VoteNet(tf.keras.Model):
         self.sampling=sampling
 
         # Backbone point feature learning
-        self.backbone_net = Pointnet2Backbone(input_feature_dim=self.input_feature_dim, use_tflite=use_tflite)
+        self.backbone_net = Pointnet2Backbone_p(input_feature_dim=self.input_feature_dim, use_tflite=use_tflite)
 
         # Hough voting
-        self.vgen = VotingModule(self.vote_factor, seed_feature_dim=128, use_tflite=use_tflite, tflite_name='voting_quant.tflite')
+        self.vgen = VotingModule(self.vote_factor, seed_feature_dim=128, use_tflite=use_tflite, tflite_name='voting_quant_test.tflite')
 
         # Vote aggregation and detection
         self.pnet = ProposalModule(num_class, num_heading_bin, num_size_cluster,
-            mean_size_arr, num_proposal, sampling, seed_feat_dim=128, use_tflite=use_tflite, tflite_name='va_quant.tflite')
+            mean_size_arr, num_proposal, sampling, seed_feat_dim=128, use_tflite=use_tflite, tflite_name='va_quant_test.tflite')
 
     def call(self, inputs):
         """ Forward pass of the network

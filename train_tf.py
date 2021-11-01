@@ -179,7 +179,7 @@ ckpt = tf.train.Checkpoint(epoch=tf.Variable(1), optimizer=optimizer, net=net)
 
 if CHECKPOINT_PATH is None or not os.path.isdir(CHECKPOINT_PATH):
     print("Use defualt checkpoint path")
-    CHECKPOINT_PATH = './log/tf_ckpt'
+    CHECKPOINT_PATH = './tf_ckpt'
 
 
 with mirrored_strategy.scope():

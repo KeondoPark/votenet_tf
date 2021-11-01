@@ -88,8 +88,8 @@ if FLAGS.dataset == 'sunrgbd':
     DATASET_CONFIG = SunrgbdDatasetConfig()
     TEST_DATASET = SunrgbdDetectionVotesDataset_tfrecord('val', num_points=NUM_POINT,
         augment=False,  shuffle=FLAGS.shuffle_dataset, batch_size=BATCH_SIZE,
-        use_color=FLAGS.use_color, use_height=(not FLAGS.no_height))
-        #use_painted=FLAGS.use_painted)
+        use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
+        use_painted=FLAGS.use_painted)
 else:
     print('Unknown dataset %s. Exiting...'%(FLAGS.dataset))
     exit(-1)
@@ -143,6 +143,8 @@ CONFIG_DICT = {'remove_empty_box': (not FLAGS.faster_eval), 'use_3d_nms':FLAGS.u
     'per_class_proposal': FLAGS.per_class_proposal, 'conf_thresh':FLAGS.conf_thresh,
     'dataset_config':DATASET_CONFIG}
 
+label_dict = {0:'point_cloud', 1:'center_label', 2:'heading_class_label', 3:'heading_residual_label', 4:'size_class_label',\
+    5:'size_residual_label', 6:'sem_cls_label', 7:'box_label_mask', 8:'vote_label', 9:'vote_label_mask', 10: 'max_gt_bboxes'}
 
 # ------------------------------------------------------------------------- GLOBAL CONFIG END
 
@@ -153,22 +155,21 @@ def evaluate_one_epoch():
     start = time.time()
     start2 = time.time()
     for batch_idx, batch_data in enumerate(test_ds):        
-        if batch_idx*BATCH_SIZE >= 800: break
+        if batch_idx*BATCH_SIZE >= 3600: break
         if batch_idx % 10 == 0:
             end = time.time()
             log_string('Eval batch: %d '%(batch_idx) + str(end - start))
             start = time.time()
         start2 = time.time()
         # Forward pass
-        point_cloud, center_label, heading_class_label, heading_residual_label, size_class_label, \
-            size_residual_label, sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes = batch_data
+        
+        point_cloud = batch_data[0]
         end_points = net(point_cloud, training=False)
-        res_from_backbone, res_from_voting, res_from_pnet = end_points
-       
+        for i, label in label_dict.items():
+            if label_dict[i] not in end_points:
+                end_points[label_dict[i]] = batch_data[i] 
 
-        from_inputs = center_label, heading_class_label, heading_residual_label, size_class_label, size_residual_label, \
-            sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes
-        end_points = res_from_backbone, res_from_voting, res_from_pnet, from_inputs
+        end_points['point_clouds'] = point_cloud
 
         config = tf.constant(DATASET_CONFIG.num_heading_bin, dtype=tf.int32), \
             tf.constant(DATASET_CONFIG.num_size_cluster, dtype=tf.int32), \
@@ -176,31 +177,22 @@ def evaluate_one_epoch():
             tf.constant(DATASET_CONFIG.mean_size_arr, dtype=tf.float32)
         loss, end_points = criterion(end_points, config)        
 
-        res_from_backbone, res_from_voting, res_from_pnet, from_inputs, from_loss = end_points
-        vote_loss, objectness_loss, objectness_label, objectness_mask, object_assignment, \
-        pos_ratio, neg_ratio, center_loss, heading_cls_loss, heading_reg_loss, \
-        size_cls_loss, size_reg_loss, sem_cls_loss, box_loss, loss, \
-            obj_acc = from_loss
-
-        stat_dict['box_loss'] += box_loss
-        stat_dict['vote_loss'] += vote_loss
-        stat_dict['objectness_loss'] += objectness_loss
-        stat_dict['sem_cls_loss'] += sem_cls_loss
-        stat_dict['loss'] += loss
-        stat_dict['obj_acc'] += obj_acc
-        stat_dict['pos_ratio'] += pos_ratio
-        stat_dict['neg_ratio'] += neg_ratio
+        stat_dict['box_loss'] += end_points['box_loss']
+        stat_dict['vote_loss'] += end_points['vote_loss']
+        stat_dict['objectness_loss'] += end_points['objectness_loss']
+        stat_dict['sem_cls_loss'] += end_points['sem_cls_loss']
+        stat_dict['loss'] += end_points['loss']
+        stat_dict['obj_acc'] += end_points['obj_acc']
+        stat_dict['pos_ratio'] += end_points['pos_ratio']
+        stat_dict['neg_ratio'] += end_points['neg_ratio']
         end2 = time.time()
         log_string('inference time: ' +  str(end2 - start2))        
 
         batch_pred_map_cls, pred_mask = parse_predictions(end_points, CONFIG_DICT)        
         batch_gt_map_cls = parse_groundtruths(end_points, CONFIG_DICT) 
         for ap_calculator in ap_calculator_list:
-            ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)    
+            ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)            
         
-        for_dump = point_cloud, batch_pred_map_cls, batch_gt_map_cls, pred_mask
-        end_points = res_from_backbone, res_from_voting, res_from_pnet, from_inputs, from_loss, for_dump
-
         # Dump evaluation results for visualization
         if batch_idx == 0:
             dump_results(end_points, DUMP_DIR, DATASET_CONFIG)

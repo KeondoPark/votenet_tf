@@ -25,6 +25,7 @@ import tensorflow as tf
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
+DATA_DIR = '/home/aiot/data'
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 sys.path.append(os.path.join(ROOT_DIR, 'models'))
 from pc_util import random_sampling, read_ply
@@ -35,7 +36,7 @@ from votenet_tf import dump_results
 
 def preprocess_point_cloud(point_cloud):
     ''' Prepare the numpy point cloud (N,3) for forward pass '''
-    point_cloud = point_cloud[:,0:3] # do not use color for now
+    #point_cloud = point_cloud[:,0:3] # do not use color for now
     floor_height = np.percentile(point_cloud[:,2],0.99)
     height = point_cloud[:,2] - floor_height
     point_cloud = np.concatenate([point_cloud, np.expand_dims(height, 1)],1) # (N,4) or (N,7)
@@ -62,6 +63,7 @@ if __name__=='__main__':
     if FLAGS.dataset == 'sunrgbd':
         sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
         from sunrgbd_detection_dataset_tf import DC # dataset config
+        from sunrgbd_data import sunrgbd_object, run_semantic_segmentation  
         checkpoint_path = FLAGS.checkpoint_path # os.path.join(demo_dir, 'tf_ckpt_210812')        
         pc_path = os.path.join(demo_dir, 'input_pc_sunrgbd.ply')
         #pc_path = os.path.join(demo_dir, 'pc_person2.ply')
@@ -73,6 +75,9 @@ if __name__=='__main__':
     else:
         print('Unkown dataset. Exiting.')
         exit(-1)
+
+    
+
 
     eval_config_dict = {'remove_empty_box': True, 'use_3d_nms': True, 'nms_iou': 0.25,
         'use_old_type_nms': False, 'cls_nms': False, 'per_class_proposal': False,
@@ -124,9 +129,44 @@ if __name__=='__main__':
         print("Loaded checkpoint %s (epoch: %d)"%(checkpoint_path, epoch))  
    
     # Load and preprocess input point cloud     
-    point_cloud = read_ply(pc_path)
-    pc = preprocess_point_cloud(point_cloud)
-    print('Loaded point cloud data: %s'%(pc_path))
+    #point_cloud = read_ply(pc_path)
+    #pc = preprocess_point_cloud(point_cloud)
+    #print('Loaded point cloud data: %s'%(pc_path))
+    data_idx = 5051
+    dataset = sunrgbd_object(os.path.join(DATA_DIR,'sunrgbd_trainval'), 'training', use_v1=True)
+    point_cloud = dataset.get_depth(data_idx)    
+
+    pointpainting = True
+    if pointpainting:
+        INPUT_SIZE = 513
+        with tf.compat.v1.gfile.GFile('test/saved_model/sunrgbd_ade20k_9.pb', "rb") as f:
+            graph_def = tf.compat.v1.GraphDef()
+            graph_def.ParseFromString(f.read())
+        
+        myGraph = tf.compat.v1.Graph()
+        with myGraph.as_default():
+            tf.compat.v1.import_graph_def(graph_def, name='')
+
+        sess = tf.compat.v1.Session(graph=myGraph)
+
+        calib = dataset.get_calibration(data_idx)
+        uv,d = calib.project_upright_depth_to_image(point_cloud[:,0:3]) #uv: (N, 2)
+
+        # Run image segmentation result and get result
+        img = dataset.get_image2(data_idx)        
+        pred_prob, pred_class = run_semantic_segmentation(img, sess, INPUT_SIZE) # (w, h, num_class)   
+        pred_prob = pred_prob[:,:,1:(DC.num_class+1)] # 0 is background class
+        uv[:,0] = np.rint(uv[:,0] - 1)
+        uv[:,1] = np.rint(uv[:,1] - 1)
+        projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
+        isObj = np.where((projected_class > 0) & (projected_class < 11), 1, 0) # Point belongs to background?                    
+        isObj = np.expand_dims(isObj, axis=-1)
+        painted = np.concatenate([point_cloud[:,:3],\
+                                isObj,
+                                pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
+                                ], axis=-1)
+    
+    pc = preprocess_point_cloud(painted)
    
     # Model inference
     inputs = {'point_clouds': tf.convert_to_tensor(pc)}
@@ -143,10 +183,10 @@ if __name__=='__main__':
     class2type = {type2class[t]:t for t in type2class}
 
     print(pred_map_cls[0])
-    for pred in pred_map_cls[0]:
-        print('-'*20)        
-        print('class:', class2type[pred[0]])
-        print('conf:', pred[2])
+    #for pred in pred_map_cls[0]:
+    #    print('-'*20)        
+    #    print('class:', class2type[pred[0].numpy()])
+    #    print('conf:', pred[2])
         #print('coords', pred[1])
 
     """

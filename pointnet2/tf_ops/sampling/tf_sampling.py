@@ -48,6 +48,7 @@ def _gather_point_grad(op,out_g):
     inp=op.inputs[0]
     idx=op.inputs[1]
     return [sampling_module.gather_point_grad(inp,idx,out_g),None]
+
 def farthest_point_sample(npoint,inp):
     '''
 input:
@@ -58,14 +59,40 @@ returns:
     '''
     return sampling_module.farthest_point_sample(inp, npoint)
 ops.NoGradient('FarthestPointSample')
-    
+
+def farthest_point_sample_bg(npoint,inp,weight=1, isFront=0):
+    '''
+input:
+    int32
+    batch_size * ndataset * 4   float32
+    wegiht: weight for painted points' distance
+returns:
+    batch_size * npoint         int32
+    '''
+    return sampling_module.farthest_point_sample_bg(inp, npoint,weight,isFront)
+ops.NoGradient('FarthestPointSampleBg')
+
+
 
 if __name__=='__main__':
     import numpy as np
     np.random.seed(100)
-    npoint = 3
-    inputs = np.random.random((1,8,3))
-    res = farthest_point_sample(npoint, inputs)
+    npoint = 8
+    N = 16
+    #inputs = np.random.random((1,8,4))
+    
+    idxs = np.array(range(N))
+    cos_x = np.cos(np.pi/N * 2 * idxs)
+    sin_x = np.sin(np.pi/N * 2 * idxs)
+    z_coord = np.array([0]*N)
+    #isBg = np.array([1] * (N//2) + [0] * (N//2))
+    isBg = np.array([0] * 16)
+
+    inputs = np.vstack([cos_x, sin_x, z_coord, isBg])
+    inputs = inputs.transpose()    
+    print(inputs.shape)
+    inputs = np.expand_dims(inputs, axis=0)
+    res = farthest_point_sample_bg(npoint, inputs, 0.01, 0)
     print(res)
 
     """

@@ -45,12 +45,13 @@ if FLAGS.gpu_mem_limit:
 BATCH_SIZE = 1
 
 if not FLAGS.use_rep_data:
-    TEST_DATASET = SunrgbdDetectionVotesDataset_tfrecord('val', num_points=20000,
-        augment=False,  shuffle=True, batch_size=BATCH_SIZE,
-        use_color=False, use_height=True)
+    TRAIN_DATASET = SunrgbdDetectionVotesDataset_tfrecord('train', num_points=20000,
+        augment=False, shuffle=True, batch_size=BATCH_SIZE,
+        use_color=False, use_height=True,
+        use_painted=False)
 
-    test_ds = TEST_DATASET.preprocess()
-    test_ds = test_ds.prefetch(BATCH_SIZE)
+    ds = TRAIN_DATASET.preprocess()
+    ds = ds.prefetch(BATCH_SIZE)
 
 
 def preprocess_point_cloud(point_cloud):
@@ -67,7 +68,7 @@ def wrapper_representative_data_gen_mlp(keyword, base_model):
     def representative_data_gen_mlp():
         for i in range(int(800 / BATCH_SIZE)):
             if not FLAGS.use_rep_data:            
-                batch_data = next(iter(test_ds))
+                batch_data = next(iter(ds))
                 inputs = batch_data[0]
                 end_points = base_model(inputs, training=False)
                 print("Using inference results", i, "-th batch...")
@@ -107,7 +108,7 @@ def wrapper_representative_data_gen_voting(base_model):
     def representative_data_gen_voting():
         for i in range(int(800 / BATCH_SIZE)):
             if not FLAGS.use_rep_data:
-                batch_data = next(iter(test_ds))
+                batch_data = next(iter(ds))
                 inputs = batch_data[0]
                 end_points = base_model(inputs, training=False)
                 print(i, "-th batch...")
@@ -293,8 +294,8 @@ if __name__=='__main__':
 
             return net
 
-    #converting_layers = ['sa1','sa2','sa3','sa4','voting','va']
-    converting_layers = ['voting','va']
+    converting_layers = ['sa1','sa2','sa3','sa4']
+    #converting_layers = ['voting','va']
     if 'sa1' in converting_layers:    
         sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[2048,64,1+3])
         dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,2048,64,4])) # (B, npoint, nsample, C+3)

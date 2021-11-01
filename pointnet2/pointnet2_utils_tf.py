@@ -69,7 +69,7 @@ class QueryAndGroup(layers.Layer):
             assert(self.sample_uniformly)
 
     #def forward(self, xyz, new_xyz, batch_distances, inds, features=None):
-    def call(self, xyz, new_xyz, features=None):
+    def call(self, xyz, new_xyz, features=None, knn=False, attn=None):
         # type: (QueryAndGroup, torch.Tensor. torch.Tensor, torch.Tensor) -> Tuple[Torch.Tensor]
         r"""
         Parameters
@@ -85,7 +85,10 @@ class QueryAndGroup(layers.Layer):
 
         
         start = time.time()
-        idx, pts_cnt = tf_grouping.query_ball_point(self.radius, self.nsample, xyz, new_xyz)
+        if not knn:
+            idx, pts_cnt = tf_grouping.query_ball_point(self.radius, self.nsample, xyz, new_xyz)
+        else:
+            idx, _ = tf_grouping.knn_with_attention(self.nsample, xyz, new_xyz, attn)
         end = time.time()
         #print("Runtime for ball query original: ", end - start)
         
@@ -115,7 +118,7 @@ class QueryAndGroup(layers.Layer):
         grouped_xyz = tf_grouping.group_point(xyz, idx)  # (B, npoint, nsample, 3)
         
         grouped_xyz -= tf.expand_dims(new_xyz, axis=-2)
-        if self.normalize_xyz:
+        if self.normalize_xyz and not knn:
             #grouped_xyz /= self.radius
             grouped_xyz = tf.divide(grouped_xyz, self.radius)
 

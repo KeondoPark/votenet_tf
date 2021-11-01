@@ -56,7 +56,7 @@ def knn_point(k, xyz1, xyz2):
         val: (batch_size, npoint, k) float32 array, L2 distances
         idx: (batch_size, npoint, k) int32 array, indices to input points
     '''
-    b = xyz1.get_shape()[0].value
+    b = xyz1.get_shape()[0]
     n = xyz1.get_shape()[1].value
     c = xyz1.get_shape()[2].value
     m = xyz2.get_shape()[1].value
@@ -71,7 +71,36 @@ def knn_point(k, xyz1, xyz2):
     val = tf.slice(out, [0,0,0], [-1,-1,k])
     print(idx, val)
     #val, idx = tf.nn.top_k(-dist, k=k) # ONLY SUPPORT CPU
-    return val, idx
+    return idx, val
+
+
+def knn_with_attention(k, xyz1, xyz2, attn):
+    '''
+    Input:
+        k: int32, number of k in k-nn search
+        xyz1: (batch_size, ndataset, c) float32 array, input points
+        xyz2: (batch_size, npoint, c) float32 array, query points
+        attn: (batch_size, npoint, ndataset, c) float32 array, Attention score
+    Output:
+        val: (batch_size, npoint, k) float32 array, L2 distances
+        idx: (batch_size, npoint, k) int32 array, indices to input points
+    '''
+    b = tf.shape(xyz1)[0]
+    n = tf.shape(xyz1)[1]
+    c = tf.shape(xyz1)[2]
+    m = tf.shape(xyz2)[1]
+    
+    xyz1 = tf.tile(tf.reshape(xyz1, (b,1,n,c)), [1,m,1,1])
+    xyz2 = tf.tile(tf.reshape(xyz2, (b,m,1,c)), [1,1,n,1])
+    dist = tf.reduce_sum((xyz1-xyz2)**2, -1) #(b, m, n)
+    dist = dist / (attn + 1e-6)    
+    
+    outi, out = select_top_k(k, dist)
+    idx = tf.slice(outi, [0,0,0], [-1,-1,k])
+    #idx = tf.cast(idx, dtype=tf.int32)
+    val = tf.slice(out, [0,0,0], [-1,-1,k])    
+    #val, idx = tf.nn.top_k(-dist, k=k) # ONLY SUPPORT CPU
+    return idx, val
 
 if __name__=='__main__':
     knn=True

@@ -230,7 +230,7 @@ class PointnetSAModuleVotes(layers.Layer):
             self.max_pool2 = layers.MaxPooling2D(pool_size=(1, int(self.nsample/16)), strides=(1,int(self.nsample/16)), data_format="channels_last")
             self.avg_pool = layers.AveragePooling2D(pool_size=(1, self.nsample), strides=1, data_format="channels_last")        
 
-    def call(self, xyz, features, inds=None, sample_type = 'fps_light'):
+    def call(self, xyz, features, inds=None, sample_type = 'fps_light', bg=False):
         r"""
         Parameters
         ----------
@@ -246,11 +246,16 @@ class PointnetSAModuleVotes(layers.Layer):
         ball_quer_idx: (B, npoint, nsample) Index of ball queried points
         """
         
-        if inds is None:
-            
-            if sample_type == 'fps':
+        if inds is None:            
+            if sample_type == 'fps':                
                 #start = time.time()
-                inds = tf_sampling.farthest_point_sample(self.npoint, xyz)                
+                if bg:
+                    print("Before sampling", self.npoint)
+                    inds = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, weight=1, isFront=0)
+                    xyz = xyz[:,:,:3]
+                    print("After sampling", self.npoint)
+                else:
+                    inds = tf_sampling.farthest_point_sample(self.npoint, xyz)                
                 #inds, batch_distances = pointnet2_utils.fps_light(xyz, self.npoint)
                 #end = time.time()
                 #print("Runtime for FPS original", end - start)
@@ -349,7 +354,7 @@ class SamplingAndGrouping(layers.Layer):
         else:
             self.grouper = pointnet2_utils_tf.GroupAll(use_xyz, ret_grouped_xyz=True)
         
-    def call(self, xyz, features, inds=None, sample_type = 'fps_light'):
+    def call(self, xyz, features, inds=None, sample_type = 'fps_light', bg=False, wght=1, isFront=0):
         r"""
         Parameters
         ----------
@@ -367,11 +372,11 @@ class SamplingAndGrouping(layers.Layer):
         
         if inds is None:            
             if sample_type == 'fps':
-                #start = time.time()
-                inds = tf_sampling.farthest_point_sample(self.npoint, xyz)                
-                #inds, batch_distances = pointnet2_utils.fps_light(xyz, self.npoint)
-                #end = time.time()
-                #print("Runtime for FPS original", end - start)
+                if bg:                    
+                    inds = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, wght, isFront)
+                    xyz = xyz[:,:,:3]                    
+                else:
+                    inds = tf_sampling.farthest_point_sample(self.npoint, xyz)     
         else:
             assert(inds.shape[1] == self.npoint)   
 
@@ -435,6 +440,151 @@ class PointnetMLP(layers.Layer):
 
         return new_features
 
+
+class MultiheadAttention(tf.keras.layers.Layer):
+    def __init__(self, npoint, n_heads, embed_dim):
+        super().__init__()
+        self.npoint = npoint
+        self.n_heads = n_heads
+        self.embed_dim = embed_dim
+        self.emb = layers.Dense(embed_dim * n_heads * 3, use_bias=False)         
+        self.avg_pool = layers.AveragePooling2D(pool_size=(self.n_heads,1), strides=(self.n_heads,1))
+        d = tf.cast(embed_dim, dtype=tf.float32)    
+        self.scaling = 1/tf.math.sqrt(d)
+
+    def call(self, inputs):    
+        """
+        inputs: (B, num_seed, features)
+        """
+        #num_seed = tf.shape(inputs)[1]
+        embedding = self.emb(inputs) # (B, n, d * h * 3)            
+        heads = layers.Reshape((self.npoint, self.embed_dim, self.n_heads, 3))(embedding) #(B, n, d, h, 3)
+        
+
+        heads = tf.transpose(heads, perm=[0,4,3,1,2]) # (B, 3, h, n, d)
+        q = heads[:,0,:,:,:] #(B, h, n, d)
+        k = heads[:,1,:,:,:] #(B, h, n, d)
+        v = heads[:,2,:,:,:] #(B, h, n, d)
+        
+        qk = tf.matmul(q, k, transpose_b=True) # (B, h, n, n)    
+        qk = tf.keras.backend.softmax(qk) * self.scaling # (B, h, n, n)            
+        attn = self.avg_pool(qk) #(B, 1, n, n)
+        attn = layers.Reshape((self.npoint, self.npoint))(attn)        
+        
+        output = tf.matmul(qk, v) # (B, h, n, d)
+        output = tf.transpose(output, perm=[0,2,1,3]) #(B, n, h, d)
+        output = layers.Reshape((self.npoint, self.embed_dim * self.n_heads))(output)
+        return attn, output
+
+class MultiheadAttention2(tf.keras.layers.Layer):
+    def __init__(self, npoint, n_heads, embed_dim):
+        super().__init__()
+        self.npoint = npoint
+        self.n_heads = n_heads
+        self.embed_dim = embed_dim
+        self.emb_q = [layers.Dense(embed_dim, use_bias=False) for _ in range(n_heads)]
+        self.emb_k = [layers.Dense(embed_dim, use_bias=False) for _ in range(n_heads)]
+        self.emb_v = [layers.Dense(embed_dim, use_bias=False) for _ in range(n_heads)]
+        self.avg_pool = layers.AveragePooling2D(pool_size=(self.n_heads,1), strides=(self.n_heads,1))
+        d = tf.cast(embed_dim, dtype=tf.float32)    
+        self.scaling = 1/tf.math.sqrt(d)
+
+    def call(self, inputs):    
+        """
+        inputs: (B, num_seed, features)
+        """
+        #num_seed = tf.shape(inputs)[1]
+        embedding_q = [emb(inputs) for emb in self.emb_q] # (B, n, d) * h
+        embedding_k = [emb(inputs) for emb in self.emb_k] # (B, n, d) * h
+        embedding_v = [emb(inputs) for emb in self.emb_v] # (B, n, d) * h
+        attn = [tf.keras.backend.softmax(tf.matmul(q, k, transpose_b=True)) for q, k in zip(embedding_q, embedding_k)]
+
+        qk_list = [a * self.scaling for a in attn] # (B, n, n) * h
+
+        qkv_list = [tf.matmul(qk, v) for qk, v in zip(qk_list, embedding_v)] #(B, n, d) * h
+
+        output = layers.Concatenate(axis=-1)(qkv_list)        #(B, n, d * h)
+        return attn, output
+
+class SamplingAndAttention(layers.Layer):
+    ''' Only sampling and grouping part in PointnetSAModuleVotes '''
+
+    def __init__(
+            self,
+            *,            
+            npoint: int = None,  
+            nsample: int = None, 
+            radius: float = None, 
+            use_xyz: bool = True,                        
+            normalize_xyz: bool = False, # noramlize local XYZ with radius
+            sample_uniformly: bool = False            
+    ):
+        super().__init__()
+
+        self.npoint = npoint  
+        self.nsample = nsample 
+        self.radius = radius     
+        self.mlp_module = None
+        self.use_xyz = use_xyz                
+        self.normalize_xyz = normalize_xyz        
+
+        if npoint is not None:
+            self.grouper = pointnet2_utils_tf.QueryAndGroup(radius=self.radius, nsample=self.nsample,
+                use_xyz=use_xyz, ret_grouped_xyz=True, normalize_xyz=normalize_xyz,
+                sample_uniformly=sample_uniformly, ret_unique_cnt=False)
+        else:
+            self.grouper = pointnet2_utils_tf.GroupAll(use_xyz, ret_grouped_xyz=True)
+
+        self.attention = MultiheadAttention2(self.npoint, n_heads=8, embed_dim=16)
+        
+        
+    def call(self, xyz, features, inds=None, sample_type = 'fps_light', bg=False, wght=1):
+        r"""
+        Parameters
+        ----------
+        xyz : (B, N, 3) tensor of the xyz coordinates of the features
+        features : (B, N, C) tensor of the descriptors of the the features
+        inds : (Optinal)(B, npoint) tensor that stores index to the xyz points (values in 0-N-1)
+
+        Returns
+        -------
+        new_xyz : (B, npoint, 3) tensor of the new features' xyz        
+        inds: (B, npoint) tensor of the inds
+        ball_quer_idx: (B, npoint, nsample) Index of ball queried points
+        grouped_features: (B, npoint, nsample, C+3) Required to create tflite
+        """
+        
+        if inds is None:            
+            if sample_type == 'fps':
+                if bg:                    
+                    inds = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, wght)
+                    xyz = xyz[:,:,:3]                    
+                else:
+                    inds = tf_sampling.farthest_point_sample(self.npoint, xyz)     
+        else:
+            assert(inds.shape[1] == self.npoint)   
+
+        #start = time.time()     
+        new_xyz = tf_sampling.gather_point(
+            xyz, inds
+        ) if self.npoint is not None else None
+        #end = time.time()
+        #print("Runtime for gather_op original", end - start)
+
+        attn, features = self.attention(features)
+        attn = tf.gather(attn, axis=1, indices=inds, batch_dims=1)
+        print("Attention shape", attn.shape)
+
+        grouped_features, ball_query_idx, grouped_xyz = self.grouper(
+            xyz, new_xyz, features, knn=False
+        )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)
+
+        #features = grouped_features[:,:,:,3:]
+        #attn, features = self.attention(features)
+        #grouped_features = tf.concat([grouped_xyz, features], axis=-1)
+               
+        return new_xyz, inds, ball_query_idx, grouped_features
+        
 '''
 class PointnetSAModuleMSGVotes(nn.Module):
     """ Modified based on _PointnetSAModuleBase and PointnetSAModuleMSG
