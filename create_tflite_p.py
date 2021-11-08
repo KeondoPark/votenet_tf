@@ -151,7 +151,7 @@ def tflite_convert(keyword, model, base_model, out_dir, mlp=True):
     converter.inference_output_type = tf.float32
     tflite_model = converter.convert()
 
-    with open(os.path.join(out_dir, keyword + '_quant_test.tflite'), 'wb') as f:
+    with open(os.path.join(out_dir, keyword + '_quant_2way.tflite'), 'wb') as f:
         f.write(tflite_model)
 
 if __name__=='__main__':

@@ -126,8 +126,9 @@ class ProposalModule(layers.Layer):
         self.conv2 = layers.Conv2D(filters=128, kernel_size=1)
         # 2: objectness_scores, 3: offset(From vote to center), score/residuals for num_heading_bin(12),
         # score/(H,W,C) for size, Class score
-        self.conv3_1 = layers.Conv2D(filters=3, kernel_size=1)
-        self.conv3_2 = layers.Conv2D(filters=2+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
+        self.conv3 = layers.Conv2D(filters=2+3+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
+        #self.conv3_1 = layers.Conv2D(filters=3, kernel_size=1)
+        #self.conv3_2 = layers.Conv2D(filters=2+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
         self.bn1 = layers.BatchNormalization(axis=-1)
         self.bn2 = layers.BatchNormalization(axis=-1)
         self.relu1 = layers.ReLU(6)
@@ -163,11 +164,6 @@ class ProposalModule(layers.Layer):
         else:
             log_string('Unknown sampling strategy: %s. Exiting!'%(self.sampling))
             exit()        
-
-        
-        
-        #va_grouped_features_reshape = layers.Reshape((self.npoint, -1))(va_grouped_features)
-        #va_input = layers.Concatenate(axis=-1)([xyz, va_grouped_features_reshape])        
         
         if not self.use_tflite:
             new_features = self.mlp_module(va_grouped_features)
@@ -176,12 +172,18 @@ class ProposalModule(layers.Layer):
             
             # --------- PROPOSAL GENERATION ---------
             net = self.relu1(self.bn1(self.conv1(features)))
-            net = self.relu2(self.bn2(self.conv2(net))) 
-            offset = self.conv3_1(net) # (batch_size, num_proposal, 3+2+num_heading_bin*2+num_size_cluster*4)
-            offset = layers.Reshape((self.npoint, 3))(offset)
+            net = self.relu2(self.bn2(self.conv2(net)))
+            net = self.conv3(net)
+            offset = net[:,:,:,2:5]
             center = xyz + offset
-            net = self.conv3_2(net)
-            net = layers.Reshape((self.npoint, net.shape[-1]))(net)
+            net = layers.Concatenate(axis=-1)([net[:,:,:,0:2], net[:,:,:,5:]])
+            net = layers.Reshape((self.npoint,net.shape[-1]))(net)
+            
+            #offset = self.conv3_1(net) # (batch_size, num_proposal, 3+2+num_heading_bin*2+num_size_cluster*4)
+            #offset = layers.Reshape((self.npoint, 3))(offset)
+            #center = xyz + offset
+            #net = self.conv3_2(net)
+            #net = layers.Reshape((self.npoint, net.shape[-1]))(net)
             
             #print("offset, from original", net[0,0,0:3])
         else:
