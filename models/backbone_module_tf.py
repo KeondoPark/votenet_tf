@@ -119,7 +119,7 @@ class Pointnet2Backbone(layers.Layer):
         #print("========================== SA1 ===============================")
         time_record = []
         time_record.append(("Start:", time.time()))
-        sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features = self.sa1(xyz, features, sample_type='fps', bg=True)
+        sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features = self.sa1(xyz, features, bg=True)
         time_record.append(("SA1:", time.time()))
         end_points['sa1_xyz'] = sa1_xyz
         end_points['sa1_features'] = sa1_features
@@ -129,7 +129,7 @@ class Pointnet2Backbone(layers.Layer):
 
         #print("========================== SA2 ===============================")
         #xyz, features, fps_inds = self.sa2(xyz, features) # this fps_inds is just 0,1,...,1023
-        sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features = self.sa2(sa1_xyz, sa1_features, sample_type='fps') # this fps_inds is just 0,1,...,1023
+        sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features = self.sa2(sa1_xyz, sa1_features) # this fps_inds is just 0,1,...,1023
         time_record.append(("SA2:", time.time()))
         end_points['sa2_xyz'] = sa2_xyz
         end_points['sa2_features'] = sa2_features
@@ -139,7 +139,7 @@ class Pointnet2Backbone(layers.Layer):
 
         #print("========================== SA3 ===============================")
         #xyz, features, fps_inds = self.sa3(xyz, features) # this fps_inds is just 0,1,...,511
-        sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features = self.sa3(sa2_xyz, sa2_features, sample_type='fps') # this fps_inds is just 0,1,...,511
+        sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features = self.sa3(sa2_xyz, sa2_features) # this fps_inds is just 0,1,...,511
         time_record.append(("SA3:", time.time()))
         end_points['sa3_xyz'] = sa3_xyz
         end_points['sa3_features'] = sa3_features
@@ -150,7 +150,7 @@ class Pointnet2Backbone(layers.Layer):
 
         #print("========================== SA4 ===============================")
         #xyz, features, fps_inds = self.sa4(xyz, features) # this fps_inds is just 0,1,...,255
-        sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features = self.sa4(sa3_xyz, sa3_features, sample_type='fps') # this fps_inds is just 0,1,...,255        
+        sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features = self.sa4(sa3_xyz, sa3_features) # this fps_inds is just 0,1,...,255        
         end_points['sa4_xyz'] = sa4_xyz
         end_points['sa4_features'] = sa4_features
         end_points['sa4_inds'] = sa4_inds        
