@@ -177,9 +177,12 @@ it = -1 # for the initialize value of `LambdaLR` and `BNMomentumScheduler`
 start_epoch = 0
 ckpt = tf.train.Checkpoint(epoch=tf.Variable(1), optimizer=optimizer, net=net)
 
-if CHECKPOINT_PATH is None or not os.path.isdir(CHECKPOINT_PATH):
+if CHECKPOINT_PATH is None:
     print("Use defualt checkpoint path")
     CHECKPOINT_PATH = './tf_ckpt'
+
+if not os.path.exists(CHECKPOINT_PATH):
+    os.mkdir(LOG_DIR)
 
 
 with mirrored_strategy.scope():

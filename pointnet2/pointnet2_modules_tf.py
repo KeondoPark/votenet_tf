@@ -251,7 +251,7 @@ class PointnetSAModuleVotes(layers.Layer):
                 #start = time.time()
                 if bg:
                     print("Before sampling", self.npoint)
-                    inds = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, weight=1, isFront=0)
+                    inds = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, weight=1, isFront=-1)
                     xyz = xyz[:,:,:3]
                     print("After sampling", self.npoint)
                 else:
@@ -354,7 +354,7 @@ class SamplingAndGrouping(layers.Layer):
         else:
             self.grouper = pointnet2_utils_tf.GroupAll(use_xyz, ret_grouped_xyz=True)
         
-    def call(self, xyz, features, inds=None, sample_type = 'fps_light', bg=False, wght=1, isFront=0):
+    def call(self, xyz, features, inds=None, bg=False, wght=1, isFront=0, xyz_ball=None, features_ball=None):
         r"""
         Parameters
         ----------
@@ -370,13 +370,12 @@ class SamplingAndGrouping(layers.Layer):
         grouped_features: (B, npoint, nsample, C+3) Required to create tflite
         """
         
-        if inds is None:            
-            if sample_type == 'fps':
-                if bg:                    
-                    inds = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, wght, isFront)
-                    xyz = xyz[:,:,:3]                    
-                else:
-                    inds = tf_sampling.farthest_point_sample(self.npoint, xyz)     
+        if inds is None:                        
+            if bg:                    
+                inds = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, wght, isFront)
+                xyz = xyz[:,:,:3]                    
+            else:
+                inds = tf_sampling.farthest_point_sample(self.npoint, xyz)     
         else:
             assert(inds.shape[1] == self.npoint)   
 
@@ -387,11 +386,15 @@ class SamplingAndGrouping(layers.Layer):
         #end = time.time()
         #print("Runtime for gather_op original", end - start)
 
-        if not self.ret_unique_cnt:        
-            
-            grouped_features, ball_query_idx, grouped_xyz = self.grouper(
-                xyz, new_xyz, features            
-            )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)
+        if not self.ret_unique_cnt:      
+            if xyz_ball is None and features_ball is None:
+                grouped_features, ball_query_idx, grouped_xyz = self.grouper(
+                    xyz, new_xyz, features            
+                )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)
+            else:
+                grouped_features, ball_query_idx, grouped_xyz = self.grouper(
+                    xyz_ball, new_xyz, features_ball         
+                )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)
         else:
             grouped_features, ball_query_idx, grouped_xyz, unique_cnt = self.grouper(            
                 xyz, new_xyz, features

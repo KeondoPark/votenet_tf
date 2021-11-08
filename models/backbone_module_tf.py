@@ -341,10 +341,10 @@ class Pointnet2Backbone_p(layers.Layer):
         #xyz, features, fps_inds = self.sa1(xyz, features)
         #print("========================== SA1 ===============================")
         #Sample more background points
-        sa1_xyz1, sa1_inds1, sa1_ball_query_idx1, sa1_grouped_features1 = self.sa1(xyz, features, sample_type='fps', bg=True, wght=0.01, isFront=1)
+        sa1_xyz1, sa1_inds1, sa1_ball_query_idx1, sa1_grouped_features1 = self.sa1(xyz, features, bg=True, wght=0.01, isFront=-1)
         if self.use_tflite:
             sa1_features1 = self.call_tflite(self.sa1_interpreter, sa1_grouped_features1)
-        else:           
+        else:                       
             sa1_features1 = self.sa1_mlp(sa1_grouped_features1)
         
         """
@@ -372,7 +372,7 @@ class Pointnet2Backbone_p(layers.Layer):
         """
 
         #Sample more painted points
-        sa1_xyz2, sa1_inds2, sa1_ball_query_idx2, sa1_grouped_features2 = self.sa1(xyz, features, sample_type='fps', bg=True, wght=4, isFront=0)
+        sa1_xyz2, sa1_inds2, sa1_ball_query_idx2, sa1_grouped_features2 = self.sa1(xyz, features, bg=True, wght=4, isFront=-1)
         if self.use_tflite:
             sa1_features2 = self.call_tflite(self.sa1_interpreter, sa1_grouped_features2)
         else:        
@@ -386,13 +386,16 @@ class Pointnet2Backbone_p(layers.Layer):
         end_points['sa1_inds2'] = sa1_inds2               
         end_points['sa1_grouped_features2'] = sa1_grouped_features2        
 
-        sa2_xyz1, sa2_inds1, sa2_ball_query_idx1, sa2_grouped_features1 = self.sa2(sa1_xyz1, sa1_features1, sample_type='fps')
+        sa2_xyz1, sa2_inds1, sa2_ball_query_idx1, sa2_grouped_features1 = self.sa2(sa1_xyz1, sa1_features1)
         if self.use_tflite:
             sa2_features1 = self.call_tflite(self.sa2_interpreter, sa2_grouped_features1)
         else:          
             sa2_features1 = self.sa2_mlp(sa2_grouped_features1)
 
-        sa2_xyz2, sa2_inds2, sa2_ball_query_idx2, sa2_grouped_features2 = self.sa2(sa1_xyz2, sa1_features2, sample_type='fps')
+        sa1_xyz = layers.Concatenate(axis=1)([sa1_xyz1, sa1_xyz2])
+        sa1_features = layers.Concatenate(axis=1)([sa1_features1, sa1_features2])
+
+        sa2_xyz2, sa2_inds2, sa2_ball_query_idx2, sa2_grouped_features2 = self.sa2(sa1_xyz2, sa1_features2, xyz_ball=sa1_xyz, features_ball=sa1_features)
         if self.use_tflite:
             sa2_features2 = self.call_tflite(self.sa2_interpreter, sa2_grouped_features2)
         else:  
@@ -407,13 +410,18 @@ class Pointnet2Backbone_p(layers.Layer):
         end_points['sa2_inds2'] = sa2_inds2               
         end_points['sa2_grouped_features2'] = sa2_grouped_features2
 
-        sa3_xyz1, sa3_inds1, sa3_ball_query_idx1, sa3_grouped_features1 = self.sa3(sa2_xyz1, sa2_features1, sample_type='fps')
+        
+
+        sa3_xyz1, sa3_inds1, sa3_ball_query_idx1, sa3_grouped_features1 = self.sa3(sa2_xyz1, sa2_features1)
         if self.use_tflite:
             sa3_features1 = self.call_tflite(self.sa3_interpreter, sa3_grouped_features1)
         else:  
             sa3_features1 = self.sa3_mlp(sa3_grouped_features1)
+        
+        sa2_xyz = layers.Concatenate(axis=1)([sa2_xyz1, sa2_xyz2])
+        sa2_features = layers.Concatenate(axis=1)([sa2_features1, sa2_features2])
 
-        sa3_xyz2, sa3_inds2, sa3_ball_query_idx2, sa3_grouped_features2 = self.sa3(sa2_xyz2, sa2_features2, sample_type='fps')
+        sa3_xyz2, sa3_inds2, sa3_ball_query_idx2, sa3_grouped_features2 = self.sa3(sa2_xyz2, sa2_features2, xyz_ball=sa2_xyz, features_ball=sa2_features)
         if self.use_tflite:
             sa3_features2 = self.call_tflite(self.sa3_interpreter, sa3_grouped_features2)
         else:  
@@ -428,13 +436,16 @@ class Pointnet2Backbone_p(layers.Layer):
         end_points['sa3_inds2'] = sa3_inds2               
         end_points['sa3_grouped_features2'] = sa3_grouped_features2
 
-        sa4_xyz1, sa4_inds1, sa4_ball_query_idx1, sa4_grouped_features1 = self.sa4(sa3_xyz1, sa3_features1, sample_type='fps')
+        sa4_xyz1, sa4_inds1, sa4_ball_query_idx1, sa4_grouped_features1 = self.sa4(sa3_xyz1, sa3_features1)
         if self.use_tflite:
             sa4_features1 = self.call_tflite(self.sa4_interpreter, sa4_grouped_features1)
         else:  
             sa4_features1 = self.sa4_mlp(sa4_grouped_features1)
 
-        sa4_xyz2, sa4_inds2, sa4_ball_query_idx2, sa4_grouped_features2 = self.sa4(sa3_xyz2, sa3_features2, sample_type='fps')
+        sa3_xyz = layers.Concatenate(axis=1)([sa3_xyz1, sa3_xyz2])
+        sa3_features = layers.Concatenate(axis=1)([sa3_features1, sa3_features2])
+
+        sa4_xyz2, sa4_inds2, sa4_ball_query_idx2, sa4_grouped_features2 = self.sa4(sa3_xyz2, sa3_features2, xyz_ball=sa3_xyz, features_ball=sa3_features)
         if self.use_tflite:
             sa4_features2 = self.call_tflite(self.sa4_interpreter, sa4_grouped_features2)
         else:  
@@ -449,12 +460,7 @@ class Pointnet2Backbone_p(layers.Layer):
         end_points['sa4_grouped_features2'] = sa4_grouped_features2
 
         sa4_features = layers.Concatenate(axis=1)([sa4_features1, sa4_features2])
-        sa3_features = layers.Concatenate(axis=1)([sa3_features1, sa3_features2])
-        sa2_features = layers.Concatenate(axis=1)([sa2_features1, sa2_features2])
-
         sa4_xyz = layers.Concatenate(axis=1)([sa4_xyz1, sa4_xyz2])
-        sa3_xyz = layers.Concatenate(axis=1)([sa3_xyz1, sa3_xyz2])
-        sa2_xyz = layers.Concatenate(axis=1)([sa2_xyz1, sa2_xyz2])
 
         sa2_inds = layers.Concatenate(axis=1)([sa2_inds1, sa2_inds2])
         sa1_inds = layers.Concatenate(axis=1)([sa1_inds1, sa1_inds2])
@@ -462,20 +468,9 @@ class Pointnet2Backbone_p(layers.Layer):
         # --------- 2 FEATURE UPSAMPLING LAYERS --------
         #print("========================== FP1 ===============================")
         fp1_features, fp1_grouped_features = self.fp1(sa3_xyz, sa4_xyz, sa3_features, sa4_features)
-        #fp1_features1, fp1_grouped_features1 = self.fp1(sa3_xyz1, sa4_xyz1, sa3_features1, sa4_features1)
-        #fp1_features2, fp1_grouped_features2 = self.fp1(sa3_xyz2, sa4_xyz2, sa3_features2, sa4_features2)
-        #fp1_features, fp1_grouped_features = self.fp1(sa3_xyz, sa4_xyz, sa3_features, sa4_features, sa4_ball_query_idx, sa4_inds)
-        #end_points.append(prop_features) #20
         
         #print("========================== FP2 ===============================")
         fp2_features, fp2_grouped_features = self.fp2(sa2_xyz, sa3_xyz, sa2_features, fp1_features)        
-        #fp2_features1, fp2_grouped_features1 = self.fp2(sa2_xyz1, sa3_xyz1, sa2_features1, fp1_features1)        
-        #fp2_features2, fp2_grouped_features2 = self.fp2(sa2_xyz2, sa3_xyz2, sa2_features2, fp1_features2) 
-        
-        
-        #fp2_features = layers.Concatenate(axis=1)([fp2_features1, fp2_features2])
-        #fp2_grouped_features = layers.Concatenate(axis=1)([fp2_grouped_features1, fp2_grouped_features2])
-        #fp1_grouped_features = layers.Concatenate(axis=1)([fp1_grouped_features1, fp1_grouped_features2])
 
         end_points['fp1_grouped_features'] = fp1_grouped_features
         end_points['fp2_features'] = fp2_features

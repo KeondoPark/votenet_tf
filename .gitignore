@@ -3,3 +3,4 @@ slurm*
 eval*/
 tflite_rep_data/
 test/
+votenet_tf/

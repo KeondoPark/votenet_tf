@@ -65,8 +65,8 @@ def preprocess_point_cloud(point_cloud):
     return pc
 
 def wrapper_representative_data_gen_mlp(keyword, base_model):
-    def representative_data_gen_mlp():
-        for i in range(int(800 / BATCH_SIZE)):
+    def representative_data_gen_mlp():        
+        for i in range(int(800 / BATCH_SIZE)):            
             if not FLAGS.use_rep_data:            
                 batch_data = next(iter(ds))
                 inputs = batch_data[0]
@@ -83,9 +83,16 @@ def wrapper_representative_data_gen_mlp(keyword, base_model):
                 feature_dict = {'sa1':sa1_grouped_features,
                         'sa2':sa2_grouped_features,
                         'sa3':sa3_grouped_features,
-                        'sa4':sa4_grouped_features,
-                        'va': va_grouped_features}
-                yield [feature_dict[keyword]]
+                        'sa4':sa4_grouped_features}
+                if keyword == 'va':                    
+                    va_xyz = end_points['aggregated_vote_xyz']
+                    #va_features = layers.Reshape((256,-1))(va_grouped_features)
+                    #va_input = layers.Concatenate(axis=-1)([va_xyz, va_features])
+                    yield [va_xyz, va_grouped_features]
+                    
+                    #yield [va_grouped_features]
+                else:
+                    yield [feature_dict[keyword]]
             else:
                 if (i * BATCH_SIZE) % 200 == 0:
                     start = i * BATCH_SIZE
@@ -105,8 +112,10 @@ def wrapper_representative_data_gen_voting(base_model):
                 inputs = batch_data[0]
                 end_points = base_model(inputs, training=False)
                 print(i, "-th batch...")
+                voting_input = [tf.expand_dims(end_points['seed_xyz'], axis=-2), 
+                            tf.expand_dims(end_points['seed_features'], axis=-2)]
 
-                yield [tf.expand_dims(end_points['seed_features'], axis=-2)]
+                yield voting_input
                 #yield [tf.expand_dims(seed_features, axis=-2)]
             else:
                 if (i * BATCH_SIZE) % 200 == 0:
@@ -117,7 +126,6 @@ def wrapper_representative_data_gen_voting(base_model):
                     feats = tf.reshape(feats, (feats.shape[0], feats.shape[1], 1, feats.shape[2]))
                 print("Using saved rep data", i, "-th batch...")
                 idx = (i * BATCH_SIZE) % 200
-                
                 
                 yield [feats[idx: idx+BATCH_SIZE,:,:,:]]
     return representative_data_gen_voting
@@ -227,7 +235,8 @@ if __name__=='__main__':
             self.conv0 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
             self.conv1 = layers.Conv2D(filters=self.in_dim, kernel_size=1)        
             self.conv2 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
-            self.conv3 = layers.Conv2D(filters=(3+self.out_dim) * self.vote_factor, kernel_size=1) 
+            self.conv3_1 = layers.Conv2D(filters=(3) * self.vote_factor, kernel_size=1) 
+            self.conv3_2 = layers.Conv2D(filters=(self.out_dim) * self.vote_factor, kernel_size=1) 
             self.bn0 = layers.BatchNormalization(axis=-1)
             self.bn1 = layers.BatchNormalization(axis=-1)
             self.bn2 = layers.BatchNormalization(axis=-1)
@@ -235,44 +244,68 @@ if __name__=='__main__':
             self.relu1 = layers.ReLU(6)
             self.relu2 = layers.ReLU(6)
         
-        def call(self, seed_features):
+        def call(self, voting_input):
 
             num_seed = 1024
+
+            xyz = voting_input[0]
+            seed_features = voting_input[1]
 
             net0 = self.relu0(self.bn0(self.conv0(seed_features)))
             net = self.relu1(self.bn1(self.conv1(net0))) 
             net = self.relu2(self.bn2(self.conv2(net))) 
-            net = self.conv3(net) # (batch_size, num_seed, (3+out_dim)*vote_factor)   
+            offset = self.conv3_1(net)
+            net = self.conv3_2(net) # (batch_size, num_seed, (3+out_dim)*vote_factor)
 
-            net = layers.Reshape((num_seed, self.vote_factor, 3+self.out_dim))(net)
-
-            residual_features = net[:,:,:,3:] # (batch_size, num_seed, vote_factor, out_dim)                    
+            residual_features = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net)
+        
+            #vote_features = tf.expand_dims(seed_features, axis=2) + residual_features
             net0 = layers.Reshape((num_seed, self.vote_factor, net0.shape[-1]))(net0)
-            vote_features = net0 + residual_features              
+            vote_features = net0 + residual_features 
+            vote_xyz = xyz + offset 
 
-            offset = net[:,:,:,0:3]  
-            res = layers.Concatenate(axis=-1)([offset, vote_features])
-
-            return res
+            return [vote_xyz, vote_features]
 
     class vaModule(tf.keras.Model)    :
         def __init__(self, mlp_spec, input_shape, nsample=0):
             super().__init__()
             self.sharedMLP = tf_utils.SharedMLP(mlp_spec, bn=True, input_shape=input_shape)
-            self.nsample = nsample
-            if nsample:
-                self.max_pool = layers.MaxPooling2D(pool_size=(1, 16), strides=(1,16), data_format="channels_last")
-                self.max_pool2 = layers.MaxPooling2D(pool_size=(1, int(self.nsample/16)), strides=(1,int(self.nsample/16)), data_format="channels_last")
+            self.npoint = 256
+            self.nsample = nsample            
+            self.max_pool = layers.MaxPooling2D(pool_size=(1, 16), strides=(1,16), data_format="channels_last")            
 
             self.conv1 = layers.Conv2D(filters=128, kernel_size=1)        
             self.conv2 = layers.Conv2D(filters=128, kernel_size=1)
-            self.conv3 = layers.Conv2D(filters=2+3+DC.num_heading_bin*2+DC.num_size_cluster*4+DC.num_class, kernel_size=1) 
+            self.conv3_1 = layers.Conv2D(filters=3, kernel_size=1) 
+            self.conv3_2 = layers.Conv2D(filters=2+DC.num_heading_bin*2+DC.num_size_cluster*4+DC.num_class, kernel_size=1) 
             self.bn1 = layers.BatchNormalization(axis=-1)
             self.bn2 = layers.BatchNormalization(axis=-1)
             self.relu1 = layers.ReLU(6)
             self.relu2 = layers.ReLU(6)
+            
+        def call(self, va_input):
+            #xyz = va_input[:,:,0:3]
+            #grouped_features = va_input[:,:,3:]
+            #grouped_features = layers.Reshape((self.npoint, self.nsample, 128+3))(grouped_features)
+            xyz = va_input[0]
+            grouped_features = va_input[1]
+            new_features = self.max_pool(self.sharedMLP(grouped_features))     
+            # --------- PROPOSAL GENERATION ---------
+            net = self.relu1(self.bn1(self.conv1(new_features)))
+            net = self.relu2(self.bn2(self.conv2(net))) 
+            offset = self.conv3_1(net)
+            offset = layers.Reshape((self.npoint,3))(offset)
+            center = xyz + offset
+            net = self.conv3_2(net) # (batch_size, num_proposal, 2+3+num_heading_bin*2+num_size_cluster*4)
+            net = layers.Reshape((self.npoint, net.shape[-1]))(net)    
 
-        def call(self, grouped_features):
+            return [center, net]
+            #va_output = layers.Concatenate(axis=-1)([center, net])            
+            #return va_output
+
+            
+        """
+        def call(self, grouped_features):                        
             if self.nsample:
                 if self.nsample == 16:
                     new_features = self.max_pool(self.sharedMLP(grouped_features))
@@ -285,11 +318,12 @@ if __name__=='__main__':
             net = self.relu1(self.bn1(self.conv1(new_features)))
             net = self.relu2(self.bn2(self.conv2(net))) 
             net = self.conv3(net) # (batch_size, num_proposal, 2+3+num_heading_bin*2+num_size_cluster*4)
-
+            
             return net
+        """
 
-    converting_layers = ['sa1','sa2','sa3','sa4','voting','va']
-    #converting_layers = ['va']
+    #converting_layers = ['sa1','sa2','sa3','sa4','voting','va']
+    converting_layers = ['sa1','sa2','sa3','sa4']
     if 'sa1' in converting_layers:    
         sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[1024,64,1+10+3])
         dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,64,1+10+3])) # (B, npoint, nsample, C+3)
@@ -325,13 +359,16 @@ if __name__=='__main__':
 
     if 'voting' in converting_layers:
         voting = nnInVotingModule(vote_factor=1, seed_feature_dim=128)
-        dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,128*3])) # (B, num_seed, 1, 3)
-        dummy_out = voting(dummy_in_voting_features)
+        dummy_in_voting_xyz =  tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,3])) # (B, num_seed, 1, 3)        
+        dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,128*3])) # (B, num_seed, 1, 128*3)
+        dummy_in_voting = [dummy_in_voting_xyz, dummy_in_voting_features]        
+        dummy_out = voting(dummy_in_voting)
         layer = voting
         layer.conv0.set_weights(net.vgen.conv0.get_weights())
         layer.conv1.set_weights(net.vgen.conv1.get_weights())
         layer.conv2.set_weights(net.vgen.conv2.get_weights())
-        layer.conv3.set_weights(net.vgen.conv3.get_weights())
+        layer.conv3_1.set_weights(net.vgen.conv3_1.get_weights())
+        layer.conv3_2.set_weights(net.vgen.conv3_2.get_weights())
         layer.bn0.set_weights(net.vgen.bn0.get_weights())
         layer.bn1.set_weights(net.vgen.bn1.get_weights())
         layer.bn2.set_weights(net.vgen.bn2.get_weights())
@@ -340,7 +377,10 @@ if __name__=='__main__':
 
     if 'va' in converting_layers:
         va_mlp = vaModule(mlp_spec=[128, 128, 128, 128], nsample=16, input_shape=[256,16,128+3])
-        dummy_in_va = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,128+3])) # (B, npoint, nsample, C+3)
+        #dummy_in_va = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,3 + (16*(128+3))]), dtype=tf.float32) # (B, npoint, nsample, C+3)        
+        dummy_va_xyz = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,3]), dtype=tf.float32) # (B, npoint, 3 + nsample*(C+3)) 
+        dummy_va_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,(128+3)]), dtype=tf.float32) # (B, npoint, 3 + nsample*(C+3)) 
+        dummy_in_va = [dummy_va_xyz, dummy_va_features]
         dummy_out = va_mlp(dummy_in_va)
         layer = va_mlp.sharedMLP
         layer.set_weights(net.pnet.mlp_module.get_weights())
@@ -348,7 +388,8 @@ if __name__=='__main__':
         layer = va_mlp
         layer.conv1.set_weights(net.pnet.conv1.get_weights())
         layer.conv2.set_weights(net.pnet.conv2.get_weights())
-        layer.conv3.set_weights(net.pnet.conv3.get_weights())
+        layer.conv3_1.set_weights(net.pnet.conv3_1.get_weights())
+        layer.conv3_2.set_weights(net.pnet.conv3_2.get_weights())
         layer.bn1.set_weights(net.pnet.bn1.get_weights())
         layer.bn2.set_weights(net.pnet.bn2.get_weights())
 

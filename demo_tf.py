@@ -25,6 +25,7 @@ import tensorflow as tf
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
+#DATA_DIR = 'sunrgbd'
 DATA_DIR = '/home/aiot/data'
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 sys.path.append(os.path.join(ROOT_DIR, 'models'))
@@ -139,6 +140,30 @@ if __name__=='__main__':
     pointpainting = True
     if pointpainting:
         INPUT_SIZE = 513
+        """
+        from pycoral.utils.edgetpu import make_interpreter
+        from pycoral.adapters import common
+        from pycoral.adapters import segment
+        from PIL import Image
+        interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sunrgbd_ade20k_9_quant_edgetpu.tflite')))
+        interpreter.allocate_tensors()
+        width, height = common.input_size(interpreter)
+
+        img = dataset.get_image2(data_idx) 
+
+        resized_img, _ = common.set_resized_input(
+            interpreter, img.size, lambda size: img.resize(size, Image.ANTIALIAS))
+
+        interpreter.invoke()
+        result = segment.get_output(interpreter)
+        print(result)        
+        
+        new_width, new_height = resized_img.size
+        pred_prob = result[:new_height, :new_width, :]
+        pred_class = np.argmax(pred_prob, axis=-1)        
+        #result = result[:new_height, :new_width]
+        """
+
         with tf.compat.v1.gfile.GFile('test/saved_model/sunrgbd_ade20k_9.pb', "rb") as f:
             graph_def = tf.compat.v1.GraphDef()
             graph_def.ParseFromString(f.read())

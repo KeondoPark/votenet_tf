@@ -36,21 +36,21 @@ def decode_scores(net, end_points, num_class, num_heading_bin, num_size_cluster,
     objectness_scores = net[:,:,0:2]
     end_points['objectness_scores'] = objectness_scores    
     
-    base_xyz = end_points['aggregated_vote_xyz'] # (batch_size, num_proposal, 3)    
-    center = base_xyz + net[:,:,2:5] # (batch_size, num_proposal, 3)
-    end_points['center'] = center
+    #base_xyz = end_points['aggregated_vote_xyz'] # (batch_size, num_proposal, 3)    
+    #center = base_xyz + net[:,:,2:5] # (batch_size, num_proposal, 3)
+    #end_points['center'] = center
     
 
-    heading_scores = net[:,:,5:5+num_heading_bin]
-    heading_residuals_normalized = net[:,:,5+num_heading_bin:5+num_heading_bin*2]
+    heading_scores = net[:,:,2:2+num_heading_bin]
+    heading_residuals_normalized = net[:,:,2+num_heading_bin:2+num_heading_bin*2]
     pi = tf.constant(3.14159265359, dtype=tf.float32)
-    heading_residuals = heading_residuals_normalized * (pi/tf.cast(num_heading_bin,tf.float32)) # B x num_proposal x num_heading_bin
+    #heading_residuals = heading_residuals_normalized * (pi/tf.cast(num_heading_bin,tf.float32)) # B x num_proposal x num_heading_bin
     end_points['heading_scores'] = heading_scores # B x num_proposal x num_heading_bin
     end_points['heading_residuals_normalized'] = heading_residuals_normalized # Bxnum_proposalxnum_heading_bin (should be -1 to 1)
     end_points['heading_residuals'] = heading_residuals_normalized * (pi/tf.cast(num_heading_bin,tf.float32)) # B x num_proposal x num_heading_bin
     
-    size_scores = net[:,:,5+num_heading_bin*2:5+num_heading_bin*2+num_size_cluster]
-    size_residuals = net[:,:,5 + num_heading_bin*2 + num_size_cluster : 5 + num_heading_bin*2 + num_size_cluster*4]
+    size_scores = net[:,:,2+num_heading_bin*2:2+num_heading_bin*2+num_size_cluster]
+    size_residuals = net[:,:,2 + num_heading_bin*2 + num_size_cluster : 2 + num_heading_bin*2 + num_size_cluster*4]
     #size_residuals_normalized = tf.reshape(size_residuals, tf.constant([batch_size, num_proposal, num_size_cluster, 3])) # B x num_proposal x num_size_cluster x 3
     size_residuals_normalized = layers.Reshape((num_proposal, num_size_cluster, 3))(size_residuals) # B x num_proposal x num_size_cluster x 3    
     end_points['size_scores'] = size_scores
@@ -58,7 +58,7 @@ def decode_scores(net, end_points, num_class, num_heading_bin, num_size_cluster,
     end_points['size_residuals'] = size_residuals_normalized * tf.expand_dims(tf.expand_dims(tf.cast(mean_size_arr,dtype=tf.float32), axis=0), axis=0)
     
 
-    sem_cls_scores = net[:,:,5+num_heading_bin*2+num_size_cluster*4:] # B x num_proposal x 10
+    sem_cls_scores = net[:,:,2+num_heading_bin*2+num_size_cluster*4:] # B x num_proposal x 10
     end_points['sem_cls_scores'] = sem_cls_scores    
     
     return end_points
@@ -111,9 +111,9 @@ class ProposalModule(layers.Layer):
             # Get input and output tensors.
             self.input_details = self.interpreter.get_input_details()
             self.output_details = self.interpreter.get_output_details()
-        else:
-            self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=True, input_shape=[self.npoint, self.nsample, 3+mlp_spec[0]])        
-            self.max_pool = layers.MaxPooling2D(pool_size=(1, self.nsample), strides=1, data_format="channels_last")
+        #else:
+        self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=True, input_shape=[self.npoint, self.nsample, 3+mlp_spec[0]])        
+        self.max_pool = layers.MaxPooling2D(pool_size=(1, self.nsample), strides=1, data_format="channels_last")
          
         # Object proposal/detection
         # Objectness scores (2), center residual (3),
@@ -124,7 +124,10 @@ class ProposalModule(layers.Layer):
         #### Changed to Conv2D to be compatible with EdgeTPU compiler
         self.conv1 = layers.Conv2D(filters=128, kernel_size=1)
         self.conv2 = layers.Conv2D(filters=128, kernel_size=1)
-        self.conv3 = layers.Conv2D(filters=2+3+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
+        # 2: objectness_scores, 3: offset(From vote to center), score/residuals for num_heading_bin(12),
+        # score/(H,W,C) for size, Class score
+        self.conv3_1 = layers.Conv2D(filters=3, kernel_size=1)
+        self.conv3_2 = layers.Conv2D(filters=2+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
         self.bn1 = layers.BatchNormalization(axis=-1)
         self.bn2 = layers.BatchNormalization(axis=-1)
         self.relu1 = layers.ReLU(6)
@@ -142,7 +145,7 @@ class ProposalModule(layers.Layer):
         if self.sampling == 'vote_fps':
             # Farthest point sampling (FPS) on votes
             #xyz, features, fps_inds, _, grouped_features = self.vote_aggregation(xyz, features, sample_type='fps')
-            xyz, fps_inds, _, va_grouped_features = self.vote_aggregation(xyz, features, sample_type='fps') #NoMLP version            
+            xyz, fps_inds, _, va_grouped_features = self.vote_aggregation(xyz, features) #NoMLP version            
             end_points['va_grouped_features'] = va_grouped_features            
             sample_inds = fps_inds
         elif self.sampling == 'seed_fps': 
@@ -160,6 +163,11 @@ class ProposalModule(layers.Layer):
         else:
             log_string('Unknown sampling strategy: %s. Exiting!'%(self.sampling))
             exit()        
+
+        
+        
+        #va_grouped_features_reshape = layers.Reshape((self.npoint, -1))(va_grouped_features)
+        #va_input = layers.Concatenate(axis=-1)([xyz, va_grouped_features_reshape])        
         
         if not self.use_tflite:
             new_features = self.mlp_module(va_grouped_features)
@@ -169,17 +177,34 @@ class ProposalModule(layers.Layer):
             # --------- PROPOSAL GENERATION ---------
             net = self.relu1(self.bn1(self.conv1(features)))
             net = self.relu2(self.bn2(self.conv2(net))) 
-            net = self.conv3(net) # (batch_size, num_proposal, 2+3+num_heading_bin*2+num_size_cluster*4)
+            offset = self.conv3_1(net) # (batch_size, num_proposal, 3+2+num_heading_bin*2+num_size_cluster*4)
+            offset = layers.Reshape((self.npoint, 3))(offset)
+            center = xyz + offset
+            net = self.conv3_2(net)
+            net = layers.Reshape((self.npoint, net.shape[-1]))(net)
+            
+            #print("offset, from original", net[0,0,0:3])
         else:
-            self.interpreter.set_tensor(self.input_details[0]['index'], va_grouped_features)
+            self.interpreter.set_tensor(self.input_details[0]['index'], xyz)            
+            self.interpreter.set_tensor(self.input_details[1]['index'], va_grouped_features)            
             self.interpreter.invoke()
-            net = self.interpreter.get_tensor(self.output_details[0]['index'])
+            center = self.interpreter.get_tensor(self.output_details[0]['index'])
+            net = self.interpreter.get_tensor(self.output_details[1]['index']) 
+            center = tf.convert_to_tensor(center)
+            net = tf.convert_to_tensor(net)       
+            #va_output = self.interpreter.get_tensor(self.output_details[0]['index'])    
+            #va_output = tf.convert_to_tensor(va_output)            
+            
+            #center = va_output[:,:,0:3]
+            #print("Center, from quantized", center[0,0,:])
+            #net = va_output[:,:,3:] # (batch_size, num_proposal, 2+num_heading_bin*2+num_size_cluster*4)
 
         # Return from expanded shape
-        net = layers.Reshape((self.npoint, net.shape[-1]))(net)
+        #net = layers.Reshape((self.npoint, net.shape[-1]))(net)
 
         end_points['aggregated_vote_xyz'] = xyz # (batch_size, num_proposal, 3)
         end_points['aggregated_vote_inds'] = sample_inds # (batch_size, num_proposal,) # should be 0,1,2,...,num_proposal
+        end_points['center'] = center # (batch_size, num_proposal, 3)
 
         end_points = decode_scores(net, end_points, self.num_class, self.num_heading_bin, self.num_size_cluster, self.mean_size_arr, self.num_proposal)        
 

@@ -241,18 +241,23 @@ __global__ void farthestpointsamplingBgKernel(int b,int n,int m,const float * __
           cntObj++;
         maxy[i] = max(dataset[i*n*4 + 4*j + 1], maxy[i]);
         miny[i] = min(dataset[i*n*4 + 4*j + 1], miny[i]);
-        maxz[i] = max(dataset[i*n*4 + 4*j + 2], maxz[i]);
-        minz[i] = min(dataset[i*n*4 + 4*j + 2], minz[i]);
+        //maxz[i] = max(dataset[i*n*4 + 4*j + 2], maxz[i]);
+        //minz[i] = min(dataset[i*n*4 + 4*j + 2], minz[i]);
 
       }
       
       // If there is no painted point, find max and min of y coords.
-      if (cntObj == 0) {
+      if (cntObj < 100) {
         if (isFront == 0){          
+          /*
           maxy[i] = maxy[i] - (maxy[i] - miny[i]) * 1/10;
           miny[i] = miny[i] + (maxy[i] - miny[i]) * 1/10;
           maxz[i] = maxz[i] - (maxz[i] - minz[i]) * 1/10;
           minz[i] = minz[i] + (maxz[i] - minz[i]) * 1/10;
+          */
+          miny[i] = miny[i] + (maxy[i] - miny[i]) * 0.5;          
+        } else if (isFront == 1)  {
+          maxy[i] = maxy[i] - (maxy[i] - miny[i]) * 0.5;
         }        
       }
       
@@ -318,7 +323,7 @@ __global__ void farthestpointsamplingBgKernel(int b,int n,int m,const float * __
           d = wght * d;
         }        
 
-        if (cntObj == 0){          
+        if (cntObj < 100 && isFront >= 0){          
           //if (isFront > 0 && y2 < miny[i]){
           //  continue;
           //} 
@@ -328,8 +333,9 @@ __global__ void farthestpointsamplingBgKernel(int b,int n,int m,const float * __
           //} 
 
           //Gives bigger weight to Focus area
-          if (isFront == 0 && y2 < maxy[i] && y2 > miny[i] && z2 < maxz[i] && z2 > minz[i]){
-            d = 4 * d;
+          //if (isFront == 0 && y2 < maxy[i] && y2 > miny[i] && z2 < maxz[i] && z2 > minz[i]){
+          if (y2 < maxy[i] && y2 > miny[i]){
+            d = 2 * d;
           }          
         } 
 

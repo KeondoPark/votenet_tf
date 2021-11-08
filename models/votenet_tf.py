@@ -44,7 +44,7 @@ class VoteNet(tf.keras.Model):
     """
 
     def __init__(self, num_class, num_heading_bin, num_size_cluster, mean_size_arr,
-        input_feature_dim=0, num_proposal=128, vote_factor=1, sampling='vote_fps', use_tflite=False):
+        input_feature_dim=0, num_proposal=256, vote_factor=1, sampling='vote_fps', use_tflite=False):
         super().__init__()
 
         self.num_class = num_class
