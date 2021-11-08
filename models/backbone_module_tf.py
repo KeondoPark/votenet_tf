@@ -266,11 +266,17 @@ class Pointnet2Backbone_p(layers.Layer):
                 #use_tflite=use_tflite, tflite_name='fp2_quant_b8.tflite')
         self.use_tflite = use_tflite
 
-        if self.use_tflite:
-            self.sa1_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa1_quant_test.tflite')))
-            self.sa2_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa2_quant_test.tflite')))
-            self.sa3_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa3_quant_test.tflite')))
-            self.sa4_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa4_quant_test.tflite')))
+        if self.use_tflite:            
+            #self.sa1_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa1_quant_test.tflite')))
+            #self.sa2_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa2_quant_test.tflite')))
+            #self.sa3_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa3_quant_test.tflite')))
+            #self.sa4_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa4_quant_test.tflite')))
+
+            from pycoral.utils.edgetpu import make_interpreter            
+            self.sa1_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa1_quant_test.tflite')))
+            self.sa2_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa2_quant_test.tflite')))
+            self.sa3_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa3_quant_test.tflite')))
+            self.sa4_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa4_quant_test.tflite')))
 
             #self.sa1_input_details = self.sa1_interpreter.get_input_details()
             #self.sa2_input_details = self.sa2_interpreter.get_input_details()
@@ -395,7 +401,7 @@ class Pointnet2Backbone_p(layers.Layer):
         sa1_xyz = layers.Concatenate(axis=1)([sa1_xyz1, sa1_xyz2])
         sa1_features = layers.Concatenate(axis=1)([sa1_features1, sa1_features2])
 
-        sa2_xyz2, sa2_inds2, sa2_ball_query_idx2, sa2_grouped_features2 = self.sa2(sa1_xyz2, sa1_features2, xyz_ball=sa1_xyz, features_ball=sa1_features)
+        sa2_xyz2, sa2_inds2, sa2_ball_query_idx2, sa2_grouped_features2 = self.sa2(sa1_xyz2, sa1_features2) #, xyz_ball=sa1_xyz, features_ball=sa1_features)
         if self.use_tflite:
             sa2_features2 = self.call_tflite(self.sa2_interpreter, sa2_grouped_features2)
         else:  
@@ -421,7 +427,7 @@ class Pointnet2Backbone_p(layers.Layer):
         sa2_xyz = layers.Concatenate(axis=1)([sa2_xyz1, sa2_xyz2])
         sa2_features = layers.Concatenate(axis=1)([sa2_features1, sa2_features2])
 
-        sa3_xyz2, sa3_inds2, sa3_ball_query_idx2, sa3_grouped_features2 = self.sa3(sa2_xyz2, sa2_features2, xyz_ball=sa2_xyz, features_ball=sa2_features)
+        sa3_xyz2, sa3_inds2, sa3_ball_query_idx2, sa3_grouped_features2 = self.sa3(sa2_xyz2, sa2_features2) #, xyz_ball=sa2_xyz, features_ball=sa2_features)
         if self.use_tflite:
             sa3_features2 = self.call_tflite(self.sa3_interpreter, sa3_grouped_features2)
         else:  
@@ -445,7 +451,7 @@ class Pointnet2Backbone_p(layers.Layer):
         sa3_xyz = layers.Concatenate(axis=1)([sa3_xyz1, sa3_xyz2])
         sa3_features = layers.Concatenate(axis=1)([sa3_features1, sa3_features2])
 
-        sa4_xyz2, sa4_inds2, sa4_ball_query_idx2, sa4_grouped_features2 = self.sa4(sa3_xyz2, sa3_features2, xyz_ball=sa3_xyz, features_ball=sa3_features)
+        sa4_xyz2, sa4_inds2, sa4_ball_query_idx2, sa4_grouped_features2 = self.sa4(sa3_xyz2, sa3_features2) #, xyz_ball=sa3_xyz, features_ball=sa3_features)
         if self.use_tflite:
             sa4_features2 = self.call_tflite(self.sa4_interpreter, sa4_grouped_features2)
         else:  
