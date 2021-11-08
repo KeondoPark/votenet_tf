@@ -19,6 +19,7 @@ parser.add_argument('--num_point', type=int, default=20000, help='Point Number [
 parser.add_argument('--checkpoint_path', default=None, help='Model checkpoint path [default: None]')
 parser.add_argument('--gpu_mem_limit', type=int, default=0, help='GPU memory usage')
 parser.add_argument('--use_tflite', action='store_true', help='Use tflite')
+parser.add_argument('--use_painted', action='store_true', help='Use tflite')
 FLAGS = parser.parse_args()
 
 import tensorflow as tf
@@ -34,10 +35,12 @@ from ap_helper_tf import parse_predictions
 
 import votenet_tf
 from votenet_tf import dump_results
+from PIL import Image
 
 def preprocess_point_cloud(point_cloud):
     ''' Prepare the numpy point cloud (N,3) for forward pass '''
-    #point_cloud = point_cloud[:,0:3] # do not use color for now
+    if not FLAGS.use_painted:
+        point_cloud = point_cloud[:,0:3] # do not use color for now
     floor_height = np.percentile(point_cloud[:,2],0.99)
     height = point_cloud[:,2] - floor_height
     point_cloud = np.concatenate([point_cloud, np.expand_dims(height, 1)],1) # (N,4) or (N,7)
@@ -86,6 +89,74 @@ def label_to_color_image(label):
 
   return colormap[label]
 
+def save_semantic_result(img, pred_class):
+    orig_w, orig_h = img.size
+    mask_img = Image.fromarray(label_to_color_image(pred_class).astype(np.uint8))
+
+    # Concat resized input image and processed segmentation results.
+    output_img = Image.new('RGB', (2 * orig_w, orig_h))
+    output_img.paste(img, (0, 0))
+    output_img.paste(mask_img, (orig_w, 0))
+    output_img.save('semantic_result.jpg')
+
+
+def run_semantic_seg_tflite(tflite_model, img, save_result=False):
+    
+    from pycoral.utils.edgetpu import make_interpreter
+    from pycoral.adapters import common
+    from pycoral.adapters import segment
+    
+    interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sunrgbd_ade20k_11_quant_edgetpu.tflite')))
+    interpreter.allocate_tensors()
+    width, height = common.input_size(interpreter)         
+    
+    orig_w, orig_h = img.size      
+
+    resized_img, (scale, scale) = common.set_resized_input(
+        interpreter, img.size, lambda size: img.resize(size, Image.ANTIALIAS))
+
+    interpreter.invoke()
+    result = segment.get_output(interpreter)        
+    
+    new_width, new_height = resized_img.size
+    pred_prob = result[:new_height, :new_width, :]
+    pred_class = np.argmax(pred_prob, axis=-1) 
+    
+    # Return to original image size
+    x = (np.array(range(orig_h)) * scale).astype(np.int)
+    y = (np.array(range(orig_w)) * scale).astype(np.int)
+    xv, yv = np.meshgrid(x, y, indexing='ij')
+
+    pred_prob = pred_prob[xv, yv]
+    pred_class = pred_class[xv, yv]
+
+    # Save semantic segmentation result as image file(Original vs Semantic result)
+    if save_result:
+        save_semantic_result(img, pred_class)
+
+    return pred_prob, pred_class
+
+def run_semantic_seg(tf_model, img, save_result=False):
+    INPUT_SIZE = 513
+    with tf.compat.v1.gfile.GFile(tf_model, "rb") as f:
+        graph_def = tf.compat.v1.GraphDef()
+        graph_def.ParseFromString(f.read())
+    
+    myGraph = tf.compat.v1.Graph()
+    with myGraph.as_default():
+        tf.compat.v1.import_graph_def(graph_def, name='')
+
+    sess = tf.compat.v1.Session(graph=myGraph)
+    from sunrgbd_data import run_semantic_segmentation
+    pred_prob, pred_class = run_semantic_segmentation(img, sess, INPUT_SIZE) # (w, h, num_class)       
+
+    # Save semantic segmentation result as image file(Original vs Semantic result)
+    if save_result:
+        save_semantic_result(img, pred_class)
+    
+    return pred_prob, pred_class
+
+
 if __name__=='__main__':
    
     # Limit GPU Memory usage, 256MB suffices in jetson nano
@@ -105,7 +176,7 @@ if __name__=='__main__':
     if FLAGS.dataset == 'sunrgbd':
         sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
         from sunrgbd_detection_dataset_tf import DC # dataset config
-        from sunrgbd_data import sunrgbd_object, run_semantic_segmentation  
+        from sunrgbd_data import sunrgbd_object  
         checkpoint_path = FLAGS.checkpoint_path # os.path.join(demo_dir, 'tf_ckpt_210812')        
         pc_path = os.path.join(demo_dir, 'input_pc_sunrgbd.ply')
         #pc_path = os.path.join(demo_dir, 'pc_person2.ply')
@@ -117,9 +188,6 @@ if __name__=='__main__':
     else:
         print('Unkown dataset. Exiting.')
         exit(-1)
-
-    
-
 
     eval_config_dict = {'remove_empty_box': True, 'use_3d_nms': True, 'nms_iou': 0.25,
         'use_old_type_nms': False, 'cls_nms': False, 'per_class_proposal': False,
@@ -136,17 +204,10 @@ if __name__=='__main__':
     print('Constructed model.')
     
     # Load checkpoint
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
-    #inside_checkpoint=tf.train.list_variables(tf.train.latest_checkpoint(checkpoint_path))
-    #for node in inside_checkpoint:
-    #    print(node)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)    
 
-    if FLAGS.use_tflite:
-        #fp1 = tf.train.Checkpoint(fp1=net.backbone_net.fp1)
-        #fp2 = tf.train.Checkpoint(fp2=net.backbone_net.fp2)  
+    if FLAGS.use_tflite:          
         restore_list = []  
-        #restore_list.append(tf.train.Checkpoint(backbone_net=fp1))
-        #restore_list.append(tf.train.Checkpoint(backbone_net=fp2))
         #restore_list.append(tf.train.Checkpoint(pnet=net.pnet))
         #restore_list.append(tf.train.Checkpoint(vgen=net.vgen))
         
@@ -154,14 +215,6 @@ if __name__=='__main__':
             new_root = tf.train.Checkpoint(net=layer)
             new_root.restore(tf.train.latest_checkpoint(checkpoint_path)).expect_partial()
 
-        #new_root = tf.train.Checkpoint(net=pnet)
-        #new_root.restore(tf.train.latest_checkpoint(checkpoint_path))
-
-        #new_root = tf.train.Checkpoint(net=backbone_net1)
-        #new_root.restore(tf.train.latest_checkpoint(checkpoint_path))
-
-        #new_root = tf.train.Checkpoint(net=backbone_net2)
-        #new_root.restore(tf.train.latest_checkpoint(checkpoint_path))
     else:    
         ckpt = tf.train.Checkpoint(epoch=tf.Variable(1), optimizer=optimizer, net=net)
         manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=3)
@@ -174,73 +227,30 @@ if __name__=='__main__':
     #point_cloud = read_ply(pc_path)
     #pc = preprocess_point_cloud(point_cloud)
     #print('Loaded point cloud data: %s'%(pc_path))
+    ## TODO: NEED TO BE REPLACED
     data_idx = 5051
     dataset = sunrgbd_object(os.path.join(DATA_DIR,'sunrgbd_trainval'), 'training', use_v1=True)
     point_cloud = dataset.get_depth(data_idx)    
-
-    pointpainting = True
-    if pointpainting:
-        INPUT_SIZE = 513
+    
+    if FLAGS.use_painted:
         
-        from pycoral.utils.edgetpu import make_interpreter
-        from pycoral.adapters import common
-        from pycoral.adapters import segment
-        from PIL import Image
-        interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sunrgbd_ade20k_11_quant_edgetpu.tflite')))
-        interpreter.allocate_tensors()
-        width, height = common.input_size(interpreter)
+        ## TODO: NEED TO BE REPLACED
+        img = dataset.get_image2(data_idx)
 
-        img = dataset.get_image2(data_idx) 
-        print(img.size)  
-        orig_w, orig_h = img.size      
+        if FLAGS.use_tflite:      
+            pred_prob, pred_class = \
+                run_semantic_seg_tflite(os.path.join('tflite_models','sunrgbd_ade20k_11_quant_edgetpu.tflite'), \
+                                        img, save_result=True)  
 
-        resized_img, (scale, scale) = common.set_resized_input(
-            interpreter, img.size, lambda size: img.resize(size, Image.ANTIALIAS))
-
-        interpreter.invoke()
-        result = segment.get_output(interpreter)        
-        
-        new_width, new_height = resized_img.size
-        pred_prob = result[:new_height, :new_width, :]
-        pred_class = np.argmax(pred_prob, axis=-1) 
-
-
-        mask_img = Image.fromarray(label_to_color_image(pred_class).astype(np.uint8))
-
-        # Concat resized input image and processed segmentation results.
-        output_img = Image.new('RGB', (2 * new_width, new_height))
-        output_img.paste(resized_img, (0, 0))
-        output_img.paste(mask_img, (width, 0))
-        output_img.save('semantic_result.jpg')
-
-        x = (np.array(range(orig_h)) * scale).astype(np.int)
-        y = (np.array(range(orig_w)) * scale).astype(np.int)
-        xv, yv = np.meshgrid(x, y, indexing='ij')
-
-        pred_prob = pred_prob[xv, yv]
-        pred_class = pred_class[xv, yv]
-
-
-        #result = result[:new_height, :new_width]
-        
-        """
-        with tf.compat.v1.gfile.GFile('test/saved_model/sunrgbd_ade20k_9.pb', "rb") as f:
-            graph_def = tf.compat.v1.GraphDef()
-            graph_def.ParseFromString(f.read())
-        
-        myGraph = tf.compat.v1.Graph()
-        with myGraph.as_default():
-            tf.compat.v1.import_graph_def(graph_def, name='')
-
-        sess = tf.compat.v1.Session(graph=myGraph)
-        """
+        else:
+            pred_prob, pred_class = \
+                run_semantic_seg('test/saved_model/sunrgbd_ade20k_11.pb', img, save_result=False)  
 
         calib = dataset.get_calibration(data_idx)
         uv,d = calib.project_upright_depth_to_image(point_cloud[:,0:3]) #uv: (N, 2)
 
         # Run image segmentation result and get result
-        img = dataset.get_image2(data_idx)        
-        #pred_prob, pred_class = run_semantic_segmentation(img, sess, INPUT_SIZE) # (w, h, num_class)   
+        img = dataset.get_image2(data_idx)                
         pred_prob = pred_prob[:,:,1:(DC.num_class+1)] # 0 is background class
         uv[:,0] = np.rint(uv[:,0] - 1)
         uv[:,1] = np.rint(uv[:,1] - 1)
@@ -252,7 +262,9 @@ if __name__=='__main__':
                                 pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
                                 ], axis=-1)
     
-    pc = preprocess_point_cloud(painted)
+        pc = preprocess_point_cloud(painted)
+    else:
+        pc = preprocess_point_cloud(point_cloud)
    
     # Model inference
     inputs = {'point_clouds': tf.convert_to_tensor(pc)}
@@ -275,23 +287,6 @@ if __name__=='__main__':
     #    print('conf:', pred[2])
         #print('coords', pred[1])
 
-    """
-    from prettytable import PrettyTable
-
-    def count_parameters(model):
-        table = PrettyTable(["Modules", "Parameters"])
-        total_params = 0
-        for layer in model.layers:
-            #if not parameter.requires_grad: continue
-            param = layer.count_params()            
-            table.add_row([layer.name, param])
-            total_params+=param
-        print(table)
-        print(f"Total Trainable Params: {total_params}")
-        return total_params
-        
-    count_parameters(net)
-    """
     print('Finished detection. %d object detected.'%(len(pred_map_cls[0][0])))
   
     dump_dir = os.path.join(demo_dir, '%s_results'%(FLAGS.dataset))
