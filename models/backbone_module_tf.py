@@ -273,10 +273,10 @@ class Pointnet2Backbone_p(layers.Layer):
             #self.sa4_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa4_quant_test.tflite')))
 
             from pycoral.utils.edgetpu import make_interpreter            
-            self.sa1_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa1_quant_test.tflite')))
-            self.sa2_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa2_quant_test.tflite')))
-            self.sa3_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa3_quant_test.tflite')))
-            self.sa4_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa4_quant_test.tflite')))
+            self.sa1_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa1_quant_test_edgetpu.tflite')))
+            self.sa2_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa2_quant_test_edgetpu.tflite')))
+            self.sa3_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa3_quant_test_edgetpu.tflite')))
+            self.sa4_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa4_quant_test_edgetpu.tflite')))
 
             #self.sa1_input_details = self.sa1_interpreter.get_input_details()
             #self.sa2_input_details = self.sa2_interpreter.get_input_details()
@@ -347,7 +347,7 @@ class Pointnet2Backbone_p(layers.Layer):
         #xyz, features, fps_inds = self.sa1(xyz, features)
         #print("========================== SA1 ===============================")
         #Sample more background points
-        sa1_xyz1, sa1_inds1, sa1_ball_query_idx1, sa1_grouped_features1 = self.sa1(xyz, features, bg=True, wght=0.01, isFront=-1)
+        sa1_xyz1, sa1_inds1, sa1_ball_query_idx1, sa1_grouped_features1 = self.sa1(xyz, features, bg=True, wght=0.25, isFront=-1)
         if self.use_tflite:
             sa1_features1 = self.call_tflite(self.sa1_interpreter, sa1_grouped_features1)
         else:                       
@@ -378,7 +378,7 @@ class Pointnet2Backbone_p(layers.Layer):
         """
 
         #Sample more painted points
-        sa1_xyz2, sa1_inds2, sa1_ball_query_idx2, sa1_grouped_features2 = self.sa1(xyz, features, bg=True, wght=4, isFront=-1)
+        sa1_xyz2, sa1_inds2, sa1_ball_query_idx2, sa1_grouped_features2 = self.sa1(xyz, features, bg=True, wght=100, isFront=-1)
         if self.use_tflite:
             sa1_features2 = self.call_tflite(self.sa1_interpreter, sa1_grouped_features2)
         else:        

@@ -45,6 +45,47 @@ def preprocess_point_cloud(point_cloud):
     pc = np.expand_dims(point_cloud.astype(np.float32), 0) # (1,40000,4)
     return pc
 
+def create_pascal_label_colormap():
+  """Creates a label colormap used in PASCAL VOC segmentation benchmark.
+
+  Returns:
+    A Colormap for visualizing segmentation results.
+  """
+  colormap = np.zeros((256, 3), dtype=int)
+  indices = np.arange(256, dtype=int)
+
+  for shift in reversed(range(8)):
+    for channel in range(3):
+      colormap[:, channel] |= ((indices >> channel) & 1) << shift
+    indices >>= 3
+
+  return colormap
+
+def label_to_color_image(label):
+  """Adds color defined by the dataset colormap to the label.
+
+  Args:
+    label: A 2D array with integer type, storing the segmentation label.
+
+  Returns:
+    result: A 2D array with floating type. The element of the array
+      is the color indexed by the corresponding element in the input label
+      to the PASCAL color map.
+
+  Raises:
+    ValueError: If label is not of rank 2 or its value is larger than color
+      map maximum entry.
+  """
+  if label.ndim != 2:
+    raise ValueError('Expect 2-D input label')
+
+  colormap = create_pascal_label_colormap()
+
+  if np.max(label) >= len(colormap):
+    raise ValueError('label value too large.')
+
+  return colormap[label]
+
 if __name__=='__main__':
    
     # Limit GPU Memory usage, 256MB suffices in jetson nano
@@ -163,6 +204,15 @@ if __name__=='__main__':
         pred_prob = result[:new_height, :new_width, :]
         pred_class = np.argmax(pred_prob, axis=-1) 
 
+
+        mask_img = Image.fromarray(label_to_color_image(pred_class).astype(np.uint8))
+
+        # Concat resized input image and processed segmentation results.
+        output_img = Image.new('RGB', (2 * new_width, new_height))
+        output_img.paste(resized_img, (0, 0))
+        output_img.paste(mask_img, (width, 0))
+        output_img.save('semantic_result.jpg')
+
         x = (np.array(range(orig_h)) * scale).astype(np.int)
         y = (np.array(range(orig_w)) * scale).astype(np.int)
         xv, yv = np.meshgrid(x, y, indexing='ij')
@@ -242,7 +292,7 @@ if __name__=='__main__':
         
     count_parameters(net)
     """
-    print('Finished detection. %d object detected.'%(len(pred_map_cls[0])))
+    print('Finished detection. %d object detected.'%(len(pred_map_cls[0][0])))
   
     dump_dir = os.path.join(demo_dir, '%s_results'%(FLAGS.dataset))
     if not os.path.exists(dump_dir): os.mkdir(dump_dir) 
