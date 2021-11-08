@@ -117,7 +117,10 @@ class Pointnet2Backbone(layers.Layer):
         # --------- 4 SET ABSTRACTION LAYERS ---------
         #xyz, features, fps_inds = self.sa1(xyz, features)
         #print("========================== SA1 ===============================")
+        time_record = []
+        time_record.append(("Start:", time.time()))
         sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features = self.sa1(xyz, features, sample_type='fps', bg=True)
+        time_record.append(("SA1:", time.time()))
         end_points['sa1_xyz'] = sa1_xyz
         end_points['sa1_features'] = sa1_features
         end_points['sa1_inds'] = sa1_inds        
@@ -127,6 +130,7 @@ class Pointnet2Backbone(layers.Layer):
         #print("========================== SA2 ===============================")
         #xyz, features, fps_inds = self.sa2(xyz, features) # this fps_inds is just 0,1,...,1023
         sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features = self.sa2(sa1_xyz, sa1_features, sample_type='fps') # this fps_inds is just 0,1,...,1023
+        time_record.append(("SA2:", time.time()))
         end_points['sa2_xyz'] = sa2_xyz
         end_points['sa2_features'] = sa2_features
         end_points['sa2_inds'] = sa2_inds        
@@ -136,6 +140,7 @@ class Pointnet2Backbone(layers.Layer):
         #print("========================== SA3 ===============================")
         #xyz, features, fps_inds = self.sa3(xyz, features) # this fps_inds is just 0,1,...,511
         sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features = self.sa3(sa2_xyz, sa2_features, sample_type='fps') # this fps_inds is just 0,1,...,511
+        time_record.append(("SA3:", time.time()))
         end_points['sa3_xyz'] = sa3_xyz
         end_points['sa3_features'] = sa3_features
         end_points['sa3_inds'] = sa3_inds        
@@ -145,13 +150,21 @@ class Pointnet2Backbone(layers.Layer):
 
         #print("========================== SA4 ===============================")
         #xyz, features, fps_inds = self.sa4(xyz, features) # this fps_inds is just 0,1,...,255
-        sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features = self.sa4(sa3_xyz, sa3_features, sample_type='fps') # this fps_inds is just 0,1,...,255
+        sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features = self.sa4(sa3_xyz, sa3_features, sample_type='fps') # this fps_inds is just 0,1,...,255        
         end_points['sa4_xyz'] = sa4_xyz
         end_points['sa4_features'] = sa4_features
         end_points['sa4_inds'] = sa4_inds        
         #end_points['sa4_ball_query_idx'] = ball_query_idx
         end_points['sa4_grouped_features'] = sa4_grouped_features
+        time_record.append(("SA4:", time.time()))
 
+        for idx, (desc, t) in enumerate(time_record):
+            if idx == 0:                 
+                prev_time = t
+                continue
+            print(desc, t - prev_time)
+            prev_time = t
+        print("SA runtime total:", time_record[-1][1] - time_record[0][1])
 
         # --------- 2 FEATURE UPSAMPLING LAYERS --------
         #features = self.fp1(end_points['sa3_xyz'], end_points['sa4_xyz'], end_points['sa3_features'], end_points['sa4_features'])
@@ -168,7 +181,7 @@ class Pointnet2Backbone(layers.Layer):
         end_points['fp2_grouped_features'] = fp2_grouped_features
         end_points['fp2_xyz'] = end_points['sa2_xyz']        
         num_seed = sa2_inds.shape[1]
-        end_points['fp2_inds'] = end_points['sa1_inds'][:,0:num_seed] # indices among the entire input point clouds        
+        end_points['fp2_inds'] = end_points['sa1_inds'][:,0:num_seed] # indices among the entire input point clouds  
         
         return end_points
 
