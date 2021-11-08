@@ -372,7 +372,7 @@ class Pointnet2Backbone_p(layers.Layer):
         """
 
         #Sample more painted points
-        sa1_xyz2, sa1_inds2, sa1_ball_query_idx2, sa1_grouped_features2 = self.sa1(xyz, features, bg=True, wght=4, isFront=-1)
+        sa1_xyz2, sa1_inds2, sa1_ball_query_idx2, sa1_grouped_features2 = self.sa1(xyz, features, bg=True, wght=100, isFront=-1)
         if self.use_tflite:
             sa1_features2 = self.call_tflite(self.sa1_interpreter, sa1_grouped_features2)
         else:        
@@ -445,7 +445,7 @@ class Pointnet2Backbone_p(layers.Layer):
         sa3_xyz = layers.Concatenate(axis=1)([sa3_xyz1, sa3_xyz2])
         sa3_features = layers.Concatenate(axis=1)([sa3_features1, sa3_features2])
 
-        sa4_xyz2, sa4_inds2, sa4_ball_query_idx2, sa4_grouped_features2 = self.sa4(sa3_xyz2, sa3_features2, xyz_ball=sa3_xyz, features_ball=sa3_features)
+        sa4_xyz2, sa4_inds2, sa4_ball_query_idx2, sa4_grouped_features2 = self.sa4(sa3_xyz2, sa3_features2, xyz_ball=sa_xyz, features_ball=sa3_features)
         if self.use_tflite:
             sa4_features2 = self.call_tflite(self.sa4_interpreter, sa4_grouped_features2)
         else:  
