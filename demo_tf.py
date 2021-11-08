@@ -25,8 +25,8 @@ import tensorflow as tf
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
-#DATA_DIR = 'sunrgbd'
-DATA_DIR = '/home/aiot/data'
+DATA_DIR = 'sunrgbd'
+#DATA_DIR = '/home/aiot/data'
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 sys.path.append(os.path.join(ROOT_DIR, 'models'))
 from pc_util import random_sampling, read_ply
@@ -140,30 +140,40 @@ if __name__=='__main__':
     pointpainting = True
     if pointpainting:
         INPUT_SIZE = 513
-        """
+        
         from pycoral.utils.edgetpu import make_interpreter
         from pycoral.adapters import common
         from pycoral.adapters import segment
         from PIL import Image
-        interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sunrgbd_ade20k_9_quant_edgetpu.tflite')))
+        interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sunrgbd_ade20k_11_quant_edgetpu.tflite')))
         interpreter.allocate_tensors()
         width, height = common.input_size(interpreter)
 
         img = dataset.get_image2(data_idx) 
+        print(img.size)  
+        orig_w, orig_h = img.size      
 
-        resized_img, _ = common.set_resized_input(
+        resized_img, (scale, scale) = common.set_resized_input(
             interpreter, img.size, lambda size: img.resize(size, Image.ANTIALIAS))
 
         interpreter.invoke()
-        result = segment.get_output(interpreter)
-        print(result)        
+        result = segment.get_output(interpreter)        
         
         new_width, new_height = resized_img.size
         pred_prob = result[:new_height, :new_width, :]
-        pred_class = np.argmax(pred_prob, axis=-1)        
-        #result = result[:new_height, :new_width]
-        """
+        pred_class = np.argmax(pred_prob, axis=-1) 
 
+        x = (np.array(range(orig_h)) * scale).astype(np.int)
+        y = (np.array(range(orig_w)) * scale).astype(np.int)
+        xv, yv = np.meshgrid(x, y, indexing='ij')
+
+        pred_prob = pred_prob[xv, yv]
+        pred_class = pred_class[xv, yv]
+
+
+        #result = result[:new_height, :new_width]
+        
+        """
         with tf.compat.v1.gfile.GFile('test/saved_model/sunrgbd_ade20k_9.pb', "rb") as f:
             graph_def = tf.compat.v1.GraphDef()
             graph_def.ParseFromString(f.read())
@@ -173,13 +183,14 @@ if __name__=='__main__':
             tf.compat.v1.import_graph_def(graph_def, name='')
 
         sess = tf.compat.v1.Session(graph=myGraph)
+        """
 
         calib = dataset.get_calibration(data_idx)
         uv,d = calib.project_upright_depth_to_image(point_cloud[:,0:3]) #uv: (N, 2)
 
         # Run image segmentation result and get result
         img = dataset.get_image2(data_idx)        
-        pred_prob, pred_class = run_semantic_segmentation(img, sess, INPUT_SIZE) # (w, h, num_class)   
+        #pred_prob, pred_class = run_semantic_segmentation(img, sess, INPUT_SIZE) # (w, h, num_class)   
         pred_prob = pred_prob[:,:,1:(DC.num_class+1)] # 0 is background class
         uv[:,0] = np.rint(uv[:,0] - 1)
         uv[:,1] = np.rint(uv[:,1] - 1)
