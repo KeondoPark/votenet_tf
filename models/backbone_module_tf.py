@@ -366,7 +366,7 @@ class Pointnet2Backbone_p(layers.Layer):
         #Sample more background points
         time_record = []
         time_record.append(("Start:", time.time()))
-        sa1_xyz1, sa1_inds1, sa1_ball_query_idx1, sa1_grouped_features1 = self.sa1(xyz, features, bg=True, wght=0.25, isFront=-1)        
+        sa1_xyz1, sa1_inds1, sa1_ball_query_idx1, sa1_grouped_features1 = self.sa1(xyz, features, bg=True, wght=0.01, isFront=-1)        
         time_record.append(("SA1 sampling and grouping:", time.time()))
         
         if self.use_tflite:
@@ -379,7 +379,7 @@ class Pointnet2Backbone_p(layers.Layer):
         time_record.append(("SA1 MLP:", time.time()))
         
         #Sample more painted points
-        sa1_xyz2, sa1_inds2, sa1_ball_query_idx2, sa1_grouped_features2 = self.sa1(xyz, features, bg=True, wght=100, isFront=-1)
+        sa1_xyz2, sa1_inds2, sa1_ball_query_idx2, sa1_grouped_features2 = self.sa1(xyz, features, bg=True, wght=4, isFront=-1)
         time_record.append(("SA1 sampling and grouping:", time.time()))
         
         if self.use_tflite:
@@ -411,7 +411,7 @@ class Pointnet2Backbone_p(layers.Layer):
         sa1_xyz = layers.Concatenate(axis=1)([sa1_xyz1, sa1_xyz2])
         sa1_features = layers.Concatenate(axis=1)([sa1_features1, sa1_features2])
 
-        sa2_xyz2, sa2_inds2, sa2_ball_query_idx2, sa2_grouped_features2 = self.sa2(sa1_xyz2, sa1_features2) #, xyz_ball=sa1_xyz, features_ball=sa1_features)        
+        sa2_xyz2, sa2_inds2, sa2_ball_query_idx2, sa2_grouped_features2 = self.sa2(sa1_xyz2, sa1_features2, xyz_ball=sa1_xyz, features_ball=sa1_features)        
         time_record.append(("SA2 sampling and grouping:", time.time()))
 
         if self.use_tflite:
@@ -441,7 +441,7 @@ class Pointnet2Backbone_p(layers.Layer):
         sa2_xyz = layers.Concatenate(axis=1)([sa2_xyz1, sa2_xyz2])
         sa2_features = layers.Concatenate(axis=1)([sa2_features1, sa2_features2])
 
-        sa3_xyz2, sa3_inds2, sa3_ball_query_idx2, sa3_grouped_features2 = self.sa3(sa2_xyz2, sa2_features2) #, xyz_ball=sa2_xyz, features_ball=sa2_features)        
+        sa3_xyz2, sa3_inds2, sa3_ball_query_idx2, sa3_grouped_features2 = self.sa3(sa2_xyz2, sa2_features2, xyz_ball=sa2_xyz, features_ball=sa2_features)        
         time_record.append(("SA3 sampling and grouping:", time.time()))
 
         if self.use_tflite:
@@ -471,7 +471,7 @@ class Pointnet2Backbone_p(layers.Layer):
         sa3_xyz = layers.Concatenate(axis=1)([sa3_xyz1, sa3_xyz2])
         sa3_features = layers.Concatenate(axis=1)([sa3_features1, sa3_features2])
 
-        sa4_xyz2, sa4_inds2, sa4_ball_query_idx2, sa4_grouped_features2 = self.sa4(sa3_xyz2, sa3_features2) #, xyz_ball=sa3_xyz, features_ball=sa3_features)        
+        sa4_xyz2, sa4_inds2, sa4_ball_query_idx2, sa4_grouped_features2 = self.sa4(sa3_xyz2, sa3_features2, xyz_ball=sa3_xyz, features_ball=sa3_features)        
         time_record.append(("SA4 sampling and grouping:", time.time()))
 
         if self.use_tflite:

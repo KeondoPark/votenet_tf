@@ -4,8 +4,8 @@ import sys
 import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
-grouping_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_grouping_so.so'))
-#grouping_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_grouping_so_server.so'))
+#grouping_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_grouping_so.so'))
+grouping_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_grouping_so_server.so'))
 def query_ball_point(radius, nsample, xyz1, xyz2):
     '''
     Input:
