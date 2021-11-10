@@ -71,6 +71,7 @@ parser.add_argument('--use_sunrgbd_v2', action='store_true', help='Use V2 box la
 parser.add_argument('--overwrite', action='store_true', help='Overwrite existing log and dump folders.')
 parser.add_argument('--dump_results', action='store_true', help='Dump results.')
 parser.add_argument('--use_painted', action='store_true', help='Use Point painting')
+parser.add_argument('--not_sep_coords', action='store_false', help='Do not use separate layer for coordinates in Voting and Proposal layers')
 FLAGS = parser.parse_args()
 
 # ------------------------------------------------------------------------- GLOBAL CONFIG BEG
@@ -155,7 +156,8 @@ with mirrored_strategy.scope():
                 num_proposal=FLAGS.num_target,
                 input_feature_dim=num_input_channel,
                 vote_factor=FLAGS.vote_factor,
-                sampling=FLAGS.cluster_sampling)
+                sampling=FLAGS.cluster_sampling,
+                sep_coords=FLAGS.not_sep_coords)
 
 #if torch.cuda.device_count() > 1:
 #  log_string("Let's use %d GPUs!" % (torch.cuda.device_count()))
@@ -182,7 +184,7 @@ if CHECKPOINT_PATH is None:
     CHECKPOINT_PATH = './tf_ckpt'
 
 if not os.path.exists(CHECKPOINT_PATH):
-    os.mkdir(LOG_DIR)
+    os.mkdir(CHECKPOINT_PATH)
 
 
 with mirrored_strategy.scope():

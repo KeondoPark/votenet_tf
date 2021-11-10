@@ -65,9 +65,23 @@ def decode_scores(net, end_points, num_class, num_heading_bin, num_size_cluster,
 
 
 class ProposalModule(layers.Layer):
-    def __init__(self, num_class, num_heading_bin, num_size_cluster, mean_size_arr, num_proposal, sampling, seed_feat_dim=256, use_tflite=False, tflite_name=None):
+    def __init__(self, num_class, num_heading_bin, num_size_cluster, mean_size_arr, num_proposal, sampling, seed_feat_dim=256, sep_coords=True, use_tflite=False, tflite_name=None):
         super().__init__() 
-
+        """
+        num_class: Number of classes
+        num_heading_bin: Number of heading bin, 12 (30 degree per each bin)
+        num_size_cluster: Number of size cluster, 10
+        mean_size_arr: Average size of objects in each class
+        num_proposal: Number of proposals
+        sampling: sampling type
+        seed_feat_dim: Number of feature dimensions of votes        
+        sep_coords: boolean
+            If True, use separate layer for coordinate 
+        use_tflite: boolean
+            If True, use tflite
+        tflite_name: string
+            The name of tflite file
+        """
         self.num_class = num_class
         self.num_heading_bin = num_heading_bin
         self.num_size_cluster = num_size_cluster
@@ -98,41 +112,43 @@ class ProposalModule(layers.Layer):
                 normalize_xyz=True
             )
         self.use_tflite = use_tflite
+        self.sep_coords = sep_coords
         
         mlp_spec = [self.seed_feat_dim, 128, 128, 128]
         mlp_spec[0] += 3  
 
         if self.use_tflite:
-            from pycoral.utils.edgetpu import make_interpreter
-            #self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models", tflite_name)))                             
-            self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))
+            self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models", tflite_name)))                             
+            #from pycoral.utils.edgetpu import make_interpreter            
+            #self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))
             self.interpreter.allocate_tensors()
 
             # Get input and output tensors.
             self.input_details = self.interpreter.get_input_details()
             self.output_details = self.interpreter.get_output_details()
-        #else:
-        self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=True, input_shape=[self.npoint, self.nsample, 3+mlp_spec[0]])        
-        self.max_pool = layers.MaxPooling2D(pool_size=(1, self.nsample), strides=1, data_format="channels_last")
-         
-        # Object proposal/detection
-        # Objectness scores (2), center residual (3),
-        # heading class+residual (num_heading_bin*2), size class+residual(num_size_cluster*4)
-        #self.conv1 = layers.Conv1D(filters=128, kernel_size=1)
-        #self.conv2 = layers.Conv1D(filters=128, kernel_size=1)
-        #self.conv3 = layers.Conv1D(filters=2+3+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
-        #### Changed to Conv2D to be compatible with EdgeTPU compiler
-        self.conv1 = layers.Conv2D(filters=128, kernel_size=1)
-        self.conv2 = layers.Conv2D(filters=128, kernel_size=1)
-        # 2: objectness_scores, 3: offset(From vote to center), score/residuals for num_heading_bin(12),
-        # score/(H,W,C) for size, Class score
-        #self.conv3 = layers.Conv2D(filters=2+3+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
-        self.conv3_1 = layers.Conv2D(filters=3, kernel_size=1)
-        self.conv3_2 = layers.Conv2D(filters=2+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
-        self.bn1 = layers.BatchNormalization(axis=-1)
-        self.bn2 = layers.BatchNormalization(axis=-1)
-        self.relu1 = layers.ReLU(6)
-        self.relu2 = layers.ReLU(6)
+        else:
+            self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=True, input_shape=[self.npoint, self.nsample, 3+mlp_spec[0]])        
+            self.max_pool = layers.MaxPooling2D(pool_size=(1, self.nsample), strides=1, data_format="channels_last")
+            
+            # Object proposal/detection
+            # Objectness scores (2), center residual (3),
+            # heading class+residual (num_heading_bin*2), size class+residual(num_size_cluster*4)            
+            #### Changed to Conv2D to be compatible with EdgeTPU compiler
+            self.conv1 = layers.Conv2D(filters=128, kernel_size=1)
+            self.conv2 = layers.Conv2D(filters=128, kernel_size=1)
+            
+            # 2: objectness_scores, 3: offset(From vote to center), score/residuals for num_heading_bin(12),
+            # score/(H,W,C) for size, Class score
+            if self.sep_coords:
+                self.conv3_1 = layers.Conv2D(filters=3, kernel_size=1)
+                self.conv3_2 = layers.Conv2D(filters=2+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
+            else:
+                self.conv3 = layers.Conv2D(filters=2+3+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
+            
+            self.bn1 = layers.BatchNormalization(axis=-1)
+            self.bn2 = layers.BatchNormalization(axis=-1)
+            self.relu1 = layers.ReLU(6)
+            self.relu2 = layers.ReLU(6)
 
     def call(self, xyz, features, end_points):
         """
@@ -173,33 +189,37 @@ class ProposalModule(layers.Layer):
             # --------- PROPOSAL GENERATION ---------
             net = self.relu1(self.bn1(self.conv1(features)))
             net = self.relu2(self.bn2(self.conv2(net)))
-            #net = self.conv3(net)
-            #offset = net[:,:,:,2:5]
-            #center = xyz + offset
-            #net = layers.Concatenate(axis=-1)([net[:,:,:,0:2], net[:,:,:,5:]])
-            #net = layers.Reshape((self.npoint,net.shape[-1]))(net)
+            if self.sep_coords:
+                offset = self.conv3_1(net) # (batch_size, num_proposal, 3+2+num_heading_bin*2+num_size_cluster*4)                
+                net = self.conv3_2(net)                
+            else:
+                net = self.conv3(net)
+                offset = net[:,:,:,0:3]            
+                net = net[:,:,:,3:]    
+            offset = layers.Reshape((self.npoint, 3))(offset)                
+            center = xyz + offset            
+            net = layers.Reshape((self.npoint, net.shape[-1]))(net)            
             
-            offset = self.conv3_1(net) # (batch_size, num_proposal, 3+2+num_heading_bin*2+num_size_cluster*4)
-            offset = layers.Reshape((self.npoint, 3))(offset)
-            center = xyz + offset
-            net = self.conv3_2(net)
-            net = layers.Reshape((self.npoint, net.shape[-1]))(net)
-            
-            #print("offset, from original", net[0,0,0:3])
         else:
             self.interpreter.set_tensor(self.input_details[0]['index'], xyz)            
             self.interpreter.set_tensor(self.input_details[1]['index'], va_grouped_features)            
             self.interpreter.invoke()
-            center = self.interpreter.get_tensor(self.output_details[0]['index'])
-            net = self.interpreter.get_tensor(self.output_details[1]['index']) 
-            center = tf.convert_to_tensor(center)
-            net = tf.convert_to_tensor(net)       
-            #va_output = self.interpreter.get_tensor(self.output_details[0]['index'])    
-            #va_output = tf.convert_to_tensor(va_output)            
-            
-            #center = va_output[:,:,0:3]
-            #print("Center, from quantized", center[0,0,:])
-            #net = va_output[:,:,3:] # (batch_size, num_proposal, 2+num_heading_bin*2+num_size_cluster*4)
+            if self.sep_coords:
+                offset = self.interpreter.get_tensor(self.output_details[0]['index'])
+                net = self.interpreter.get_tensor(self.output_details[1]['index']) 
+
+                offset = tf.convert_to_tensor(offset)
+                #center = xyz + offset
+                center = offset
+                net = tf.convert_to_tensor(net)                   
+            else:
+                net = self.interpreter.get_tensor(self.output_details[0]['index']) 
+                net = tf.convert_to_tensor(net)
+                offset = net[:,:,:,0:3]
+                net = net[:,:,:,3:]
+                offset = layers.Reshape((self.npoint, 3))(offset)                
+                center = xyz + offset            
+                net = layers.Reshape((self.npoint, net.shape[-1]))(net)
 
         # Return from expanded shape
         #net = layers.Reshape((self.npoint, net.shape[-1]))(net)

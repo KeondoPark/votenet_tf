@@ -61,6 +61,33 @@ REGISTER_OP("FarthestPointSampleBg")
     return Status::OK();
   });
 
+REGISTER_OP("FarthestPointSampleBg2")
+  .Attr("npoint: int")
+  .Attr("weight1: float")
+  .Attr("weight2: float")
+  .Attr("isFront1: int")
+  .Attr("isFront2: int")
+  .Input("inp: float32")
+  .Output("out: int32")  
+  .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
+    ::tensorflow::shape_inference::ShapeHandle dims1; // batch_size * npoint * 3
+    c->WithRank(c->input(0), 3, &dims1);
+    int npoint;
+    float weight1;
+    int isFront1;
+    float weight2;
+    int isFront2;
+    TF_RETURN_IF_ERROR(c->GetAttr("npoint", &npoint));
+    TF_RETURN_IF_ERROR(c->GetAttr("weight1", &weight1));
+    TF_RETURN_IF_ERROR(c->GetAttr("isFront1", &isFront1));
+    TF_RETURN_IF_ERROR(c->GetAttr("weight2", &weight2));
+    TF_RETURN_IF_ERROR(c->GetAttr("isFront2", &isFront2));
+    ::tensorflow::shape_inference::ShapeHandle output = c->MakeShape({c->Dim(dims1, 0), 2*npoint});    
+    c->set_output(0, output);    
+    return Status::OK();
+  });
+
+
 REGISTER_OP("GatherPoint")
   .Input("inp: float32")
   .Input("idx: int32")
@@ -188,6 +215,62 @@ class FarthestPointSampleBgGpuOp: public OpKernel{
         int isFront_;
 };
 REGISTER_KERNEL_BUILDER(Name("FarthestPointSampleBg").Device(DEVICE_GPU),FarthestPointSampleBgGpuOp);
+
+void farthestpointsamplingBgLauncher2(int b, int n, int m, const float * inp, float * temp1, float * temp2, int * isObj, int * out, float wght1, float wght2, int isFront1, int isFront2);
+class FarthestPointSampleBgGpuOp2: public OpKernel{
+  public:
+    explicit FarthestPointSampleBgGpuOp2(OpKernelConstruction* context):OpKernel(context) {
+                    OP_REQUIRES_OK(context, context->GetAttr("npoint", &npoint_));
+                    OP_REQUIRES_OK(context, context->GetAttr("weight1", &weight1_));
+                    OP_REQUIRES_OK(context, context->GetAttr("weight2", &weight2_));
+                    OP_REQUIRES_OK(context, context->GetAttr("isFront1", &isFront1_));
+                    OP_REQUIRES_OK(context, context->GetAttr("isFront2", &isFront2_));
+                    OP_REQUIRES(context, npoint_ > 0, errors::InvalidArgument("FarthestPointSample expects positive npoint"));
+                }
+    void Compute(OpKernelContext * context)override{
+      int m = npoint_;
+      float wght1 = weight1_;      
+      float wght2 = weight2_;
+      int isF1 = isFront1_;
+      int isF2 = isFront2_;
+
+      const Tensor& inp_tensor=context->input(0);
+      OP_REQUIRES(context, inp_tensor.dims()==3 && inp_tensor.shape().dim_size(2)==4, errors::InvalidArgument("FarthestPointSampleBg expects (batch_size,num_points,4) inp shape"));
+      int b=inp_tensor.shape().dim_size(0);
+      int n=inp_tensor.shape().dim_size(1);
+      auto inp_flat=inp_tensor.flat<float>();
+      const float * inp=&(inp_flat(0));
+      
+      Tensor * out_tensor;
+      OP_REQUIRES_OK(context,context->allocate_output(0,TensorShape{b,2*m},&out_tensor));
+      auto out_flat = out_tensor->flat<int>();
+      int * out = &(out_flat(0));
+      
+      Tensor temp_tensor1;
+      OP_REQUIRES_OK(context, context->allocate_temp(DataTypeToEnum<float>::value, TensorShape{32,n}, &temp_tensor1));
+      auto temp_flat1 = temp_tensor1.flat<float>();
+      float * temp1 = &(temp_flat1(0));
+
+      Tensor temp_tensor2;
+      OP_REQUIRES_OK(context, context->allocate_temp(DataTypeToEnum<float>::value, TensorShape{32,n}, &temp_tensor2));
+      auto temp_flat2 = temp_tensor2.flat<float>();
+      float * temp2 = &(temp_flat2(0));
+
+      Tensor isObj_tensor;
+      OP_REQUIRES_OK(context, context->allocate_temp(DataTypeToEnum<int>::value, TensorShape{32,n}, &isObj_tensor));
+      auto isObj_flat = isObj_tensor.flat<int>();
+      int * isObj = &(isObj_flat(0));
+
+      farthestpointsamplingBgLauncher2(b, n, m, inp, temp1, temp2, isObj, out, wght1, wght2, isF1, isF2);
+    }
+    private:
+        int npoint_;
+        float weight1_;
+        float weight2_;
+        int isFront1_;
+        int isFront2_;
+};
+REGISTER_KERNEL_BUILDER(Name("FarthestPointSampleBg2").Device(DEVICE_GPU),FarthestPointSampleBgGpuOp2);
 
 
 void gatherpointLauncher(int b,int n,int m,const float * inp,const int * idx,float * out);

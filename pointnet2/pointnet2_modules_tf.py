@@ -246,8 +246,7 @@ class PointnetSAModuleVotes(layers.Layer):
         ball_quer_idx: (B, npoint, nsample) Index of ball queried points
         """
         start = time.time()
-        if inds is None:            
-           
+        if inds is None:           
             if bg:
                 inds = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, weight=1, isFront=-1)
                 xyz = xyz[:,:,:3]
@@ -352,7 +351,8 @@ class SamplingAndGrouping(layers.Layer):
         else:
             self.grouper = pointnet2_utils_tf.GroupAll(use_xyz, ret_grouped_xyz=True)
         
-    def call(self, xyz, features, inds=None, bg=False, wght=1, isFront=0, xyz_ball=None, features_ball=None):
+    def call(self, xyz, features, inds=None, bg=False, wght1=1, wght2=1, isFront=0, xyz_ball=None, features_ball=None):
+    #def call(self, xyz, features, inds=None, bg=False, wght=1, isFront=0, xyz_ball=None, features_ball=None):
         r"""
         Parameters
         ----------
@@ -369,8 +369,9 @@ class SamplingAndGrouping(layers.Layer):
         """
         
         if inds is None:                        
-            if bg:                    
-                inds = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, wght, isFront)
+            if bg:                                    
+                #inds = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, wght, isFront)                
+                inds = tf_sampling.farthest_point_sample_bg2(self.npoint, xyz, wght1, wght2, isFront)                
                 xyz = xyz[:,:,:3]                    
             else:
                 inds = tf_sampling.farthest_point_sample(self.npoint, xyz)     

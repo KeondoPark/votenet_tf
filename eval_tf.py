@@ -55,6 +55,7 @@ parser.add_argument('--faster_eval', action='store_true', help='Faster evaluatio
 parser.add_argument('--shuffle_dataset', action='store_true', help='Shuffle the dataset (random order).')
 parser.add_argument('--use_painted', action='store_true', help='Use Point painting')
 parser.add_argument('--use_tflite', action='store_true', help='Use tflite')
+parser.add_argument('--not_sep_coords', action='store_false', help='Do not use separate layer for coordinates in Voting and Proposal layers')
 FLAGS = parser.parse_args()
 
 if FLAGS.use_cls_nms:
@@ -111,7 +112,8 @@ net = votenet_tf.VoteNet(num_class=DATASET_CONFIG.num_class,
                input_feature_dim=num_input_channel,
                vote_factor=FLAGS.vote_factor,
                sampling=FLAGS.cluster_sampling,
-               use_tflite=FLAGS.use_tflite)
+               use_tflite=FLAGS.use_tflite,
+               sep_coords=FLAGS.not_sep_coords)
 
 import loss_helper_tf
 criterion = loss_helper_tf.get_loss
@@ -158,7 +160,7 @@ def evaluate_one_epoch():
         if batch_idx*BATCH_SIZE >= 400: break
         if batch_idx % 10 == 0:
             end = time.time()
-            log_string('Eval batch: %d '%(batch_idx) + str(end - start))
+            log_string('---------- Eval batch: %d ----------'%(batch_idx) + str(end - start))
             start = time.time()
         start2 = time.time()
         # Forward pass

@@ -86,7 +86,7 @@ class Pointnet2Backbone(layers.Layer):
         #xyz = pc[..., 0:3]
         #features = pc[..., 3:] if pc.shape[-1] > 3 else None        
 
-        xyz = pc[:,:,0:4]
+        xyz = pc[:,:,0:3]
         features =  pc[:,:, 4:]
 
         return xyz, features
@@ -119,7 +119,7 @@ class Pointnet2Backbone(layers.Layer):
         #print("========================== SA1 ===============================")
         time_record = []
         time_record.append(("Start:", time.time()))
-        sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features = self.sa1(xyz, features, bg=True)
+        sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features = self.sa1(xyz, features)
         time_record.append(("SA1:", time.time()))
         end_points['sa1_xyz'] = sa1_xyz
         end_points['sa1_features'] = sa1_features
@@ -282,16 +282,16 @@ class Pointnet2Backbone_p(layers.Layer):
         self.use_multiThr = True
 
         if self.use_tflite:            
-            #self.sa1_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa1_quant_test.tflite')))
-            #self.sa2_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa2_quant_test.tflite')))
-            #self.sa3_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa3_quant_test.tflite')))
-            #self.sa4_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa4_quant_test.tflite')))
+            self.sa1_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa1_quant_2way.tflite')))
+            self.sa2_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa2_quant_2way.tflite')))
+            self.sa3_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa3_quant_2way.tflite')))
+            self.sa4_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa4_quant_2way.tflite')))
 
-            from pycoral.utils.edgetpu import make_interpreter            
-            self.sa1_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa1_quant_test_edgetpu.tflite')))
-            self.sa2_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa2_quant_test_edgetpu.tflite')))
-            self.sa3_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa3_quant_test_edgetpu.tflite')))
-            self.sa4_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa4_quant_test_edgetpu.tflite')))
+            #from pycoral.utils.edgetpu import make_interpreter            
+            #self.sa1_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa1_quant_2way.tflite')))
+            #self.sa2_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa2_quant_2way.tflite')))
+            #self.sa3_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa3_quant_2way.tflite')))
+            #self.sa4_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa4_quant_2way.tflite')))
 
             #self.sa1_input_details = self.sa1_interpreter.get_input_details()
             #self.sa2_input_details = self.sa2_interpreter.get_input_details()
@@ -366,8 +366,15 @@ class Pointnet2Backbone_p(layers.Layer):
         #Sample more background points
         time_record = []
         time_record.append(("Start:", time.time()))
-        sa1_xyz1, sa1_inds1, sa1_ball_query_idx1, sa1_grouped_features1 = self.sa1(xyz, features, bg=True, wght=0.01, isFront=-1)        
+        #sa1_xyz1, sa1_inds1, sa1_ball_query_idx1, sa1_grouped_features1 = self.sa1(xyz, features, bg=True, wght=0.01, isFront=-1)
+        
+        sa1_xyz, sa1_inds, sa1_ball_query_idx, sa1_grouped_features = self.sa1(xyz, features, bg=True, wght1=0.01, wght2=9, isFront=-1)
         time_record.append(("SA1 sampling and grouping:", time.time()))
+        sa1_xyz1 = sa1_xyz[:,:1024,:]        
+        sa1_grouped_features1 = sa1_grouped_features[:,:1024,:,:]        
+        sa1_inds1 = sa1_inds[:,:1024]
+        time_record.append(("SA1 tensor slicing:", time.time()))
+        
         
         if self.use_tflite:
             if self.use_multiThr:
@@ -379,8 +386,11 @@ class Pointnet2Backbone_p(layers.Layer):
         time_record.append(("SA1 MLP:", time.time()))
         
         #Sample more painted points
-        sa1_xyz2, sa1_inds2, sa1_ball_query_idx2, sa1_grouped_features2 = self.sa1(xyz, features, bg=True, wght=4, isFront=-1)
-        time_record.append(("SA1 sampling and grouping:", time.time()))
+        #sa1_xyz2, sa1_inds2, sa1_ball_query_idx2, sa1_grouped_features2 = self.sa1(xyz, features, bg=True, wght=4, isFront=-1)
+        #time_record.append(("SA1 sampling and grouping:", time.time()))
+        sa1_xyz2 = sa1_xyz[:,1024:,:]
+        sa1_grouped_features2 = sa1_grouped_features[:,1024:,:,:]
+        sa1_inds2 = sa1_inds[:,1024:]
         
         if self.use_tflite:
             if self.use_multiThr:
