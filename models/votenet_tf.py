@@ -61,12 +61,12 @@ class VoteNet(tf.keras.Model):
 
         # Hough voting
         self.vgen = VotingModule(self.vote_factor, seed_feature_dim=128, \
-            sep_coords=sep_coords, use_tflite=use_tflite, tflite_name='voting_quant_2way.tflite')
+            sep_coords=sep_coords, use_tflite=use_tflite, tflite_name='voting_quant_1way_edgetpu.tflite')
 
         # Vote aggregation and detection
         self.pnet = ProposalModule(num_class, num_heading_bin, num_size_cluster,
             mean_size_arr, num_proposal, sampling, seed_feat_dim=128, \
-            sep_coords=sep_coords, use_tflite=use_tflite, tflite_name='va_quant_2way.tflite')
+            sep_coords=sep_coords, use_tflite=use_tflite, tflite_name='va_quant_1way_edgetpu.tflite')
 
     def call(self, inputs):
         """ Forward pass of the network

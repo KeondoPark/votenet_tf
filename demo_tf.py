@@ -26,8 +26,8 @@ import tensorflow as tf
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
-#DATA_DIR = 'sunrgbd'
-DATA_DIR = '/home/aiot/data'
+DATA_DIR = 'sunrgbd'
+#DATA_DIR = '/home/aiot/data'
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 sys.path.append(os.path.join(ROOT_DIR, 'models'))
 from pc_util import random_sampling, read_ply
@@ -291,6 +291,6 @@ if __name__=='__main__':
   
     dump_dir = os.path.join(demo_dir, '%s_results'%(FLAGS.dataset))
     if not os.path.exists(dump_dir): os.mkdir(dump_dir) 
-    dump_results(end_points, dump_dir, DC, True)
-    print('Dumped detection results to folder %s'%(dump_dir))
+    #dump_results(end_points, dump_dir, DC, True)
+    #print('Dumped detection results to folder %s'%(dump_dir))
 
