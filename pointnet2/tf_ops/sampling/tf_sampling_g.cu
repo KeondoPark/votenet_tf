@@ -465,12 +465,23 @@ __global__ void farthestpointsamplingBgKernel2(int b,int n,int m,
         } 
 
         if (cntObj < 100 && isFront1 >= 0){          
-          //Gives bigger weight to Focus area          
-          if (y2 > miny[i]){
-            da = 100 * da;
-          } else {
-            db = 100 * db;
-          }
+          if (isFront1 == 0){
+            //Gives bigger weight to back area          
+            if (y2 > miny[i]){
+              da = 9 * da;
+            //Gives bigger weight to front area
+            } else {
+              db = 9 * db;
+            }
+          } else if (isFront1 == 1){
+            //Gives bigger weight to back area          
+            if (y2 > miny[i]){
+              db = 9 * db;
+            //Gives bigger weight to front area
+            } else {
+              da = 9 * da;
+            }
+          }          
         } 
 
         float min_da = min(da,td1);        

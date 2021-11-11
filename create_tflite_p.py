@@ -152,7 +152,7 @@ def tflite_convert(keyword, model, base_model, out_dir, mlp=True):
     converter.inference_output_type = tf.float32
     tflite_model = converter.convert()
 
-    with open(os.path.join(out_dir, keyword + '_quant_2way.tflite'), 'wb') as f:
+    with open(os.path.join(out_dir, keyword + '_quant_2way_base.tflite'), 'wb') as f:
         f.write(tflite_model)
 
 if __name__=='__main__':
@@ -266,8 +266,9 @@ if __name__=='__main__':
                 net = self.conv3_2(net) # (batch_size, num_seed, (3+out_dim)*vote_factor)
                 residual_features = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net)                
                 vote_features = net0 + residual_features 
-                vote_xyz = xyz + offset 
-                return [vote_xyz, vote_features]
+                #vote_xyz = xyz + offset 
+                #return [vote_xyz, vote_features]
+                return [offset, vote_features]
             else:
                 net = self.conv3(net)
                 offset = net[:,:,:,0:3]
@@ -308,10 +309,10 @@ if __name__=='__main__':
                 offset = self.conv3_1(net)                                
                 net = self.conv3_2(net) # (batch_size, num_proposal, 2+3+num_heading_bin*2+num_size_cluster*4)
                 offset = layers.Reshape((self.npoint,3))(offset)
-                center = xyz + offset
+                #center = xyz + offset
                 net = layers.Reshape((self.npoint, net.shape[-1]))(net)   
 
-                return [center, net]            
+                return [offset, net]            
             else:
                 net = self.conv3(net)
                 return net
@@ -337,8 +338,8 @@ if __name__=='__main__':
             return net
         """
 
-    #converting_layers = ['sa1','sa2','sa3','sa4','voting','va']
-    converting_layers = ['voting','va']
+    converting_layers = ['sa1','sa2','sa3','sa4','voting','va']
+    #converting_layers = ['voting','va']
     if 'sa1' in converting_layers:    
         sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[1024,64,1+10+3])
         dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,64,1+10+3])) # (B, npoint, nsample, C+3)

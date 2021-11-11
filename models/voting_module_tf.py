@@ -44,9 +44,9 @@ class VotingModule(layers.Layer):
         self.sep_coords = sep_coords
 
         if self.use_tflite:
-            #self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models", tflite_name)))                             
-            from pycoral.utils.edgetpu import make_interpreter            
-            self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))
+            self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models", tflite_name)))                             
+            #from pycoral.utils.edgetpu import make_interpreter            
+            #self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))
             self.interpreter.allocate_tensors()
 
             # Get input and output tensors.
@@ -91,8 +91,10 @@ class VotingModule(layers.Layer):
             self.interpreter.set_tensor(self.input_details[1]['index'], seed_features)
             self.interpreter.invoke()
             if self.sep_coords:
-                vote_xyz = self.interpreter.get_tensor(self.output_details[0]['index'])
+                offset = self.interpreter.get_tensor(self.output_details[0]['index'])
                 vote_features = self.interpreter.get_tensor(self.output_details[1]['index'])
+                #vote_xyz = offset
+                vote_xyz = seed_xyz + offset
 
             else:
                 offset = self.interpreter.get_tensor(self.output_details[0]['index'])
