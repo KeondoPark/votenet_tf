@@ -282,16 +282,16 @@ class Pointnet2Backbone_p(layers.Layer):
         self.use_multiThr = True
 
         if self.use_tflite:            
-            self.sa1_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa1_quant_2way_base.tflite')))
-            self.sa2_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa2_quant_2way_base.tflite')))
-            self.sa3_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa3_quant_2way_base.tflite')))
-            self.sa4_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa4_quant_2way_base.tflite')))
+            #self.sa1_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa1_quant_2way_base.tflite')))
+            #self.sa2_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa2_quant_2way_base.tflite')))
+            #self.sa3_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa3_quant_2way_base.tflite')))
+            #self.sa4_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa4_quant_2way_base.tflite')))
 
-            #from pycoral.utils.edgetpu import make_interpreter            
-            #self.sa1_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa1_quant_2way.tflite')))
-            #self.sa2_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa2_quant_2way.tflite')))
-            #self.sa3_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa3_quant_2way.tflite')))
-            #self.sa4_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa4_quant_2way.tflite')))
+            from pycoral.utils.edgetpu import make_interpreter            
+            self.sa1_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa1_quant_2way_edgetpu.tflite')))
+            self.sa2_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa2_quant_2way_edgetpu.tflite')))
+            self.sa3_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa3_quant_2way_edgetpu.tflite')))
+            self.sa4_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa4_quant_2way_edgetpu.tflite')))
 
             #self.sa1_input_details = self.sa1_interpreter.get_input_details()
             #self.sa2_input_details = self.sa2_interpreter.get_input_details()
