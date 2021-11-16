@@ -13,6 +13,6 @@ srun python eval_tf.py  \
 --checkpoint_path tf_ckpt/211030_4 \
 --use_3d_nms --use_cls_nms --per_class_proposal \
 --faster_eval --batch_size 1 --ap_iou_thresholds 0.25 \
---use_painted --dump_dir eval26 --not_sep_coords
+--use_painted --dump_dir eval28 --not_sep_coords
 
 

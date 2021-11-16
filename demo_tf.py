@@ -26,8 +26,8 @@ import tensorflow as tf
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
-DATA_DIR = 'sunrgbd'
-#DATA_DIR = '/home/aiot/data'
+#DATA_DIR = 'sunrgbd'
+DATA_DIR = '/home/aiot/data'
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 sys.path.append(os.path.join(ROOT_DIR, 'models'))
 from pc_util import random_sampling, read_ply
@@ -232,19 +232,21 @@ if __name__=='__main__':
     dataset = sunrgbd_object(os.path.join(DATA_DIR,'sunrgbd_trainval'), 'training', use_v1=True)
     point_cloud = dataset.get_depth(data_idx)    
     
+    time_record = [('Start: ', time.time())]
     if FLAGS.use_painted:
         
         ## TODO: NEED TO BE REPLACED
         img = dataset.get_image2(data_idx)
 
         if FLAGS.use_tflite:      
+            
             pred_prob, pred_class = \
                 run_semantic_seg_tflite(os.path.join('tflite_models','sunrgbd_ade20k_11_quant_edgetpu.tflite'), \
-                                        img, save_result=True)  
-
+                                        img, save_result=False)  
         else:
             pred_prob, pred_class = \
                 run_semantic_seg('test/saved_model/sunrgbd_ade20k_11.pb', img, save_result=False)  
+            
 
         calib = dataset.get_calibration(data_idx)
         uv,d = calib.project_upright_depth_to_image(point_cloud[:,0:3]) #uv: (N, 2)
@@ -261,10 +263,12 @@ if __name__=='__main__':
                                 isObj,
                                 pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
                                 ], axis=-1)
+        time_record.append(('Deeplab inference time:', time.time()))
     
         pc = preprocess_point_cloud(painted)
     else:
-        pc = preprocess_point_cloud(point_cloud)
+        pc = preprocess_point_cloud(point_cloud)    
+    time_record.append(('Data preprocessing time:', time.time()))
    
     # Model inference
     inputs = {'point_clouds': tf.convert_to_tensor(pc)}
@@ -272,6 +276,23 @@ if __name__=='__main__':
     tic = time.time()
     end_points = net(inputs['point_clouds'], training=False)
     toc = time.time()
+
+    time_record += end_points['time_record']    
+    time_record = time_record + [('Voting and Proposal time:', time.time())]
+
+    inf_time_log = open('inference_time.log', 'a+')
+
+    for idx, (desc, t) in enumerate(time_record):
+        if idx == 0:                 
+            inf_time_log.write(desc + str(t) + '\n')
+            prev_time = t
+            continue
+        inf_time_log.write(desc + str(t - prev_time) + '\n')
+        prev_time = t
+    
+    inf_time_log.write('Total inference time: %f \n'%(time_record[-1][1] - time_record[0][1]))
+    inf_time_log.close()
+
     print('Inference time: %f'%(toc-tic))
 
     end_points['point_clouds'] = inputs['point_clouds']
@@ -280,7 +301,7 @@ if __name__=='__main__':
     type2class={'bed':0, 'table':1, 'sofa':2, 'chair':3, 'toilet':4, 'desk':5, 'dresser':6, 'night_stand':7, 'bookshelf':8, 'bathtub':9, 'person':10}
     class2type = {type2class[t]:t for t in type2class}
 
-    print(pred_map_cls[0])
+    #print(pred_map_cls[0])
     #for pred in pred_map_cls[0]:
     #    print('-'*20)        
     #    print('class:', class2type[pred[0].numpy()])
@@ -291,6 +312,6 @@ if __name__=='__main__':
   
     dump_dir = os.path.join(demo_dir, '%s_results'%(FLAGS.dataset))
     if not os.path.exists(dump_dir): os.mkdir(dump_dir) 
-    #dump_results(end_points, dump_dir, DC, True)
-    #print('Dumped detection results to folder %s'%(dump_dir))
+    dump_results(end_points, dump_dir, DC, True)
+    print('Dumped detection results to folder %s'%(dump_dir))
 

@@ -9,8 +9,8 @@ import sys
 import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
-sampling_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_sampling_so.so'))
-#sampling_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_sampling_so_server.so'))
+#sampling_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_sampling_so.so')) #For Jetson Nano
+sampling_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_sampling_so_server.so')) #For server
 
 
 def prob_sample(inp,inpr):
@@ -60,7 +60,7 @@ returns:
     return sampling_module.farthest_point_sample(inp, npoint)
 ops.NoGradient('FarthestPointSample')
 
-def farthest_point_sample_bg(npoint,inp,weight=1, isFront=0):
+def farthest_point_sample_bg(npoint, inp, isPainted, weight=1, isFront=0):
     '''
 input:
     int32
@@ -69,20 +69,22 @@ input:
 returns:
     batch_size * npoint         int32
     '''
-    return sampling_module.farthest_point_sample_bg(inp, npoint,weight,isFront)
+    return sampling_module.farthest_point_sample_bg(inp, isPainted, npoint, weight, isFront)
 ops.NoGradient('FarthestPointSampleBg')
 
 
-def farthest_point_sample_bg2(npoint,inp,weight1=1, weight2=1, isFront1=0, isFront2=0):
+def farthest_point_sample_bg2(npoint, inp, isPainted, weight1=1, weight2=1, isFront1=0, isFront2=0):
     '''
 input:
-    int32
-    batch_size * ndataset * 4   float32
-    wegiht: weight for painted points' distance
+    npoint                                  int32
+    inp         batch_size * ndataset * 3   float32
+    isPainted   batch_size * ndataset       int32
+    wegiht      weight for painted points' distance
 returns:
-    batch_size * npoint         int32
+    out             batch_size * npoint * 2     int32
+    is_painted_out  batch_size * npoint * 2     int32
     '''
-    return sampling_module.farthest_point_sample_bg2(inp, npoint, weight1, weight2, isFront1, isFront2)
+    return sampling_module.farthest_point_sample_bg2(inp, isPainted, npoint, weight1, weight2, isFront1, isFront2)
 ops.NoGradient('FarthestPointSampleBg2')
 
 
@@ -98,15 +100,17 @@ if __name__=='__main__':
     cos_x = np.cos(np.pi/N * 2 * idxs)
     sin_x = np.sin(np.pi/N * 2 * idxs)
     z_coord = np.array([0]*N)
-    isBg = np.array([1] * (N//2) + [0] * (N//2))
+    isPainted = np.array([0] * (N//2) + [1] * (N//2))
     #isBg = np.array([0] * 16)
 
-    inputs = np.vstack([cos_x, sin_x, z_coord, isBg])
+    inputs = np.vstack([cos_x, sin_x, z_coord])
     inputs = inputs.transpose()    
     print(inputs.shape)
+    print(isPainted.shape)
     inputs = np.expand_dims(inputs, axis=0)
-    #res = farthest_point_sample_bg(npoint, inputs, 0.01, 0)
-    res = farthest_point_sample_bg2(npoint, inputs, 0.01, 100, -1, -1)
+    isPainted = np.expand_dims(isPainted, axis=0)
+    res = farthest_point_sample_bg(npoint, inputs, isPainted, 0.01, 0)
+    #res = farthest_point_sample_bg2(npoint, inputs, isPainted, 0.01, 100, -1, -1)
     print(res)
     
 

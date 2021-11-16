@@ -4,10 +4,9 @@ import sys
 import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
-# For Jetson Nano
-grouping_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_grouping_so.so'))
-# For Server
-#grouping_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_grouping_so_server.so'))
+
+#grouping_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_grouping_so.so')) # For Jetson Nano
+grouping_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_grouping_so_server.so')) # For Server
 def query_ball_point(radius, nsample, xyz1, xyz2):
     '''
     Input:

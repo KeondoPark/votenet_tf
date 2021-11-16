@@ -28,8 +28,8 @@ import tensorflow as tf
 import scipy.io as sio # to load .mat files for depth points
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
-DATA_DIR = os.path.dirname(ROOT_DIR)
-#DATA_DIR = '/home/aiot/data'
+#DATA_DIR = os.path.dirname(ROOT_DIR)
+DATA_DIR = '/home/aiot/data'
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 import pc_util
@@ -238,9 +238,9 @@ class SunrgbdDetectionVotesDataset_tfrecord():
             self.dim_features = 3 + 10 + 1
 
         if self.use_painted:
-            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf2'%(split_set))
+            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf3'%(split_set))
         else:
-            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_tf2'%(split_set))
+            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_tf3'%(split_set))
 
         print(self.data_path)
 

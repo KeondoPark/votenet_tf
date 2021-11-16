@@ -353,7 +353,7 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
     # Load semantic segmentation model(Written and trained in TF1.15)
     if pointpainting:
         INPUT_SIZE = 513
-        with tf.compat.v1.gfile.GFile('../test/saved_model/sunrgbd_ade20k_11.pb', "rb") as f:
+        with tf.compat.v1.gfile.GFile('../test/saved_model/sunrgbd_ade20k_12.pb', "rb") as f:
             graph_def = tf.compat.v1.GraphDef()
             graph_def.ParseFromString(f.read())
         
@@ -586,9 +586,9 @@ if __name__=='__main__':
         assert args.tfrecord, "Need to set tfrecord flag as True"
         extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/train_data_idx.txt'),
             split = 'training',
-            output_folder = os.path.join(os.path.dirname(os.path.dirname(BASE_DIR)), 'sunrgbd_pc_train_painted_tf2'),
+            output_folder = os.path.join(DATA_DIR, 'sunrgbd_pc_train_painted_tf3'),
             num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True)
         extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/val_data_idx.txt'),
             split = 'training',
-            output_folder = os.path.join(os.path.dirname(os.path.dirname(BASE_DIR)), 'sunrgbd_pc_val_painted_tf2'),
+            output_folder = os.path.join(DATA_DIR, 'sunrgbd_pc_val_painted_tf3'),
             num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True)

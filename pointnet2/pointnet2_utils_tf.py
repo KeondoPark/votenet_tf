@@ -136,16 +136,13 @@ class QueryAndGroup(layers.Layer):
                 self.use_xyz
             ), "Cannot have not features and not use xyz as a feature!"
             new_features = grouped_xyz
-        #print("Runtime for group_point: ", time.time() - start)
-        ret = new_features, idx
+        #print("Runtime for group_point: ", time.time() - start)        
         
         if self.ret_grouped_xyz:
-            ret = new_features, idx, grouped_xyz
-            #ret.append(grouped_xyz)
+            ret = new_features            
         
         if self.ret_unique_cnt:
-            ret = new_features, idx, grouped_xyz, unique_cnt
-            #ret.append(unique_cnt)
+            ret = new_features, unique_cnt            
         
         return ret
 
