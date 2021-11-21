@@ -120,6 +120,8 @@ class _ConvBase(layers.Layer):
                 bias_initializer=init if bias else None,                
                 data_format=data_format,
                 input_shape =input_shape
+                #kernel_regularizer=tf.keras.regularizers.l2(),
+                #bias_regularizer=tf.keras.regularizers.l2()
             )
         else:
             self.conv_unit = layers.Conv2D(
@@ -131,7 +133,9 @@ class _ConvBase(layers.Layer):
                 padding=padding,
                 use_bias=bias if bias else None,
                 bias_initializer=init if bias else None,                
-                data_format=data_format                
+                data_format=data_format
+                #kernel_regularizer=tf.keras.regularizers.l2(),
+                #bias_regularizer=tf.keras.regularizers.l2()
             )
 
         self.bn = bn

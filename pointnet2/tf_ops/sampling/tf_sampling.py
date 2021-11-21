@@ -60,7 +60,7 @@ returns:
     return sampling_module.farthest_point_sample(inp, npoint)
 ops.NoGradient('FarthestPointSample')
 
-def farthest_point_sample_bg(npoint, inp, isPainted, weight=1, isFront=0):
+def farthest_point_sample_bg(npoint, inp, isPainted, weight=1):
     '''
 input:
     int32
@@ -69,11 +69,11 @@ input:
 returns:
     batch_size * npoint         int32
     '''
-    return sampling_module.farthest_point_sample_bg(inp, isPainted, npoint, weight, isFront)
+    return sampling_module.farthest_point_sample_bg(inp, isPainted, npoint, weight)
 ops.NoGradient('FarthestPointSampleBg')
 
 
-def farthest_point_sample_bg2(npoint, inp, isPainted, weight1=1, weight2=1, isFront1=0, isFront2=0):
+def farthest_point_sample_bg2(npoint, inp, isPainted, weight1=1, weight2=1):
     '''
 input:
     npoint                                  int32
@@ -84,7 +84,7 @@ returns:
     out             batch_size * npoint * 2     int32
     is_painted_out  batch_size * npoint * 2     int32
     '''
-    return sampling_module.farthest_point_sample_bg2(inp, isPainted, npoint, weight1, weight2, isFront1, isFront2)
+    return sampling_module.farthest_point_sample_bg2(inp, isPainted, npoint, weight1, weight2)
 ops.NoGradient('FarthestPointSampleBg2')
 
 
@@ -109,8 +109,8 @@ if __name__=='__main__':
     print(isPainted.shape)
     inputs = np.expand_dims(inputs, axis=0)
     isPainted = np.expand_dims(isPainted, axis=0)
-    res = farthest_point_sample_bg(npoint, inputs, isPainted, 0.01, 0)
-    #res = farthest_point_sample_bg2(npoint, inputs, isPainted, 0.01, 100, -1, -1)
+    res = farthest_point_sample_bg(npoint, inputs, isPainted, 0.01)
+    #res = farthest_point_sample_bg2(npoint, inputs, isPainted, 0.01, 100)
     print(res)
     
 

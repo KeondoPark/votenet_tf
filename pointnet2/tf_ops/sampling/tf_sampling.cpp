@@ -44,7 +44,6 @@ REGISTER_OP("FarthestPointSample")
 REGISTER_OP("FarthestPointSampleBg")
   .Attr("npoint: int")
   .Attr("weight: float")
-  .Attr("isFront: int")
   .Input("inp: float32")
   .Input("painted: int32")
   .Output("out: int32")
@@ -56,8 +55,6 @@ REGISTER_OP("FarthestPointSampleBg")
     float weight;
     int isFront;
     TF_RETURN_IF_ERROR(c->GetAttr("npoint", &npoint));
-    TF_RETURN_IF_ERROR(c->GetAttr("weight", &weight));
-    TF_RETURN_IF_ERROR(c->GetAttr("isFront", &isFront));
     ::tensorflow::shape_inference::ShapeHandle output = c->MakeShape({c->Dim(dims1, 0), npoint});
     ::tensorflow::shape_inference::ShapeHandle painted_output = c->MakeShape({c->Dim(dims1, 0), npoint});    
     c->set_output(0, output);
@@ -70,8 +67,6 @@ REGISTER_OP("FarthestPointSampleBg")
   .Attr("npoint: int")
   .Attr("weight1: float")
   .Attr("weight2: float")
-  .Attr("isFront1: int")
-  .Attr("isFront2: int")
   .Input("inp: float32")
   .Input("painted: int32")
   .Output("out: int32")  
@@ -86,9 +81,6 @@ REGISTER_OP("FarthestPointSampleBg")
     int isFront2;
     TF_RETURN_IF_ERROR(c->GetAttr("npoint", &npoint));
     TF_RETURN_IF_ERROR(c->GetAttr("weight1", &weight1));
-    TF_RETURN_IF_ERROR(c->GetAttr("isFront1", &isFront1));
-    TF_RETURN_IF_ERROR(c->GetAttr("weight2", &weight2));
-    TF_RETURN_IF_ERROR(c->GetAttr("isFront2", &isFront2));
     ::tensorflow::shape_inference::ShapeHandle output = c->MakeShape({c->Dim(dims1, 0), 2*npoint});    
     ::tensorflow::shape_inference::ShapeHandle painted_output = c->MakeShape({c->Dim(dims1, 0), 2*npoint});    
     c->set_output(0, output);    
@@ -181,19 +173,17 @@ class FarthestPointSampleGpuOp: public OpKernel{
 REGISTER_KERNEL_BUILDER(Name("FarthestPointSample").Device(DEVICE_GPU),FarthestPointSampleGpuOp);
 
 
-void farthestpointsamplingBgLauncher(int b, int n, int m, const float * inp, const int * painted, float * temp, int * out, int * is_painted_out, float wght, int isFront);
+void farthestpointsamplingBgLauncher(int b, int n, int m, const float * inp, const int * painted, float * temp, int * out, int * is_painted_out, float wght);
 class FarthestPointSampleBgGpuOp: public OpKernel{
   public:
     explicit FarthestPointSampleBgGpuOp(OpKernelConstruction* context):OpKernel(context) {
                     OP_REQUIRES_OK(context, context->GetAttr("npoint", &npoint_));
                     OP_REQUIRES_OK(context, context->GetAttr("weight", &weight_));
-                    OP_REQUIRES_OK(context, context->GetAttr("isFront", &isFront_));
                     OP_REQUIRES(context, npoint_ > 0, errors::InvalidArgument("FarthestPointSample expects positive npoint"));
                 }
     void Compute(OpKernelContext * context)override{
       int m = npoint_;
       float wght = weight_;
-      int isF = isFront_;
 
       const Tensor& inp_tensor=context->input(0);
       OP_REQUIRES(context, inp_tensor.dims()==3 && inp_tensor.shape().dim_size(2)==3, errors::InvalidArgument("FarthestPointSampleBg expects (batch_size,num_points,4) inp shape"));
@@ -222,32 +212,27 @@ class FarthestPointSampleBgGpuOp: public OpKernel{
       auto temp_flat = temp_tensor.flat<float>();
       float * temp = &(temp_flat(0));
 
-      farthestpointsamplingBgLauncher(b, n, m, inp, painted, temp, out, painted_out, wght, isF);
+      farthestpointsamplingBgLauncher(b, n, m, inp, painted, temp, out, painted_out, wght);
     }
     private:
         int npoint_;
         float weight_;
-        int isFront_;
 };
 REGISTER_KERNEL_BUILDER(Name("FarthestPointSampleBg").Device(DEVICE_GPU),FarthestPointSampleBgGpuOp);
 
-void farthestpointsamplingBgLauncher2(int b, int n, int m, const float * inp, const int * painted, float * temp1, float * temp2, int * out, int * is_painted_out, float wght1, float wght2, int isFront1, int isFront2);
+void farthestpointsamplingBgLauncher2(int b, int n, int m, const float * inp, const int * painted, float * temp1, float * temp2, int * out, int * is_painted_out, float wght1, float wght2);
 class FarthestPointSampleBgGpuOp2: public OpKernel{
   public:
     explicit FarthestPointSampleBgGpuOp2(OpKernelConstruction* context):OpKernel(context) {
                     OP_REQUIRES_OK(context, context->GetAttr("npoint", &npoint_));
                     OP_REQUIRES_OK(context, context->GetAttr("weight1", &weight1_));
                     OP_REQUIRES_OK(context, context->GetAttr("weight2", &weight2_));
-                    OP_REQUIRES_OK(context, context->GetAttr("isFront1", &isFront1_));
-                    OP_REQUIRES_OK(context, context->GetAttr("isFront2", &isFront2_));
                     OP_REQUIRES(context, npoint_ > 0, errors::InvalidArgument("FarthestPointSample expects positive npoint"));
                 }
     void Compute(OpKernelContext * context)override{
       int m = npoint_;
       float wght1 = weight1_;      
       float wght2 = weight2_;
-      int isF1 = isFront1_;
-      int isF2 = isFront2_;
 
       const Tensor& inp_tensor=context->input(0);
       OP_REQUIRES(context, inp_tensor.dims()==3 && inp_tensor.shape().dim_size(2)==3, errors::InvalidArgument("FarthestPointSampleBg expects (batch_size,num_points,3) inp shape"));
@@ -281,14 +266,12 @@ class FarthestPointSampleBgGpuOp2: public OpKernel{
       auto temp_flat2 = temp_tensor2.flat<float>();
       float * temp2 = &(temp_flat2(0));
 
-      farthestpointsamplingBgLauncher2(b, n, m, inp, painted, temp1, temp2, out, painted_out, wght1, wght2, isF1, isF2);
+      farthestpointsamplingBgLauncher2(b, n, m, inp, painted, temp1, temp2, out, painted_out, wght1, wght2);
     }
     private:
         int npoint_;
         float weight1_;
         float weight2_;
-        int isFront1_;
-        int isFront2_;
 };
 REGISTER_KERNEL_BUILDER(Name("FarthestPointSampleBg2").Device(DEVICE_GPU),FarthestPointSampleBgGpuOp2);
 

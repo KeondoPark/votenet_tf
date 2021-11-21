@@ -194,8 +194,7 @@ __global__ void farthestpointsamplingBgKernel(int b,int n,int m,
                                               float * __restrict__ temp,                                                
                                               int * __restrict__ idxs, 
                                               int * __restrict__ painted_out,
-                                              float wght, 
-                                              int isFront){
+                                              float wght){
   if (m<=0)
     return;
   const int BlockSize=512;
@@ -203,12 +202,7 @@ __global__ void farthestpointsamplingBgKernel(int b,int n,int m,
   __shared__ int dists_i[BlockSize];
   const int BufferSize=3072;
   __shared__ float buf[BufferSize*3];  
-  //__shared__ int thr;
-  __shared__ float maxy[8];
-  __shared__ float miny[8];
-  __shared__ float maxz[8];
-  __shared__ float minz[8];
-  
+  __shared__ float w; 
   
   // b: Batch size, n: Number of input points, m: Number of output(Sampled) points
   // gridDim: This variable contains the dimensions of the grid.
@@ -219,10 +213,6 @@ __global__ void farthestpointsamplingBgKernel(int b,int n,int m,
   for (int i=blockIdx.x; i<b; i+=gridDim.x){
     int old = 0;
     int cntObj = 0;
-    //maxy[i] = -10000.0;
-    //miny[i] = 10000.0;
-    //maxz[i] = -10000.0;
-    //minz[i] = 10000.0;
     
     if (threadIdx.x==0){
       idxs[i*m+0] = old; // First output is set to 0th point
@@ -236,12 +226,12 @@ __global__ void farthestpointsamplingBgKernel(int b,int n,int m,
       temp[blockIdx.x*n+j] = 1e38;            
     }
 
-    for (int j = threadIdx.x; j < min(BufferSize*3, n*3); j += blockDim.x){
-      int newj = (j/3)*3 + j % 3;
-      buf[j] = dataset[i*n*3 + newj];      
+    for (int j = threadIdx.x; j < min(BufferSize, n)*3; j += blockDim.x){      
+      buf[j] = dataset[i*n*3 + j];      
     }
     
     __syncthreads();
+    /*
     if (threadIdx.x == 0){
       for (int j = 0; j < n; j++){
         if (painted[i*n + j] > 0)
@@ -250,7 +240,13 @@ __global__ void farthestpointsamplingBgKernel(int b,int n,int m,
         //miny[i] = min(dataset[i*n*3 + 3*j + 1], miny[i]);
 
       }
-      /*
+      if (wght < 1.0){
+        w = wght;
+      } else {
+        w = max(1.0, 9.0 * cntObj / ((float) n)); // 1 ~ 9
+      }
+      
+      
       // If there is no painted point, find max and min of y coords.
       if (cntObj < 100) {
         if (isFront == 0){          
@@ -258,8 +254,9 @@ __global__ void farthestpointsamplingBgKernel(int b,int n,int m,
         } else if (isFront == 1)  {
           maxy[i] = maxy[i] - (maxy[i] - miny[i]) * 0.5;
         }        
-      } */     
+      }      
     }
+    */
     
     __syncthreads();
 
@@ -344,9 +341,7 @@ __global__ void farthestpointsamplingBgKernel2(int b,int n,int m,
                                                 int * __restrict__ idxs,                                                 
                                                 int * __restrict__ painted_out,
                                                 float wght1, 
-                                                float wght2, 
-                                                int isFront1,
-                                                int isFront2){
+                                                float wght2){
   if (m<=0)
     return;
   const int BlockSize=512;
@@ -358,8 +353,7 @@ __global__ void farthestpointsamplingBgKernel2(int b,int n,int m,
   __shared__ float buf[BufferSize*3];  
   //__shared__ int thr;
   __shared__ float maxy[8];
-  __shared__ float miny[8]; 
-  __shared__ float w1, w2; 
+  __shared__ float miny[8];   
   
   
   // b: Batch size, n: Number of input points, m: Number of output(Sampled) points
@@ -420,6 +414,7 @@ __global__ void farthestpointsamplingBgKernel2(int b,int n,int m,
     */
     __syncthreads();
 
+    /*
     if (threadIdx.x == 0){
       //maxy[i] = temp1[0];
       //miny[i] = temp2[0];
@@ -441,19 +436,19 @@ __global__ void farthestpointsamplingBgKernel2(int b,int n,int m,
         }
       }            
       
-      //w1 = max(0.01, 0.25 * cntObj / ((float) n)); // 0.01 ~ 0.25
-      //w2 = max(1.0, 16.0 * cntObj / ((float) n)); // 1 ~ 16
-      w1 = wght1;
-      w2 = wght2;
-      /*
+      w1 = wght1; //max(0.01, 0.25 * cntObj / ((float) n)); // 0.01 ~ 0.25
+      w2 = max(1.0, 9.0 * cntObj / ((float) n)); // 1 ~ 9
+      //w1 = wght1;
+      //w2 = wght2;
+      
       // If there is no painted point, find max and min of y coords.
       if (cntObj < 100) {
         if (isFront1 >= 0){          
           miny[i] = miny[i] + (maxy[i] - miny[i]) * 0.5;          
         }         
       } 
-      */     
-    }
+         
+    }*/
     
     for (int j = threadIdx.x; j < n; j += blockDim.x){
       temp1[blockIdx.x*n+j] = 1e38;
@@ -502,8 +497,8 @@ __global__ void farthestpointsamplingBgKernel2(int b,int n,int m,
         float db = (x2-xb)*(x2-xb) + (y2-yb)*(y2-yb) + (z2-zb)*(z2-zb);
         
         if (painted[i*n + k] > 0){
-          da = w1 * da;
-          db = w2 * db;
+          da = wght1 * da;
+          db = wght2 * db;
         } /*else if (cntObj < 100 && isFront1 >= 0){          
           if (isFront1 == 0){
             //Gives bigger weight to back area          
@@ -616,12 +611,12 @@ void farthestpointsamplingLauncher(int b,int n,int m,const float * inp,float * t
   farthestpointsamplingKernel<<<32,512>>>(b,n,m,inp,temp,out);
 }
 
-void farthestpointsamplingBgLauncher(int b, int n, int m, const float * inp, const int * painted, float * temp, int * out, int * painted_out, float wght, int isFront){
-  farthestpointsamplingBgKernel<<<32,512>>>(b, n, m, inp, painted, temp, out, painted_out, wght, isFront);
+void farthestpointsamplingBgLauncher(int b, int n, int m, const float * inp, const int * painted, float * temp, int * out, int * painted_out, float wght){
+  farthestpointsamplingBgKernel<<<32,512>>>(b, n, m, inp, painted, temp, out, painted_out, wght);
 }
 
-void farthestpointsamplingBgLauncher2(int b, int n, int m, const float * inp, const int * painted, float * temp1, float * temp2, int * out, int * painted_out, float wght1, float wght2, int isFront1, int isFront2){
-  farthestpointsamplingBgKernel2<<<32,512>>>(b, n, m, inp, painted, temp1, temp2, out, painted_out, wght1, wght2, isFront1, isFront2);
+void farthestpointsamplingBgLauncher2(int b, int n, int m, const float * inp, const int * painted, float * temp1, float * temp2, int * out, int * painted_out, float wght1, float wght2){
+  farthestpointsamplingBgKernel2<<<32,512>>>(b, n, m, inp, painted, temp1, temp2, out, painted_out, wght1, wght2);
 }
 
 

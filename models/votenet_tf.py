@@ -68,7 +68,7 @@ class VoteNet(tf.keras.Model):
             mean_size_arr, num_proposal, sampling, seed_feat_dim=128, \
             sep_coords=sep_coords, use_tflite=use_tflite, tflite_name='va_quant_2way_offset_edgetpu.tflite')
 
-    def call(self, inputs):
+    def call(self, point_cloud):
         """ Forward pass of the network
 
         Args:
@@ -83,7 +83,7 @@ class VoteNet(tf.keras.Model):
         Returns:
             end_points: list
         """
-        end_points = self.backbone_net(inputs)
+        end_points = self.backbone_net(point_cloud)
         
         # --------- HOUGH VOTING ---------
         #xyz = end_points['fp2_xyz']

@@ -109,7 +109,7 @@ def dump_results(end_points, dump_dir, config, inference_switch=False):
         isPainted = pc_seed[:,3]
         print("Total pointed:", np.sum(pc[:,3]))
         print("Painted among seeds(1024):", np.sum(isPainted))
-        print(isPainted.shape)
+        print(seed_inds)
 
         pc_util.write_ply(pc, os.path.join(dump_dir, '%06d_pc.ply'%(idx_beg+i)))
         #pc_util.write_ply(seed_xyz[i,:,:], os.path.join(dump_dir, '%06d_seed_pc.ply'%(idx_beg+i)))

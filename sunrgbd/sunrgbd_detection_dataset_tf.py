@@ -278,8 +278,6 @@ class SunrgbdDetectionVotesDataset_tfrecord():
  
         if self.use_color:
             self.dataset = self.dataset.map(self.preprocess_color, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-        else:
-            self.dataset = self.dataset.map(self.do_not_preprocess_color, num_parallel_calls=tf.data.experimental.AUTOTUNE)
         
         if self.use_height:
             self.dataset = self.dataset.map(self.preprocess_height, num_parallel_calls=tf.data.experimental.AUTOTUNE)
@@ -294,7 +292,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
 
     def _parse_function(self, example_proto):
         feature_description = {    
-            'point_cloud': tf.io.FixedLenFeature([N_POINT*self.dim_features], tf.float32),    
+            'point_cloud': tf.io.FixedLenFeature([N_POINT*self.dim_features], tf.float32),                
             'bboxes': tf.io.FixedLenFeature([N_BOX*8],tf.float32),
             'point_votes': tf.io.FixedLenFeature([N_POINT*10], tf.float32),    
             'n_valid_box': tf.io.FixedLenFeature([], tf.int64)
@@ -303,7 +301,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         return tf.io.parse_single_example(example_proto, feature_description)
 
     def reshape_tensor(self, features):        
-        point_cloud = tf.reshape(features['point_cloud'], [-1, N_POINT, self.dim_features])    
+        point_cloud = tf.reshape(features['point_cloud'], [-1, N_POINT, self.dim_features])            
         bboxes = tf.reshape(features['bboxes'], [-1, N_BOX, 8])
         point_votes = tf.reshape(features['point_votes'], [-1, N_POINT, 10])
         n_valid_box = tf.reshape(features['n_valid_box'], [-1])
@@ -319,9 +317,6 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         point_cloud = tf.concat((pc_coord, pc_RGB), axis=-1)
         return point_cloud, bboxes, point_votes, n_valid_box
 
-    def do_not_preprocess_color(self, point_cloud, bboxes, point_votes, n_valid_box):
-        #point_cloud = point_cloud[:,:,0:3]        
-        return point_cloud, bboxes, point_votes, n_valid_box
 
     def preprocess_height(self, point_cloud, bboxes, votes, n_valid_box):
         y_coords = point_cloud[:, :, 2]
@@ -421,7 +416,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         choice_indices = tf.tile(tf.expand_dims(choice_indices,0), [tf.shape(point_cloud)[0],1])
         
         point_cloud = tf.gather(point_cloud, choice_indices, axis=1, batch_dims=1)
-        point_votes = tf.gather(point_votes, choice_indices, axis=1, batch_dims=1)
+        point_votes = tf.gather(point_votes, choice_indices, axis=1, batch_dims=1)        
     
         return point_cloud, bboxes, point_votes, n_valid_box
 
@@ -488,39 +483,10 @@ class SunrgbdDetectionVotesDataset_tfrecord():
                 zmax = np.max(corners_3d[:,2])
                 target_bbox = np.array([(xmin+xmax)/2, (ymin+ymax)/2, (zmin+zmax)/2, xmax-xmin, ymax-ymin, zmax-zmin])
                 target_bboxes[b,i,:] = target_bbox
-            
-            #point_cloud_b = point_cloud[b].numpy()
-            #point_votes_b = point_votes[b].numpy()
-
-            #point_cloud_b, choices = pc_util.random_sampling(point_cloud_b, self.num_points, return_choices=True)
-            #point_cloud_sampled[b] = point_cloud_b
-            
-            #point_votes_mask[b] = point_votes_b[choices,0]
-            #point_votes_sampled[b] = point_votes_b[choices,1:]
-
-            
-            #point_cloud_sampled[b] = point_cloud_b[:self.num_points]
-            #point_votes_mask[b] = point_votes_b[:self.num_points, 0]
-            #point_votes_sampled[b] = point_votes_b[:self.num_points, 1:]
 
             target_bboxes_semcls[b,:n_box] = bboxes[b,:n_box,-1] # from 0 to 9
-
-        """
-        point_cloud = tf.convert_to_tensor(point_cloud, dtype=tf.float32)
-        center_label = tf.convert_to_tensor(target_bboxes[:,:,0:3], dtype=tf.float32)
-        heading_class_label = tf.convert_to_tensor(angle_classes, dtype=tf.int64)
-        heading_residual_label = tf.convert_to_tensor(angle_residuals, dtype=tf.float32)
-        size_class_label = tf.convert_to_tensor(size_classes, dtype=tf.int64)
         
-        size_residual_label = tf.convert_to_tensor(size_residuals, dtype=tf.float32)
-        sem_cls_label = tf.convert_to_tensor(target_bboxes_semcls, dtype=tf.int64)
-        box_label_mask = tf.convert_to_tensor(target_bboxes_mask, dtype=tf.float32)
-        vote_label = tf.convert_to_tensor(point_votes[:,:,1:], dtype=tf.float32)
-        vote_label_mask = tf.convert_to_tensor(tf.cast(point_votes[:,:,0],dtype=tf.int64), dtype=tf.int64)
-        
-        max_gt_bboxes = tf.convert_to_tensor(max_bboxes, dtype=tf.float32)
-        """  
-        point_cloud = tf.constant(point_cloud, dtype=tf.float32)
+        point_cloud = tf.constant(point_cloud, dtype=tf.float32)        
         center_label = tf.constant(target_bboxes[:,:,0:3], dtype=tf.float32)
         heading_class_label = tf.constant(angle_classes, dtype=tf.int64)
         heading_residual_label = tf.constant(angle_residuals, dtype=tf.float32)
@@ -539,12 +505,14 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         return output
 
     def tf_get_output(self, point_cloud, bboxes, point_votes, n_valid_box):
+
         [point_cloud, center_label, heading_class_label, heading_residual_label, size_class_label, \
             size_residual_label, sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes] \
                 = tf.py_function(func=self._get_output, inp=[point_cloud, bboxes, point_votes, n_valid_box],
-                                 Tout= [tf.float32, tf.float32, tf.int64, tf.float32, tf.int64, 
-                                        tf.float32, tf.int64, tf.float32, tf.float32, tf.int64, 
+                                 Tout= [tf.float32, tf.float32, tf.int64, tf.float32, tf.int64,  
+                                        tf.float32, tf.int64, tf.float32, tf.float32, tf.int64,
                                         tf.float32])
+        #return tuple(output)
         return point_cloud, center_label, heading_class_label, heading_residual_label, size_class_label, \
             size_residual_label, sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes
     

@@ -143,7 +143,7 @@ num_input_channel = int(FLAGS.use_color)*3 + int(not FLAGS.no_height)*1
 ### Point Paiting : Sementation score is appended at the end of point cloud
 if FLAGS.use_painted:
     # Probabilties that each point belongs to each class + is the point belong to background(Boolean)
-    num_input_channel += DATASET_CONFIG.num_class + 1 
+    num_input_channel += DATASET_CONFIG.num_class + 1
     
 
 
@@ -256,7 +256,7 @@ def train_one_epoch(batch_data):
     # Forward pass
     with tf.GradientTape() as tape:
 
-        point_cloud = batch_data[0]
+        point_cloud = batch_data[0]        
         #for i, data in enumerate(batch_data):
         #    print("==============================",label_dict[i])
         #    if i == 8:
@@ -287,6 +287,7 @@ def evaluate_one_epoch(batch_data):
     
     # Forward pass
     point_cloud = batch_data[0]
+    isPainted = batch_data[1]
     end_points = net(point_cloud, training=False)
 
     for i, label in label_dict.items():
@@ -306,7 +307,7 @@ def train(start_epoch):
     global EPOCH_CNT   
 
     input_signature=[[     
-        tf.TensorSpec(shape=(None, NUM_POINT, 3+num_input_channel), dtype=tf.float32), #point cloud
+        tf.TensorSpec(shape=(None, NUM_POINT, 3+num_input_channel), dtype=tf.float32), #point cloud        
         tf.TensorSpec(shape=(None, 64, 3), dtype=tf.float32), #center label
         tf.TensorSpec(shape=(None, 64), dtype=tf.int64), #heading class label
         tf.TensorSpec(shape=(None, 64), dtype=tf.float32), #heading residual label

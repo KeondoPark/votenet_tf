@@ -20,6 +20,7 @@ parser.add_argument('--checkpoint_path', default=None, help='Model checkpoint pa
 parser.add_argument('--gpu_mem_limit', type=int, default=0, help='GPU memory usage')
 parser.add_argument('--use_tflite', action='store_true', help='Use tflite')
 parser.add_argument('--use_painted', action='store_true', help='Use tflite')
+parser.add_argument('--inf_time_file', default=None, help='Record inference time')
 FLAGS = parser.parse_args()
 
 import tensorflow as tf
@@ -245,8 +246,8 @@ if __name__=='__main__':
                                         img, save_result=False)  
         else:
             pred_prob, pred_class = \
-                run_semantic_seg('test/saved_model/sunrgbd_ade20k_11.pb', img, save_result=False)  
-            
+                run_semantic_seg('test/saved_model/sunrgbd_ade20k_12.pb', img, save_result=False)  
+        time_record.append(('Deeplab inference time:', time.time()))    
 
         calib = dataset.get_calibration(data_idx)
         uv,d = calib.project_upright_depth_to_image(point_cloud[:,0:3]) #uv: (N, 2)
@@ -254,8 +255,9 @@ if __name__=='__main__':
         # Run image segmentation result and get result
         img = dataset.get_image2(data_idx)                
         pred_prob = pred_prob[:,:,1:(DC.num_class+1)] # 0 is background class
-        uv[:,0] = np.rint(uv[:,0] - 1)
-        uv[:,1] = np.rint(uv[:,1] - 1)
+        #uv[:,0] = np.rint(uv[:,0] - 1)
+        #uv[:,1] = np.rint(uv[:,1] - 1)
+        uv = np.rint(uv - 1)
         projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
         isObj = np.where((projected_class > 0) & (projected_class < 11), 1, 0) # Point belongs to background?                    
         isObj = np.expand_dims(isObj, axis=-1)
@@ -263,12 +265,12 @@ if __name__=='__main__':
                                 isObj,
                                 pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
                                 ], axis=-1)
-        time_record.append(('Deeplab inference time:', time.time()))
+        time_record.append(('Pointpainting time:', time.time()))
     
         pc = preprocess_point_cloud(painted)
     else:
         pc = preprocess_point_cloud(point_cloud)    
-    time_record.append(('Data preprocessing time:', time.time()))
+    time_record.append(('Votenet data preprocessing time:', time.time()))
    
     # Model inference
     inputs = {'point_clouds': tf.convert_to_tensor(pc)}
@@ -280,18 +282,19 @@ if __name__=='__main__':
     time_record += end_points['time_record']    
     time_record = time_record + [('Voting and Proposal time:', time.time())]
 
-    inf_time_log = open('inference_time.log', 'a+')
+    if FLAGS.inf_time_file:
+        inf_time_log = open(FLAGS.inf_time_file, 'a+')
 
-    for idx, (desc, t) in enumerate(time_record):
-        if idx == 0:                 
-            inf_time_log.write(desc + str(t) + '\n')
+        for idx, (desc, t) in enumerate(time_record):
+            if idx == 0:                 
+                inf_time_log.write(desc + str(t) + '\n')
+                prev_time = t
+                continue
+            inf_time_log.write(desc + str(t - prev_time) + '\n')
             prev_time = t
-            continue
-        inf_time_log.write(desc + str(t - prev_time) + '\n')
-        prev_time = t
-    
-    inf_time_log.write('Total inference time: %f \n'%(time_record[-1][1] - time_record[0][1]))
-    inf_time_log.close()
+        
+        inf_time_log.write('Total inference time: %f \n'%(time_record[-1][1] - time_record[0][1]))
+        inf_time_log.close()
 
     print('Inference time: %f'%(toc-tic))
 
@@ -312,6 +315,6 @@ if __name__=='__main__':
   
     dump_dir = os.path.join(demo_dir, '%s_results'%(FLAGS.dataset))
     if not os.path.exists(dump_dir): os.mkdir(dump_dir) 
-    dump_results(end_points, dump_dir, DC, True)
-    print('Dumped detection results to folder %s'%(dump_dir))
+    #dump_results(end_points, dump_dir, DC, True)
+    #print('Dumped detection results to folder %s'%(dump_dir))
 

@@ -119,8 +119,7 @@ class Pointnet2Backbone(layers.Layer):
         #print("========================== SA1 ===============================")
         time_record = []
         time_record.append(("Start:", time.time()))
-        sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features = self.sa1(xyz, features)
-        time_record.append(("SA1:", time.time()))
+        sa1_xyz, sa1_features, sa1_inds, sa1_ball_query_idx, sa1_grouped_features = self.sa1(xyz, features, time_record)        
         end_points['sa1_xyz'] = sa1_xyz
         end_points['sa1_features'] = sa1_features
         end_points['sa1_inds'] = sa1_inds        
@@ -129,8 +128,7 @@ class Pointnet2Backbone(layers.Layer):
 
         #print("========================== SA2 ===============================")
         #xyz, features, fps_inds = self.sa2(xyz, features) # this fps_inds is just 0,1,...,1023
-        sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features = self.sa2(sa1_xyz, sa1_features) # this fps_inds is just 0,1,...,1023
-        time_record.append(("SA2:", time.time()))
+        sa2_xyz, sa2_features, sa2_inds, sa2_ball_query_idx, sa2_grouped_features = self.sa2(sa1_xyz, sa1_features, time_record) # this fps_inds is just 0,1,...,1023        
         end_points['sa2_xyz'] = sa2_xyz
         end_points['sa2_features'] = sa2_features
         end_points['sa2_inds'] = sa2_inds        
@@ -139,8 +137,7 @@ class Pointnet2Backbone(layers.Layer):
 
         #print("========================== SA3 ===============================")
         #xyz, features, fps_inds = self.sa3(xyz, features) # this fps_inds is just 0,1,...,511
-        sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features = self.sa3(sa2_xyz, sa2_features) # this fps_inds is just 0,1,...,511
-        time_record.append(("SA3:", time.time()))
+        sa3_xyz, sa3_features, sa3_inds, sa3_ball_query_idx, sa3_grouped_features = self.sa3(sa2_xyz, sa2_features, time_record) # this fps_inds is just 0,1,...,511        
         end_points['sa3_xyz'] = sa3_xyz
         end_points['sa3_features'] = sa3_features
         end_points['sa3_inds'] = sa3_inds        
@@ -150,21 +147,12 @@ class Pointnet2Backbone(layers.Layer):
 
         #print("========================== SA4 ===============================")
         #xyz, features, fps_inds = self.sa4(xyz, features) # this fps_inds is just 0,1,...,255
-        sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features = self.sa4(sa3_xyz, sa3_features) # this fps_inds is just 0,1,...,255        
+        sa4_xyz, sa4_features, sa4_inds, sa4_ball_query_idx, sa4_grouped_features = self.sa4(sa3_xyz, sa3_features, time_record) # this fps_inds is just 0,1,...,255        
         end_points['sa4_xyz'] = sa4_xyz
         end_points['sa4_features'] = sa4_features
         end_points['sa4_inds'] = sa4_inds        
         #end_points['sa4_ball_query_idx'] = ball_query_idx
-        end_points['sa4_grouped_features'] = sa4_grouped_features
-        time_record.append(("SA4:", time.time()))
-
-        for idx, (desc, t) in enumerate(time_record):
-            if idx == 0:                 
-                prev_time = t
-                continue
-            print(desc, t - prev_time)
-            prev_time = t
-        print("SA runtime total:", time_record[-1][1] - time_record[0][1])
+        end_points['sa4_grouped_features'] = sa4_grouped_features        
 
         # --------- 2 FEATURE UPSAMPLING LAYERS --------
         #features = self.fp1(end_points['sa3_xyz'], end_points['sa4_xyz'], end_points['sa3_features'], end_points['sa4_features'])
@@ -182,6 +170,9 @@ class Pointnet2Backbone(layers.Layer):
         end_points['fp2_xyz'] = end_points['sa2_xyz']        
         num_seed = sa2_inds.shape[1]
         end_points['fp2_inds'] = end_points['sa1_inds'][:,0:num_seed] # indices among the entire input point clouds  
+
+        time_record.append(("SA End:", time.time()))
+        end_points['time_record'] = time_record 
         
         return end_points
 
@@ -263,6 +254,21 @@ class Pointnet2Backbone_p(layers.Layer):
             self.sa3_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa3_quant_2way_edgetpu.tflite')))
             self.sa4_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa4_quant_2way_edgetpu.tflite')))
 
+            self.sa1_interpreter.allocate_tensors()
+            self.sa2_interpreter.allocate_tensors()
+            self.sa3_interpreter.allocate_tensors()
+            self.sa4_interpreter.allocate_tensors()
+
+            self.sa1_input_details = self.sa1_interpreter.get_input_details()
+            self.sa2_input_details = self.sa2_interpreter.get_input_details()
+            self.sa3_input_details = self.sa3_interpreter.get_input_details()
+            self.sa4_input_details = self.sa4_interpreter.get_input_details()
+
+            self.sa1_output_details = self.sa1_interpreter.get_output_details()
+            self.sa2_output_details = self.sa2_interpreter.get_output_details()
+            self.sa3_output_details = self.sa3_interpreter.get_output_details()
+            self.sa4_output_details = self.sa4_interpreter.get_output_details()
+
             self._executor = ThreadPoolExecutor(2)
             self.loop = asyncio.get_event_loop()
 
@@ -273,10 +279,7 @@ class Pointnet2Backbone_p(layers.Layer):
 
         return xyz, isPainted, features
 
-    def call_tflite(self, interpreter, grouped_features):
-        interpreter.allocate_tensors()
-        input_details = interpreter.get_input_details()
-        output_details = interpreter.get_output_details()
+    def call_tflite(self, interpreter, grouped_features, input_details, output_details):        
         interpreter.set_tensor(input_details[0]['index'], grouped_features)
         interpreter.invoke()
         return interpreter.get_tensor(output_details[0]['index'])
@@ -286,7 +289,7 @@ class Pointnet2Backbone_p(layers.Layer):
                     functools.partial(self.call_tflite, interpreter, grouped_features))
         return features
 
-    def call(self, pointcloud, end_points=None):
+    def call(self, pointcloud, isPainted=None, end_points=None):
         r"""
             Forward pass of the network
 
@@ -315,7 +318,7 @@ class Pointnet2Backbone_p(layers.Layer):
         time_record.append(("SA Start:", time.time()))
         #sa1_xyz1, sa1_inds1, sa1_ball_query_idx1, sa1_grouped_features1 = self.sa1(xyz, features, bg=True, wght=0.01, isFront=-1)
         
-        sa1_xyz, sa1_inds, sa1_grouped_features, sa1_painted = self.sa1(xyz, isPainted, features, bg2=True, wght1=0.01, wght2=4, isFront=-1)
+        sa1_xyz, sa1_inds, sa1_grouped_features, sa1_painted = self.sa1(xyz, isPainted, features, bg2=True, wght1=0.01, wght2=4)
         time_record.append(("SA1 sampling and grouping:", time.time()))
         sa1_xyz1 = sa1_xyz[:,:1024,:]        
         sa1_grouped_features1 = sa1_grouped_features[:,:1024,:,:]        
@@ -327,9 +330,9 @@ class Pointnet2Backbone_p(layers.Layer):
         
         if self.use_tflite:
             if self.use_multiThr:
-                future1 = self._executor.submit(self.call_tflite, self.sa1_interpreter, sa1_grouped_features1)            
+                future1 = self._executor.submit(self.call_tflite, self.sa1_interpreter, sa1_grouped_features1, self.sa1_input_details, self.sa1_output_details)            
             else:
-                sa1_features1 = self.call_tflite(self.sa1_interpreter, sa1_grouped_features1)                        
+                sa1_features1 = self.call_tflite(self.sa1_interpreter, sa1_grouped_features1, self.sa1_input_details, self.sa1_output_details)                        
         else:                       
             sa1_features1 = self.sa1_mlp(sa1_grouped_features1)        
         time_record.append(("SA1 MLP:", time.time()))
@@ -345,9 +348,9 @@ class Pointnet2Backbone_p(layers.Layer):
         if self.use_tflite:
             if self.use_multiThr:
                 sa1_features1 = future1.result()        
-                future2 = self._executor.submit(self.call_tflite, self.sa1_interpreter, sa1_grouped_features2)
+                future2 = self._executor.submit(self.call_tflite, self.sa1_interpreter, sa1_grouped_features2, self.sa1_input_details, self.sa1_output_details)
             else:
-                sa1_features2 = self.call_tflite(self.sa1_interpreter, sa1_grouped_features2)                        
+                sa1_features2 = self.call_tflite(self.sa1_interpreter, sa1_grouped_features2, self.sa1_input_details, self.sa1_output_details)                        
         else:        
             sa1_features2 = self.sa1_mlp(sa1_grouped_features2)  
         time_record.append(("SA1 MLP:", time.time()))               
@@ -360,27 +363,24 @@ class Pointnet2Backbone_p(layers.Layer):
         if self.use_tflite:
             if self.use_multiThr:
                 sa1_features2 = future2.result()
-                future1 = self._executor.submit(self.call_tflite, self.sa2_interpreter, sa2_grouped_features1)                
+                future1 = self._executor.submit(self.call_tflite, self.sa2_interpreter, sa2_grouped_features1, self.sa2_input_details, self.sa2_output_details)                
             else:
-                sa2_features1 = self.call_tflite(self.sa2_interpreter, sa2_grouped_features1)
+                sa2_features1 = self.call_tflite(self.sa2_interpreter, sa2_grouped_features1, self.sa2_input_details, self.sa2_output_details)
             
         else:          
             sa2_features1 = self.sa2_mlp(sa2_grouped_features1)
         time_record.append(("SA2 MLP:", time.time()))
 
-        sa1_xyz = layers.Concatenate(axis=1)([sa1_xyz1, sa1_xyz2])
-        sa1_features = layers.Concatenate(axis=1)([sa1_features1, sa1_features2])        
-
-        sa2_xyz2, sa2_inds2, sa2_grouped_features2, sa2_painted2 = self.sa2(sa1_xyz2, sa1_painted2, sa1_features2, bg1=True, wght1=1, xyz_ball=sa1_xyz, features_ball=sa1_features)        
+        sa2_xyz2, sa2_inds2, sa2_grouped_features2, sa2_painted2 = self.sa2(sa1_xyz2, sa1_painted2, sa1_features2, bg1=True, wght1=1)
         time_record.append(("SA2 sampling and grouping:", time.time()))
         print("SA2 painted from painted:", tf.reduce_sum(sa2_painted2[0]))
 
         if self.use_tflite:
             if self.use_multiThr:
                 sa2_features1 = future1.result()
-                future2 = self._executor.submit(self.call_tflite, self.sa2_interpreter, sa2_grouped_features2)                
+                future2 = self._executor.submit(self.call_tflite, self.sa2_interpreter, sa2_grouped_features2, self.sa2_input_details, self.sa2_output_details)                
             else:
-                sa2_features2 = self.call_tflite(self.sa2_interpreter, sa2_grouped_features2)
+                sa2_features2 = self.call_tflite(self.sa2_interpreter, sa2_grouped_features2, self.sa2_input_details, self.sa2_output_details)
         else:  
             sa2_features2 = self.sa2_mlp(sa2_grouped_features2)
         time_record.append(("SA2 MLP:", time.time()))
@@ -392,9 +392,9 @@ class Pointnet2Backbone_p(layers.Layer):
         if self.use_tflite:
             if self.use_multiThr:            
                 sa2_features2 = future2.result()
-                future1 = self._executor.submit(self.call_tflite, self.sa3_interpreter, sa3_grouped_features1)
+                future1 = self._executor.submit(self.call_tflite, self.sa3_interpreter, sa3_grouped_features1, self.sa3_input_details, self.sa3_output_details)
             else:
-                sa3_features1 = self.call_tflite(self.sa3_interpreter, sa3_grouped_features1)
+                sa3_features1 = self.call_tflite(self.sa3_interpreter, sa3_grouped_features1, self.sa3_input_details, self.sa3_output_details)
         else:  
             sa3_features1 = self.sa3_mlp(sa3_grouped_features1)
         time_record.append(("SA3 MLP:", time.time()))
@@ -408,9 +408,9 @@ class Pointnet2Backbone_p(layers.Layer):
         if self.use_tflite:
             if self.use_multiThr:
                 sa3_features1 = future1.result()
-                future2 = self._executor.submit(self.call_tflite, self.sa3_interpreter, sa3_grouped_features2)
+                future2 = self._executor.submit(self.call_tflite, self.sa3_interpreter, sa3_grouped_features2, self.sa3_input_details, self.sa3_output_details)
             else:
-                sa3_features2 = self.call_tflite(self.sa3_interpreter, sa3_grouped_features2)            
+                sa3_features2 = self.call_tflite(self.sa3_interpreter, sa3_grouped_features2, self.sa3_input_details, self.sa3_output_details)            
         else:  
             sa3_features2 = self.sa3_mlp(sa3_grouped_features2)
         time_record.append(("SA3 MLP:", time.time()))
@@ -422,9 +422,9 @@ class Pointnet2Backbone_p(layers.Layer):
         if self.use_tflite:
             if self.use_multiThr:
                 sa3_features2 = future2.result()
-                future1 = self._executor.submit(self.call_tflite, self.sa4_interpreter, sa4_grouped_features1)
+                future1 = self._executor.submit(self.call_tflite, self.sa4_interpreter, sa4_grouped_features1, self.sa4_input_details, self.sa4_output_details)
             else:
-                sa4_features1 = self.call_tflite(self.sa4_interpreter, sa4_grouped_features1)            
+                sa4_features1 = self.call_tflite(self.sa4_interpreter, sa4_grouped_features1, self.sa4_input_details, self.sa4_output_details)            
         else:  
             sa4_features1 = self.sa4_mlp(sa4_grouped_features1)
         time_record.append(("SA4 MLP:", time.time()))
@@ -438,57 +438,55 @@ class Pointnet2Backbone_p(layers.Layer):
         if self.use_tflite:
             if self.use_multiThr:
                 sa4_features1 = future1.result()
-                future2 = self._executor.submit(self.call_tflite, self.sa4_interpreter, sa4_grouped_features2)
+                future2 = self._executor.submit(self.call_tflite, self.sa4_interpreter, sa4_grouped_features2, self.sa4_input_details, self.sa4_output_details)
                 sa4_features2 = future2.result()
             else:
                 sa4_features2 = self.call_tflite(self.sa4_interpreter, sa4_grouped_features2)            
         else:  
             sa4_features2 = self.sa4_mlp(sa4_grouped_features2)
-        time_record.append(("SA4 MLP:", time.time()))
-        end_points['time_record'] = time_record        
+        time_record.append(("SA4 MLP:", time.time()))             
 
-        end_points['sa1_xyz1'] = sa1_xyz1
-        end_points['sa1_features1'] = sa1_features1
-        end_points['sa1_inds1'] = sa1_inds1               
+        #end_points['sa1_xyz1'] = sa1_xyz1
+        #end_points['sa1_features1'] = sa1_features1
+        #end_points['sa1_inds1'] = sa1_inds1               
         end_points['sa1_grouped_features1'] = sa1_grouped_features1
-        end_points['sa1_xyz2'] = sa1_xyz2
-        end_points['sa1_features2'] = sa1_features2
-        end_points['sa1_inds2'] = sa1_inds2               
+        #end_points['sa1_xyz2'] = sa1_xyz2
+        #end_points['sa1_features2'] = sa1_features2
+        #end_points['sa1_inds2'] = sa1_inds2               
         end_points['sa1_grouped_features2'] = sa1_grouped_features2
 
-        end_points['sa2_xyz1'] = sa2_xyz1
-        end_points['sa2_features1'] = sa2_features1
-        end_points['sa2_inds1'] = sa2_inds1               
+        #end_points['sa2_xyz1'] = sa2_xyz1
+        #end_points['sa2_features1'] = sa2_features1
+        #end_points['sa2_inds1'] = sa2_inds1               
         end_points['sa2_grouped_features1'] = sa2_grouped_features1
-        end_points['sa2_xyz2'] = sa2_xyz2
-        end_points['sa2_features2'] = sa2_features2
-        end_points['sa2_inds2'] = sa2_inds2               
+        #end_points['sa2_xyz2'] = sa2_xyz2
+        #end_points['sa2_features2'] = sa2_features2
+        #end_points['sa2_inds2'] = sa2_inds2               
         end_points['sa2_grouped_features2'] = sa2_grouped_features2
 
-        end_points['sa3_xyz1'] = sa3_xyz1
-        end_points['sa3_features1'] = sa3_features1
-        end_points['sa3_inds1'] = sa3_inds1               
+        #end_points['sa3_xyz1'] = sa3_xyz1
+        #end_points['sa3_features1'] = sa3_features1
+        #end_points['sa3_inds1'] = sa3_inds1               
         end_points['sa3_grouped_features1'] = sa3_grouped_features1
-        end_points['sa3_xyz2'] = sa3_xyz2
-        end_points['sa3_features2'] = sa3_features2
-        end_points['sa3_inds2'] = sa3_inds2               
+        #end_points['sa3_xyz2'] = sa3_xyz2
+        #end_points['sa3_features2'] = sa3_features2
+        #end_points['sa3_inds2'] = sa3_inds2               
         end_points['sa3_grouped_features2'] = sa3_grouped_features2
 
-        end_points['sa4_xyz1'] = sa4_xyz1
-        end_points['sa4_features1'] = sa4_features1
-        end_points['sa4_inds1'] = sa4_inds1               
+        #end_points['sa4_xyz1'] = sa4_xyz1
+        #end_points['sa4_features1'] = sa4_features1
+        #end_points['sa4_inds1'] = sa4_inds1               
         end_points['sa4_grouped_features1'] = sa4_grouped_features1
-        end_points['sa4_xyz2'] = sa4_xyz2
-        end_points['sa4_features2'] = sa4_features2
-        end_points['sa4_inds2'] = sa4_inds2               
+        #end_points['sa4_xyz2'] = sa4_xyz2
+        #end_points['sa4_features2'] = sa4_features2
+        #end_points['sa4_inds2'] = sa4_inds2               
         end_points['sa4_grouped_features2'] = sa4_grouped_features2
 
         sa4_features = layers.Concatenate(axis=1)([sa4_features1, sa4_features2])
         sa4_xyz = layers.Concatenate(axis=1)([sa4_xyz1, sa4_xyz2])
-        sa4_xyz = sa4_xyz
 
-        sa2_inds = layers.Concatenate(axis=1)([sa2_inds1, sa2_inds2])
-        sa1_inds = layers.Concatenate(axis=1)([sa1_inds1, sa1_inds2])
+        #sa2_inds = layers.Concatenate(axis=1)([sa2_inds1, sa2_inds2])
+        #sa1_inds = layers.Concatenate(axis=1)([sa1_inds1, sa1_inds2])
 
         # --------- 2 FEATURE UPSAMPLING LAYERS --------
         #print("========================== FP1 ===============================")
@@ -497,13 +495,19 @@ class Pointnet2Backbone_p(layers.Layer):
         #print("========================== FP2 ===============================")
         fp2_features, fp2_grouped_features = self.fp2(sa2_xyz, sa3_xyz, sa2_features, fp1_features)        
 
-        end_points['fp1_grouped_features'] = fp1_grouped_features
+        #end_points['fp1_grouped_features'] = fp1_grouped_features
         end_points['fp2_features'] = fp2_features
-        end_points['fp2_grouped_features'] = fp2_grouped_features
+        #end_points['fp2_grouped_features'] = fp2_grouped_features
         end_points['fp2_xyz'] = sa2_xyz
-        num_seed = sa2_inds.shape[1]
-        #end_points['fp2_inds'] = sa1_inds[:,0:num_seed] # indices among the entire input point clouds   
-        end_points['fp2_inds'] = layers.Concatenate(axis=1)([sa1_inds1[:,0:(num_seed//2)], sa1_inds2[:,0:(num_seed//2)]])
+        #num_seed = sa2_inds.shape[1]
+        #end_points['fp2_inds'] = sa1_inds[:,0:num_seed] # indices among the entire input point clouds
+        seed_inds1 = tf.gather(sa1_inds1, axis=1, indices=sa2_inds1, batch_dims=1)
+        seed_inds2 = tf.gather(sa1_inds2, axis=1, indices=sa2_inds2, batch_dims=1)
+        end_points['fp2_inds'] = layers.Concatenate(axis=1)([seed_inds1, seed_inds2])       
+
+        
+        time_record.append(("SA End:", time.time()))
+        end_points['time_record'] = time_record   
 
         return end_points
 

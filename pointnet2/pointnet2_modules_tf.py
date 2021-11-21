@@ -230,7 +230,7 @@ class PointnetSAModuleVotes(layers.Layer):
             self.max_pool2 = layers.MaxPooling2D(pool_size=(1, int(self.nsample/16)), strides=(1,int(self.nsample/16)), data_format="channels_last")
             self.avg_pool = layers.AveragePooling2D(pool_size=(1, self.nsample), strides=1, data_format="channels_last")        
 
-    def call(self, xyz, features, inds=None, bg=False):
+    def call(self, xyz, features, time_record, inds=None, bg=False):
         r"""
         Parameters
         ----------
@@ -244,25 +244,22 @@ class PointnetSAModuleVotes(layers.Layer):
         new_features : (B, \sum_k(mlps[k][-1]), npoint) tensor of the new_features descriptors
         inds: (B, npoint) tensor of the inds
         ball_quer_idx: (B, npoint, nsample) Index of ball queried points
-        """
-        start = time.time()
+        """        
         if inds is None:           
             if bg:
-                inds = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, weight=1, isFront=-1)
+                inds = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, weight=1)
                 xyz = xyz[:,:,:3]
             else:
                 inds = tf_sampling.farthest_point_sample(self.npoint, xyz)                
-            #inds, batch_distances = pointnet2_utils.fps_light(xyz, self.npoint)
-            #end = time.time()
-            #print("Runtime for FPS original", end - start)
+            #inds, batch_distances = pointnet2_utils.fps_light(xyz, self.npoint)            
         else:
             assert(inds.shape[1] == self.npoint)   
 
-        #start = time.time()     
+        
         new_xyz = tf_sampling.gather_point(
             xyz, inds
         ) if self.npoint is not None else None
-        #end = time.time()
+        
         
 
         if not self.ret_unique_cnt:
@@ -275,11 +272,9 @@ class PointnetSAModuleVotes(layers.Layer):
             grouped_features, ball_query_idx, grouped_xyz, unique_cnt = self.grouper(
             #grouped_features, grouped_xyz, unique_cnt = self.grouper(
                 xyz, new_xyz, features
-            )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)
-        end = time.time()
-        print("Runtime for Sampling and Grouping:", end - start)
-
-        start = time.time()   
+            )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)        
+        time_record.append(("Runtime for Sampling and Grouping:", time.time()))
+         
         if self.use_tflite:
             self.interpreter.set_tensor(self.input_details[0]['index'], grouped_features)
             self.interpreter.invoke()
@@ -309,9 +304,8 @@ class PointnetSAModuleVotes(layers.Layer):
                 new_features = tf.reduce_sum(new_features * rbf.unsqueeze(1), axis=-1, keepdims=True) / float(self.nsample) # (B, mlp[-1], npoint, 1)
             '''
         #new_features = tf.squeeze(new_features, axis=-2)  # (B, npoint, mlp[-1])
-        new_features = layers.Reshape((self.npoint, new_features.shape[-1]))(new_features)
-        end = time.time()
-        print("Runtime for shared MLP:", end - start)
+        new_features = layers.Reshape((self.npoint, new_features.shape[-1]))(new_features)        
+        time_record.append(("Runtime for shared MLP:", time.time()))
 
         if not self.ret_unique_cnt:
             #return new_xyz, new_features, inds
@@ -351,7 +345,7 @@ class SamplingAndGrouping(layers.Layer):
         else:
             self.grouper = pointnet2_utils_tf.GroupAll(use_xyz, ret_grouped_xyz=True)
         
-    def call(self, xyz, isPainted, features, inds=None, bg1=False, bg2=False, wght1=1, wght2=1, isFront=0, xyz_ball=None, features_ball=None):
+    def call(self, xyz, isPainted, features, inds=None, bg1=False, bg2=False, wght1=1, wght2=1, xyz_ball=None, features_ball=None):
     #def call(self, xyz, features, inds=None, bg=False, wght=1, isFront=0, xyz_ball=None, features_ball=None):
         r"""
         Parameters
@@ -371,9 +365,9 @@ class SamplingAndGrouping(layers.Layer):
         if inds is None:                        
             if bg2:                                    
                 #inds = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, wght, isFront)                                
-                inds, isPainted = tf_sampling.farthest_point_sample_bg2(self.npoint, xyz, isPainted, wght1, wght2, isFront)                                           
+                inds, isPainted = tf_sampling.farthest_point_sample_bg2(self.npoint, xyz, isPainted, wght1, wght2)                                           
             elif bg1:
-                inds, isPainted = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, isPainted, wght1, -1)                
+                inds, isPainted = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, isPainted, wght1)                
             else:
                 inds = tf_sampling.farthest_point_sample(self.npoint, xyz)     
         else:
