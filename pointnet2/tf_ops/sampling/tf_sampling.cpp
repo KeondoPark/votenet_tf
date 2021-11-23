@@ -55,6 +55,7 @@ REGISTER_OP("FarthestPointSampleBg")
     float weight;
     int isFront;
     TF_RETURN_IF_ERROR(c->GetAttr("npoint", &npoint));
+    TF_RETURN_IF_ERROR(c->GetAttr("weight", &weight));
     ::tensorflow::shape_inference::ShapeHandle output = c->MakeShape({c->Dim(dims1, 0), npoint});
     ::tensorflow::shape_inference::ShapeHandle painted_output = c->MakeShape({c->Dim(dims1, 0), npoint});    
     c->set_output(0, output);
@@ -75,12 +76,11 @@ REGISTER_OP("FarthestPointSampleBg")
     ::tensorflow::shape_inference::ShapeHandle dims1; // batch_size * npoint * 3
     c->WithRank(c->input(0), 3, &dims1);
     int npoint;
-    float weight1;
-    int isFront1;
-    float weight2;
-    int isFront2;
+    float weight1;    
+    float weight2;    
     TF_RETURN_IF_ERROR(c->GetAttr("npoint", &npoint));
     TF_RETURN_IF_ERROR(c->GetAttr("weight1", &weight1));
+    TF_RETURN_IF_ERROR(c->GetAttr("weight2", &weight2));
     ::tensorflow::shape_inference::ShapeHandle output = c->MakeShape({c->Dim(dims1, 0), 2*npoint});    
     ::tensorflow::shape_inference::ShapeHandle painted_output = c->MakeShape({c->Dim(dims1, 0), 2*npoint});    
     c->set_output(0, output);    

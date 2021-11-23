@@ -273,8 +273,8 @@ class Pointnet2Backbone_p(layers.Layer):
             self.loop = asyncio.get_event_loop()
 
     def _break_up_pc(self, pc):
-        xyz = pc[:,:,0:3]
-        isPainted = tf.cast(pc[:,:,3], dtype=tf.int32)
+        xyz = pc[:,:,0:3]        
+        isPainted = tf.cast(pc[:,:,3], dtype=tf.int32)        
         features =  pc[:,:, 4:]
 
         return xyz, isPainted, features
@@ -316,17 +316,25 @@ class Pointnet2Backbone_p(layers.Layer):
         #Sample more background points
         time_record = []
         time_record.append(("SA Start:", time.time()))
-        #sa1_xyz1, sa1_inds1, sa1_ball_query_idx1, sa1_grouped_features1 = self.sa1(xyz, features, bg=True, wght=0.01, isFront=-1)
-        
+
+        """
         sa1_xyz, sa1_inds, sa1_grouped_features, sa1_painted = self.sa1(xyz, isPainted, features, bg2=True, wght1=0.01, wght2=4)
         time_record.append(("SA1 sampling and grouping:", time.time()))
         sa1_xyz1 = sa1_xyz[:,:1024,:]        
         sa1_grouped_features1 = sa1_grouped_features[:,:1024,:,:]        
         sa1_inds1 = sa1_inds[:,:1024]
         sa1_painted1 = sa1_painted[:,:1024] 
-        time_record.append(("SA1 tensor slicing:", time.time()))
-        print("Painted from original", tf.reduce_sum(isPainted[0]))
-        print("Painted from SA1", tf.reduce_sum(sa1_painted[0]))
+        time_record.append(("SA1 tensor slicing:", time.time()))        
+        # Better to locate below codes after sa1_mlp is done, when parallelizing
+        sa1_xyz2 = sa1_xyz[:,1024:,:]
+        sa1_grouped_features2 = sa1_grouped_features[:,1024:,:,:]
+        sa1_inds2 = sa1_inds[:,1024:]
+        sa1_painted2 = sa1_painted[:,1024:]         
+        """
+        
+        sa1_xyz1, sa1_inds1, sa1_grouped_features1, sa1_painted1 = self.sa1(xyz, isPainted, features, bg1=True, wght1=0.01)                
+        #print("Painted from original", tf.reduce_sum(isPainted[0]))
+        #print("Painted from SA1", tf.reduce_sum(sa1_painted[0]))        
         
         if self.use_tflite:
             if self.use_multiThr:
@@ -338,13 +346,10 @@ class Pointnet2Backbone_p(layers.Layer):
         time_record.append(("SA1 MLP:", time.time()))
         
         #Sample more painted points
-        #sa1_xyz2, sa1_inds2, sa1_ball_query_idx2, sa1_grouped_features2 = self.sa1(xyz, features, bg=True, wght=4, isFront=-1)
+        sa1_xyz2, sa1_inds2, sa1_grouped_features2, sa1_painted2 = self.sa1(xyz, isPainted, features, bg1=True, wght1=4)        
         #time_record.append(("SA1 sampling and grouping:", time.time()))
-        sa1_xyz2 = sa1_xyz[:,1024:,:]
-        sa1_grouped_features2 = sa1_grouped_features[:,1024:,:,:]
-        sa1_inds2 = sa1_inds[:,1024:]
-        sa1_painted2 = sa1_painted[:,1024:] 
         
+
         if self.use_tflite:
             if self.use_multiThr:
                 sa1_features1 = future1.result()        
@@ -356,9 +361,10 @@ class Pointnet2Backbone_p(layers.Layer):
         time_record.append(("SA1 MLP:", time.time()))               
 
         # ------------------------------- SA2-------------------------------        
-        sa2_xyz1, sa2_inds1, sa2_grouped_features1, sa2_painted1 = self.sa2(sa1_xyz1, sa1_painted1, sa1_features1, bg1=True, wght1=1)
+        sa2_xyz1, sa2_inds1, sa2_grouped_features1, sa2_painted1 = self.sa2(sa1_xyz1, sa1_painted1, sa1_features1, bg1=True, wght1=0.01)
         time_record.append(("SA2 sampling and grouping:", time.time()))
         print("SA2 painted from background:", tf.reduce_sum(sa2_painted1[0]))       
+        
         
         if self.use_tflite:
             if self.use_multiThr:
@@ -371,7 +377,7 @@ class Pointnet2Backbone_p(layers.Layer):
             sa2_features1 = self.sa2_mlp(sa2_grouped_features1)
         time_record.append(("SA2 MLP:", time.time()))
 
-        sa2_xyz2, sa2_inds2, sa2_grouped_features2, sa2_painted2 = self.sa2(sa1_xyz2, sa1_painted2, sa1_features2, bg1=True, wght1=1)
+        sa2_xyz2, sa2_inds2, sa2_grouped_features2, sa2_painted2 = self.sa2(sa1_xyz2, sa1_painted2, sa1_features2, bg1=True, wght1=4)
         time_record.append(("SA2 sampling and grouping:", time.time()))
         print("SA2 painted from painted:", tf.reduce_sum(sa2_painted2[0]))
 
@@ -386,7 +392,7 @@ class Pointnet2Backbone_p(layers.Layer):
         time_record.append(("SA2 MLP:", time.time()))
 
         # ------------------------------- SA3-------------------------------        
-        sa3_xyz1, sa3_inds1, sa3_grouped_features1, sa3_painted1 = self.sa3(sa2_xyz1, sa2_painted1, sa2_features1, bg1=True, wght1=1)
+        sa3_xyz1, sa3_inds1, sa3_grouped_features1, sa3_painted1 = self.sa3(sa2_xyz1, sa2_painted1, sa2_features1, bg1=True, wght1=0.01)
         time_record.append(("SA3 sampling and grouping:", time.time()))
 
         if self.use_tflite:
@@ -402,7 +408,7 @@ class Pointnet2Backbone_p(layers.Layer):
         sa2_xyz = layers.Concatenate(axis=1)([sa2_xyz1, sa2_xyz2])
         sa2_features = layers.Concatenate(axis=1)([sa2_features1, sa2_features2])        
 
-        sa3_xyz2, sa3_inds2, sa3_grouped_features2, sa3_painted2 = self.sa3(sa2_xyz2, sa2_painted2, sa2_features2, bg1=True, wght1=1, xyz_ball=sa2_xyz, features_ball=sa2_features)        
+        sa3_xyz2, sa3_inds2, sa3_grouped_features2, sa3_painted2 = self.sa3(sa2_xyz2, sa2_painted2, sa2_features2, bg1=True, wght1=4, xyz_ball=sa2_xyz, features_ball=sa2_features)        
         time_record.append(("SA3 sampling and grouping:", time.time()))
 
         if self.use_tflite:
@@ -416,7 +422,7 @@ class Pointnet2Backbone_p(layers.Layer):
         time_record.append(("SA3 MLP:", time.time()))
 
         # ------------------------------- SA4-------------------------------        
-        sa4_xyz1, sa4_inds1, sa4_grouped_features1, sa4_painted1 = self.sa4(sa3_xyz1, sa3_painted1, sa3_features1, bg1=True, wght1=1)
+        sa4_xyz1, sa4_inds1, sa4_grouped_features1, sa4_painted1 = self.sa4(sa3_xyz1, sa3_painted1, sa3_features1, bg1=True, wght1=0.01)
         time_record.append(("SA4 sampling and grouping:", time.time()))
 
         if self.use_tflite:
@@ -432,7 +438,7 @@ class Pointnet2Backbone_p(layers.Layer):
         sa3_xyz = layers.Concatenate(axis=1)([sa3_xyz1, sa3_xyz2])
         sa3_features = layers.Concatenate(axis=1)([sa3_features1, sa3_features2])        
 
-        sa4_xyz2, sa4_inds2, sa4_grouped_features2, sa4_painted2 = self.sa4(sa3_xyz2, sa3_painted2, sa3_features2, bg1=True, wght1=1, xyz_ball=sa3_xyz, features_ball=sa3_features)        
+        sa4_xyz2, sa4_inds2, sa4_grouped_features2, sa4_painted2 = self.sa4(sa3_xyz2, sa3_painted2, sa3_features2, bg1=True, wght1=4, xyz_ball=sa3_xyz, features_ball=sa3_features)        
         time_record.append(("SA4 sampling and grouping:", time.time()))
 
         if self.use_tflite:

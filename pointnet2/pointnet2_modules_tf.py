@@ -365,9 +365,11 @@ class SamplingAndGrouping(layers.Layer):
         if inds is None:                        
             if bg2:                                    
                 #inds = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, wght, isFront)                                
-                inds, isPainted = tf_sampling.farthest_point_sample_bg2(self.npoint, xyz, isPainted, wght1, wght2)                                           
+                inds, isPainted = tf_sampling.farthest_point_sample_bg2(self.npoint, xyz, isPainted, wght1, wght2) 
+                print("BG2")                                          
             elif bg1:
                 inds, isPainted = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, isPainted, wght1)                
+                print("BG1")                                          
             else:
                 inds = tf_sampling.farthest_point_sample(self.npoint, xyz)     
         else:

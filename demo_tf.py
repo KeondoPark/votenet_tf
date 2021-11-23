@@ -27,8 +27,8 @@ import tensorflow as tf
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
-#DATA_DIR = 'sunrgbd'
-DATA_DIR = '/home/aiot/data'
+DATA_DIR = 'sunrgbd'
+#DATA_DIR = '/home/aiot/data'
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 sys.path.append(os.path.join(ROOT_DIR, 'models'))
 from pc_util import random_sampling, read_ply
@@ -45,8 +45,9 @@ def preprocess_point_cloud(point_cloud):
     floor_height = np.percentile(point_cloud[:,2],0.99)
     height = point_cloud[:,2] - floor_height
     point_cloud = np.concatenate([point_cloud, np.expand_dims(height, 1)],1) # (N,4) or (N,7)
-    point_cloud = random_sampling(point_cloud, FLAGS.num_point)
-    pc = np.expand_dims(point_cloud.astype(np.float32), 0) # (1,40000,4)
+    if point_cloud.shape[0] > FLAGS.num_point:
+        point_cloud = random_sampling(point_cloud, FLAGS.num_point)
+    pc = np.expand_dims(point_cloud.astype(np.float32), 0) # (1,20000,4)
     return pc
 
 def create_pascal_label_colormap():
@@ -120,22 +121,22 @@ def run_semantic_seg_tflite(tflite_model, img, save_result=False):
     result = segment.get_output(interpreter)        
     
     new_width, new_height = resized_img.size
-    pred_prob = result[:new_height, :new_width, :]
-    pred_class = np.argmax(pred_prob, axis=-1) 
+    pred_prob = result[:new_height, :new_width, :]    
     
     # Return to original image size
     x = (np.array(range(orig_h)) * scale).astype(np.int)
     y = (np.array(range(orig_w)) * scale).astype(np.int)
     xv, yv = np.meshgrid(x, y, indexing='ij')
 
-    pred_prob = pred_prob[xv, yv]
-    pred_class = pred_class[xv, yv]
+    pred_prob = pred_prob[xv, yv] # height, width
+    #pred_class = pred_class[xv, yv]
 
     # Save semantic segmentation result as image file(Original vs Semantic result)
     if save_result:
+        pred_class = np.argmax(pred_prob, axis=-1) 
         save_semantic_result(img, pred_class)
 
-    return pred_prob, pred_class
+    return pred_prob
 
 def run_semantic_seg(tf_model, img, save_result=False):
     INPUT_SIZE = 513
@@ -239,9 +240,9 @@ if __name__=='__main__':
         ## TODO: NEED TO BE REPLACED
         img = dataset.get_image2(data_idx)
 
-        if FLAGS.use_tflite:      
-            
-            pred_prob, pred_class = \
+        # Run image segmentation result and get result
+        if FLAGS.use_tflite:                  
+            pred_prob = \
                 run_semantic_seg_tflite(os.path.join('tflite_models','sunrgbd_ade20k_11_quant_edgetpu.tflite'), \
                                         img, save_result=False)  
         else:
@@ -250,20 +251,26 @@ if __name__=='__main__':
         time_record.append(('Deeplab inference time:', time.time()))    
 
         calib = dataset.get_calibration(data_idx)
-        uv,d = calib.project_upright_depth_to_image(point_cloud[:,0:3]) #uv: (N, 2)
-
-        # Run image segmentation result and get result
-        img = dataset.get_image2(data_idx)                
-        pred_prob = pred_prob[:,:,1:(DC.num_class+1)] # 0 is background class
+        point_cloud_sampled = random_sampling(point_cloud[:,0:3], FLAGS.num_point)
+        uv,d = calib.project_upright_depth_to_image(point_cloud_sampled) #uv: (N, 2)
+                
         #uv[:,0] = np.rint(uv[:,0] - 1)
         #uv[:,1] = np.rint(uv[:,1] - 1)
         uv = np.rint(uv - 1)
-        projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
+        
+        pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)] # (npoint, num_class + 1 + 1 )
+        projected_class = np.argmax(pred_prob, axis=-1) # (npoint, 1) 
         isObj = np.where((projected_class > 0) & (projected_class < 11), 1, 0) # Point belongs to background?                    
         isObj = np.expand_dims(isObj, axis=-1)
-        painted = np.concatenate([point_cloud[:,:3],\
+
+        # 0 is background class, deeplab is trained with "person" included, (height, width, num_class)
+        pred_prob = pred_prob[:,1:(DC.num_class+1)] #(npoint, num_class)
+        
+        #projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]         
+        painted = np.concatenate([point_cloud_sampled,\
                                 isObj,
-                                pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
+                                pred_prob
+                                #pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
                                 ], axis=-1)
         time_record.append(('Pointpainting time:', time.time()))
     

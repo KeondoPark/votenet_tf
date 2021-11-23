@@ -231,32 +231,28 @@ __global__ void farthestpointsamplingBgKernel(int b,int n,int m,
     }
     
     __syncthreads();
-    /*
+    
     if (threadIdx.x == 0){
-      for (int j = 0; j < n; j++){
-        if (painted[i*n + j] > 0)
-          cntObj++;
-        //maxy[i] = max(dataset[i*n*3 + 3*j + 1], maxy[i]);
-        //miny[i] = min(dataset[i*n*3 + 3*j + 1], miny[i]);
-
-      }
-      if (wght < 1.0){
-        w = wght;
+      if (wght < 1.0){ // sampling background points
+        for (int j = 0; j < n; j++){        
+          if (painted[i*n + j] == 0){
+            idxs[i*m+0] = j;     
+            painted_out[i*m + 0] = painted[i*n+j];             
+            break;
+          }          
+        }
       } else {
-        w = max(1.0, 9.0 * cntObj / ((float) n)); // 1 ~ 9
+        for (int j = 0; j < n; j++){        
+          if (painted[i*n + j] > 0){
+            idxs[i*m+0] = j;
+            painted_out[i*m + 0] = painted[i*n+j];    
+            break;
+          }          
+        }
       }
-      
-      
-      // If there is no painted point, find max and min of y coords.
-      if (cntObj < 100) {
-        if (isFront == 0){          
-          miny[i] = miny[i] + (maxy[i] - miny[i]) * 0.5;          
-        } else if (isFront == 1)  {
-          maxy[i] = maxy[i] - (maxy[i] - miny[i]) * 0.5;
-        }        
-      }      
     }
-    */
+    
+    old = idxs[i*m+0];
     
     __syncthreads();
 
@@ -290,15 +286,6 @@ __global__ void farthestpointsamplingBgKernel(int b,int n,int m,
           d = wght * d;
         }        
         
-        /*
-        if (cntObj < 100 && isFront >= 0){          
-          //Gives bigger weight to Focus area
-          //if (isFront == 0 && y2 < maxy[i] && y2 > miny[i] && z2 < maxz[i] && z2 > minz[i]){
-          if (y2 < maxy[i] && y2 > miny[i]){
-            d = 2 * d;
-          }          
-        } */
-
         float d2 = min(d,td);
         if (d2!=td)
           temp[blockIdx.x*n + k] = d2;        
@@ -364,7 +351,7 @@ __global__ void farthestpointsamplingBgKernel2(int b,int n,int m,
 
   for (int i=blockIdx.x; i<b; i+=gridDim.x){
     int old1 = 0;
-    int old2 = 1;
+    int old2 = 0;
     float cntObj = 0;
     maxy[i] = -10000.0;
     miny[i] = 10000.0;    
@@ -377,47 +364,19 @@ __global__ void farthestpointsamplingBgKernel2(int b,int n,int m,
     }
 
     // Initialize temp array
-    // For each point, the closest distance to sampled points
-    /*
+    // For each point, the closest distance to sampled points    
     for (int j = threadIdx.x; j < n; j += blockDim.x){
-      temp1[blockIdx.x*n+j] = dataset[i*n*3 + 3*j + 1];
-      temp2[blockIdx.x*n+j] = dataset[i*n*3 + 3*j + 1];      
-      //isObj[blockIdx.x*n+j] = dataset[i*n*4 + 4*j + 3];
-    }*/
-
-    /*
-    for (int j = threadIdx.x; j < min(BufferSize*3, n*3); j += blockDim.x){
-      int newj = (j/3)*3 + j % 3;
-      buf[j] = dataset[i*n*3 + newj];      
-    }*/
-
+      temp1[blockIdx.x*n+j] = 1e38;
+      temp2[blockIdx.x*n+j] = 1e38;            
+    }
     for (int j = threadIdx.x; j < min(BufferSize,n)*3; j += blockDim.x){
       buf[j] = dataset[i*n*3 + j];
     }
-    /*
-    //Reduce to the farthest one(512, 256, 128, ... 1)
-    for (int u=0; (1<<u) < blockDim.x; u++){
-      __syncthreads();
-      if (threadIdx.x < (blockDim.x>>(u+1))){
-        int i1 = (threadIdx.x*2)<<u;
-        int i2 = (threadIdx.x*2+1)<<u;
-
-        if (temp1[i1] < temp1[i2]){
-          temp1[i1] = temp1[i2];
-        } 
-
-        if (temp2[i1] > temp2[i2]){
-          temp2[i1] = temp2[i2];
-        }
-      }
-    }
-    */
+    
     __syncthreads();
 
-    /*
-    if (threadIdx.x == 0){
-      //maxy[i] = temp1[0];
-      //miny[i] = temp2[0];
+    
+    if (threadIdx.x == 0){      
       for (int j = 0; j < n; j++){        
         if (painted[i*n + j] > 0){
           //Change initial point for background, if it is painted.
@@ -426,39 +385,21 @@ __global__ void farthestpointsamplingBgKernel2(int b,int n,int m,
             idxs[i*2*m+0] = old1;
             painted_out[i*2*m + 0] = painted[i*n+old1];      
           }
-          cntObj += 1.0;       
-        }
-          
-        if (cntObj == 1.0){
-          old2 = j;
-          idxs[i*2*m + m] = old2; // Initial point for painted point set
-          painted_out[i*2*m + m] = painted[i*n+old2]; 
+          cntObj += 1.0;
+
+          if (cntObj == 1.0){
+            old2 = j;
+            idxs[i*2*m + m] = old2; // Initial point for painted point set
+            painted_out[i*2*m + m] = painted[i*n+old2]; 
+          }
         }
       }            
-      
-      w1 = wght1; //max(0.01, 0.25 * cntObj / ((float) n)); // 0.01 ~ 0.25
-      w2 = max(1.0, 9.0 * cntObj / ((float) n)); // 1 ~ 9
-      //w1 = wght1;
-      //w2 = wght2;
-      
-      // If there is no painted point, find max and min of y coords.
-      if (cntObj < 100) {
-        if (isFront1 >= 0){          
-          miny[i] = miny[i] + (maxy[i] - miny[i]) * 0.5;          
-        }         
-      } 
-         
-    }*/
-    
-    for (int j = threadIdx.x; j < n; j += blockDim.x){
-      temp1[blockIdx.x*n+j] = 1e38;
-      temp2[blockIdx.x*n+j] = 1e38;
-    }
-
-    __syncthreads();
+    }     
 
     old1  = idxs[i*2*m+0];
     old2  = idxs[i*2*m+m];
+
+    __syncthreads();
 
     for (int j = 1; j < m; j++){
       int besti1 = 0;

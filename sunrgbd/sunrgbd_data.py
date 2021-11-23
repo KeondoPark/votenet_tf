@@ -377,6 +377,7 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
         with tf.io.TFRecordWriter(tfrecords_shard_path) as writer:
             for data_idx in data_idx_shard_list: 
                 if data_idx == 2983: continue   #Errorneous data
+                #if data_idx < 5051 + 1900: continue
                 #print('------------- ', data_idx)
                 objects = dataset.get_label_objects(data_idx)
 
@@ -410,15 +411,17 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                     calib = dataset.get_calibration(data_idx)
                     uv,d = calib.project_upright_depth_to_image(pc_upright_depth_subsampled[:,0:3]) #uv: (N, 2)
                     
+                    # Round to the nearest integer; since uv starts from 1. subtract 1.
+                    uv[:,0] = np.rint(uv[:,0] - 1)
+                    uv[:,1] = np.rint(uv[:,1] - 1)
+                    
                     # Run image segmentation result and get result
                     img = dataset.get_image2(data_idx)    
                     
                     use_gt = True
 
-                    if use_gt:
-                        
-
-                        img_path = metadata[data_idx][4][0][12:]
+                    if use_gt: 
+                        img_path = metadata[data_idx-1][4][0][12:] # indexing starts from 1
                         img_path = os.path.join('/home','aiot',img_path)
                         seg_path = os.path.join('/'.join(img_path.split('/')[:-2]),'seg.mat')
 
@@ -438,27 +441,31 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                                 label_idx = label[name]                
                                 cur_seg = np.where(mask == idx+1, (label_idx), 0).astype(np.uint8)
                                 pred_class += cur_seg
+                        projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
                         pred_prob = np.eye(num_sunrgbd_class+1)[pred_class]
-                        pred_prob = pred_prob[:,:,1:]
+                        print(data_idx, mask.shape, max(uv[:,0]), max(uv[:,1]), pred_class.shape)
+                                                
+                        #pred_prob = np.eye(num_sunrgbd_class+1)[pred_class]
+                        #pred_prob = pred_prob[:,:,1:]
                     else:
                         pred_prob, pred_class = run_semantic_segmentation(img, sess, INPUT_SIZE) # (w, h, num_class)     
                         pred_prob = pred_prob[:,:,1:(num_sunrgbd_class+1)] # 0 is background class              
-                        
-                    # Find the mapping from image to point cloud
-                    uv[:,0] = np.rint(uv[:,0] - 1)
-                    uv[:,1] = np.rint(uv[:,1] - 1)
+                        projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
+                        pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
+                    
+                    
+                    
 
                     #print("maximum value of uv, Expected:", w-1, h-1, "Actual:", max(uv[:,0]), max(uv[:,1]))
                     #print("Minimum of uv", min(uv[:,0]), min(uv[:,1]))
-
-                    projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
+                    
                     isPainted = np.where((projected_class > 0) & (projected_class < 11), 1, 0) # Point belongs to background?                    
                     isPainted = np.expand_dims(isPainted, axis=-1)
 
                     # Append segmentation score to each point
                     painted_pc = np.concatenate([pc_upright_depth_subsampled[:,:3],\
                                             isPainted,\
-                                            pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
+                                            pred_prob
                                             ], axis=-1)
 
                     #painted = painted[(-painted[:,3]).argsort()]
