@@ -241,18 +241,25 @@ __global__ void farthestpointsamplingBgKernel(int b,int n,int m,
             break;
           }          
         }
+        w = wght;
       } else {
-        for (int j = 0; j < n; j++){        
+        for (int j = 0; j < n; j++){
           if (painted[i*n + j] > 0){
-            idxs[i*m+0] = j;
-            painted_out[i*m + 0] = painted[i*n+j];    
-            break;
+            cntObj += 1.0;
+            if (cntObj == 1.0){
+              idxs[i*m+0] = j;
+              painted_out[i*m + 0] = painted[i*n+j];
+              //break;
+            }
           }          
         }
+        //w = wght;
+        w = max(1.0, (cntObj / (float) n) * wght); // 1.0 ~ 9.0
       }
-    }
+    }    
     
-    old = idxs[i*m+0];
+    old = idxs[i*m+0];   
+    
     
     __syncthreads();
 
@@ -283,7 +290,7 @@ __global__ void farthestpointsamplingBgKernel(int b,int n,int m,
         float d = (x2-x1)*(x2-x1) + (y2-y1)*(y2-y1) + (z2-z1)*(z2-z1);
         
         if (painted[i*n + k] > 0){
-          d = wght * d;
+          d = w * d;
         }        
         
         float d2 = min(d,td);

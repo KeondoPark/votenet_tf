@@ -4,3 +4,5 @@ eval*/
 tflite_rep_data/
 test/
 votenet_tf/
+tf_ckpt/
+logs/

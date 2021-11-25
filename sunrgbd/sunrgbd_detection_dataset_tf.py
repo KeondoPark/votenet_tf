@@ -238,9 +238,9 @@ class SunrgbdDetectionVotesDataset_tfrecord():
             self.dim_features = 3 + 10 + 1
 
         if self.use_painted:
-            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf3'%(split_set))
+            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf_gt'%(split_set))
         else:
-            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_tf3'%(split_set))
+            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_tf_gt'%(split_set))
 
         print(self.data_path)
 
@@ -254,6 +254,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
 
         self.tfrecords_pattern_path = "sunrgbd_*-of-*.records"
         self.files = tf.io.matching_files(os.path.join(self.data_path, self.tfrecords_pattern_path))
+        #self.files = tf.io.matching_files(os.path.join(self.data_path, 'sunrgbd_00000-of-00052.records'))
         if self.shuffle:
             self.files = tf.random.shuffle(self.files)     
         shards = tf.data.Dataset.from_tensor_slices(self.files)

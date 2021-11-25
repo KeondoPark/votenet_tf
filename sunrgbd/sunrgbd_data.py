@@ -442,9 +442,11 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                                 cur_seg = np.where(mask == idx+1, (label_idx), 0).astype(np.uint8)
                                 pred_class += cur_seg
                         projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
-                        pred_prob = np.eye(num_sunrgbd_class+1)[pred_class]
+                        pred_prob = np.eye(num_sunrgbd_class+1)[projected_class]                        
+                        pred_prob = pred_prob[:,1:(num_sunrgbd_class+1)]
                         print(data_idx, mask.shape, max(uv[:,0]), max(uv[:,1]), pred_class.shape)
-                                                
+                        print(projected_class.shape, pred_prob.shape)
+
                         #pred_prob = np.eye(num_sunrgbd_class+1)[pred_class]
                         #pred_prob = pred_prob[:,:,1:]
                     else:

@@ -100,7 +100,7 @@ if __name__=='__main__':
     cos_x = np.cos(np.pi/N * 2 * idxs)
     sin_x = np.sin(np.pi/N * 2 * idxs)
     z_coord = np.array([0]*N)
-    isPainted = np.array([0] * (N//2) + [1] * (N//2))
+    isPainted = np.array([1] * (N//2) + [0] * (N//2))
     #isBg = np.array([0] * 16)
 
     inputs = np.vstack([cos_x, sin_x, z_coord])
@@ -109,7 +109,7 @@ if __name__=='__main__':
     print(isPainted.shape)
     inputs = np.expand_dims(inputs, axis=0)
     isPainted = np.expand_dims(isPainted, axis=0)
-    res = farthest_point_sample_bg(npoint, inputs, isPainted, 0.01)
+    res = farthest_point_sample_bg(npoint, inputs, isPainted, 4)
     #res = farthest_point_sample_bg2(npoint, inputs, isPainted, 0.01, 100)
     print(res)
     

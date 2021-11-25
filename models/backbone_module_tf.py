@@ -344,8 +344,34 @@ class Pointnet2Backbone_p(layers.Layer):
         else:                       
             sa1_features1 = self.sa1_mlp(sa1_grouped_features1)        
         time_record.append(("SA1 MLP:", time.time()))
+        """
+        ## Filter selected points from first sampling... doesn't increase the accuracy
+        b = tf.shape(xyz)[0]
+        n = tf.shape(xyz)[1]
+        m = 1024
+        full_inds = tf.tile(tf.expand_dims(tf.range(0, n), axis=0), multiples=(b,1))#(b, n)
+        batch_id = tf.expand_dims(tf.tile(tf.expand_dims(tf.range(0,b), axis=-1), multiples=(1,m)), axis=-1) #(b, m, 1)
+        
+        #Prepare index for scatter
+        sa1_expand = tf.expand_dims(sa1_inds1, axis=-1) #(b, m, 1)
+        indices = tf.concat([batch_id, sa1_expand], -1) #(b, m, 2)
+        indices = tf.reshape(indices, [b*m, 2]) # (b*m, 2)
+        updates = tf.ones((b*m,))
+        #shape = tf.constant([b, n])
+        scatter = tf.scatter_nd(indices, updates, [b,n]) # (b, n) 1 where sa1_inds exists, 0 in other places
+        idx = tf.ones([b,n]) - scatter         
+        idx = tf.reshape(tf.where(idx==1), (b,n-m,2)) #(b, n-m, 2)
+        remain_inds = tf.gather_nd(full_inds, idx) #(b, n-m)
+
+        xyz_filtered = tf.gather(xyz, axis=1, indices=remain_inds, batch_dims=1) #(b, n-m, 4)
+        isPainted_filtered = tf.gather(isPainted, axis=1, indices=remain_inds, batch_dims=1) #(b, n-m)
+        features_filtered = tf.gather(features, axis=1, indices=remain_inds, batch_dims=1) #(b, n-m, C)
+        print(xyz.shape)        
         
         #Sample more painted points
+        sa1_xyz2, sa1_inds2, sa1_grouped_features2, sa1_painted2 = self.sa1(xyz_filtered, isPainted_filtered, features_filtered, bg1=True, wght1=4, xyz_ball=xyz, features_ball=features)        
+        """
+        
         sa1_xyz2, sa1_inds2, sa1_grouped_features2, sa1_painted2 = self.sa1(xyz, isPainted, features, bg1=True, wght1=4)        
         #time_record.append(("SA1 sampling and grouping:", time.time()))
         
@@ -361,7 +387,7 @@ class Pointnet2Backbone_p(layers.Layer):
         time_record.append(("SA1 MLP:", time.time()))               
 
         # ------------------------------- SA2-------------------------------        
-        sa2_xyz1, sa2_inds1, sa2_grouped_features1, sa2_painted1 = self.sa2(sa1_xyz1, sa1_painted1, sa1_features1, bg1=True, wght1=0.01)
+        sa2_xyz1, sa2_inds1, sa2_grouped_features1, sa2_painted1 = self.sa2(sa1_xyz1, sa1_painted1, sa1_features1, bg1=True, wght1=1)
         time_record.append(("SA2 sampling and grouping:", time.time()))
         print("SA2 painted from background:", tf.reduce_sum(sa2_painted1[0]))       
         
@@ -377,7 +403,7 @@ class Pointnet2Backbone_p(layers.Layer):
             sa2_features1 = self.sa2_mlp(sa2_grouped_features1)
         time_record.append(("SA2 MLP:", time.time()))
 
-        sa2_xyz2, sa2_inds2, sa2_grouped_features2, sa2_painted2 = self.sa2(sa1_xyz2, sa1_painted2, sa1_features2, bg1=True, wght1=4)
+        sa2_xyz2, sa2_inds2, sa2_grouped_features2, sa2_painted2 = self.sa2(sa1_xyz2, sa1_painted2, sa1_features2, bg1=True, wght1=1)
         time_record.append(("SA2 sampling and grouping:", time.time()))
         print("SA2 painted from painted:", tf.reduce_sum(sa2_painted2[0]))
 
@@ -392,7 +418,7 @@ class Pointnet2Backbone_p(layers.Layer):
         time_record.append(("SA2 MLP:", time.time()))
 
         # ------------------------------- SA3-------------------------------        
-        sa3_xyz1, sa3_inds1, sa3_grouped_features1, sa3_painted1 = self.sa3(sa2_xyz1, sa2_painted1, sa2_features1, bg1=True, wght1=0.01)
+        sa3_xyz1, sa3_inds1, sa3_grouped_features1, sa3_painted1 = self.sa3(sa2_xyz1, sa2_painted1, sa2_features1, bg1=True, wght1=1)
         time_record.append(("SA3 sampling and grouping:", time.time()))
 
         if self.use_tflite:
@@ -408,7 +434,7 @@ class Pointnet2Backbone_p(layers.Layer):
         sa2_xyz = layers.Concatenate(axis=1)([sa2_xyz1, sa2_xyz2])
         sa2_features = layers.Concatenate(axis=1)([sa2_features1, sa2_features2])        
 
-        sa3_xyz2, sa3_inds2, sa3_grouped_features2, sa3_painted2 = self.sa3(sa2_xyz2, sa2_painted2, sa2_features2, bg1=True, wght1=4, xyz_ball=sa2_xyz, features_ball=sa2_features)        
+        sa3_xyz2, sa3_inds2, sa3_grouped_features2, sa3_painted2 = self.sa3(sa2_xyz2, sa2_painted2, sa2_features2, bg1=True, wght1=1, xyz_ball=sa2_xyz, features_ball=sa2_features)        
         time_record.append(("SA3 sampling and grouping:", time.time()))
 
         if self.use_tflite:
@@ -422,7 +448,7 @@ class Pointnet2Backbone_p(layers.Layer):
         time_record.append(("SA3 MLP:", time.time()))
 
         # ------------------------------- SA4-------------------------------        
-        sa4_xyz1, sa4_inds1, sa4_grouped_features1, sa4_painted1 = self.sa4(sa3_xyz1, sa3_painted1, sa3_features1, bg1=True, wght1=0.01)
+        sa4_xyz1, sa4_inds1, sa4_grouped_features1, sa4_painted1 = self.sa4(sa3_xyz1, sa3_painted1, sa3_features1, bg1=True, wght1=1)
         time_record.append(("SA4 sampling and grouping:", time.time()))
 
         if self.use_tflite:
@@ -438,7 +464,7 @@ class Pointnet2Backbone_p(layers.Layer):
         sa3_xyz = layers.Concatenate(axis=1)([sa3_xyz1, sa3_xyz2])
         sa3_features = layers.Concatenate(axis=1)([sa3_features1, sa3_features2])        
 
-        sa4_xyz2, sa4_inds2, sa4_grouped_features2, sa4_painted2 = self.sa4(sa3_xyz2, sa3_painted2, sa3_features2, bg1=True, wght1=4, xyz_ball=sa3_xyz, features_ball=sa3_features)        
+        sa4_xyz2, sa4_inds2, sa4_grouped_features2, sa4_painted2 = self.sa4(sa3_xyz2, sa3_painted2, sa3_features2, bg1=True, wght1=1, xyz_ball=sa3_xyz, features_ball=sa3_features)        
         time_record.append(("SA4 sampling and grouping:", time.time()))
 
         if self.use_tflite:
@@ -516,31 +542,6 @@ class Pointnet2Backbone_p(layers.Layer):
         end_points['time_record'] = time_record   
 
         return end_points
-
-                
-        """
-        ## Filter selected points from first sampling... doesn't increase the accuracy
-        b = tf.shape(xyz)[0]
-        n = tf.shape(xyz)[1]
-        m = 1024
-        full_inds = tf.tile(tf.expand_dims(tf.range(0, n), axis=0), multiples=(b,1))#(b, n)
-        batch_id = tf.expand_dims(tf.tile(tf.expand_dims(tf.range(0,b), axis=-1), multiples=(1,m)), axis=-1) #(b, m, 1)
-        
-        #Prepare index for scatter
-        sa1_expand = tf.expand_dims(sa1_inds1, axis=-1) #(b, m, 1)
-        indices = tf.concat([batch_id, sa1_expand], -1) #(b, m, 2)
-        indices = tf.reshape(indices, [b*m, 2]) # (b*m, 2)
-        updates = tf.ones((b*m,))
-        #shape = tf.constant([b, n])
-        scatter = tf.scatter_nd(indices, updates, [b,n]) # (b, n) 1 where sa1_inds exists, 0 in other places
-        idx = tf.ones([b,n]) - scatter         
-        idx = tf.reshape(tf.where(idx==1), (b,n-m,2)) #(b, n-m, 2)
-        remain_inds = tf.gather_nd(full_inds, idx) #(b, n-m)
-
-        xyz = tf.gather(xyz, axis=1, indices=remain_inds, batch_dims=1) #(b, n-m, 4)
-        features = tf.gather(features, axis=1, indices=remain_inds, batch_dims=1) #(b, n-m, C)
-        print(xyz.shape)
-        """
         
         
 
