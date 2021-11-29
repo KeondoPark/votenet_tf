@@ -16,7 +16,7 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
 sys.path.append(BASE_DIR)
-from backbone_module_tf import Pointnet2Backbone, Pointnet2Backbone_p
+from backbone_module_tf import Pointnet2Backbone, Pointnet2Backbone_p, Pointnet2Backbone_tflite
 from voting_module_tf import VotingModule
 from proposal_module_tf import ProposalModule
 from dump_helper_tf import dump_results
@@ -55,10 +55,14 @@ class VoteNet(tf.keras.Model):
         self.num_proposal =  num_proposal
         self.vote_factor = vote_factor
         self.sampling=sampling
+        self.use_tflite = use_tflite
 
-        # Backbone point feature learning
-        self.backbone_net = Pointnet2Backbone_p(input_feature_dim=self.input_feature_dim, use_tflite=use_tflite)
-
+        if use_tflite:
+            # inference only
+            self.backbone_net = Pointnet2Backbone_tflite(input_feature_dim=self.input_feature_dim, use_tflite=use_tflite)
+        else:
+            # Backbone point feature learning
+            self.backbone_net = Pointnet2Backbone_p(input_feature_dim=self.input_feature_dim, use_tflite=use_tflite)
         # Hough voting
         self.vgen = VotingModule(self.vote_factor, seed_feature_dim=128, \
             sep_coords=sep_coords, use_tflite=use_tflite, tflite_name='voting_quant_2way_offset_edgetpu.tflite')
@@ -68,7 +72,7 @@ class VoteNet(tf.keras.Model):
             mean_size_arr, num_proposal, sampling, seed_feat_dim=128, \
             sep_coords=sep_coords, use_tflite=use_tflite, tflite_name='va_quant_2way_offset_edgetpu.tflite')
 
-    def call(self, point_cloud):
+    def call(self, point_cloud, img=None, calib=None):
         """ Forward pass of the network
 
         Args:
@@ -83,8 +87,10 @@ class VoteNet(tf.keras.Model):
         Returns:
             end_points: list
         """
-        end_points = self.backbone_net(point_cloud)
-        
+        if self.use_tflite:
+            end_points = self.backbone_net(point_cloud, img=img, calib=calib)
+        else:
+            end_points = self.backbone_net(point_cloud)
         # --------- HOUGH VOTING ---------
         #xyz = end_points['fp2_xyz']
         #features = end_points['fp2_features']

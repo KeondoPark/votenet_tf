@@ -238,9 +238,9 @@ class SunrgbdDetectionVotesDataset_tfrecord():
             self.dim_features = 3 + 10 + 1
 
         if self.use_painted:
-            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf_gt'%(split_set))
+            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf3'%(split_set))
         else:
-            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_tf_gt'%(split_set))
+            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_tf3'%(split_set))
 
         print(self.data_path)
 

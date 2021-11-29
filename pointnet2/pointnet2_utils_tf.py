@@ -91,18 +91,6 @@ class QueryAndGroup(layers.Layer):
             idx, _ = tf_grouping.knn_with_attention(self.nsample, xyz, new_xyz, attn)
         end = time.time()
         #print("Runtime for ball query original: ", end - start)
-        
-        """
-        start = time.time()
-        idx = ball_query_cpp(self.radius, self.nsample, xyz, new_xyz, batch_distances, inds)
-        end = time.time()
-        print("Runtime for ball query nocuda: ", end - start)
-
-        start = time.time()
-        idx = ball_query_cpu(self.radius, self.nsample, xyz, new_xyz, batch_distances, inds)
-        end = time.time()
-        print("Runtime for ball query pytorch: ", end - start)
-        """
 
         if self.sample_uniformly:
             unique_cnt = tf.zeros((idx.shape[0], idx.shape[1]))
@@ -115,12 +103,13 @@ class QueryAndGroup(layers.Layer):
                     all_ind = tf.concat([unique_ind, unique_ind[sample_ind]], axis=0)
                     idx[i_batch, i_region, :] = all_ind
         start = time.time()
-        grouped_xyz = tf_grouping.group_point(xyz, idx)  # (B, npoint, nsample, 3)
-        
+        grouped_xyz = tf_grouping.group_point(xyz, idx)  # (B, npoint, nsample, 3)        
         grouped_xyz -= tf.expand_dims(new_xyz, axis=-2)
-        if self.normalize_xyz and not knn:
-            #grouped_xyz /= self.radius
+        
+        if self.normalize_xyz and not knn:            
             grouped_xyz = tf.divide(grouped_xyz, self.radius)
+        
+        #dist = tf.math.sqrt(tf.reduce_sum(grouped_xyz * grouped_xyz, axis=-1, keepdims=True))        
 
         if features is not None:
             grouped_features = tf_grouping.group_point(features, idx)

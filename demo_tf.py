@@ -27,8 +27,8 @@ import tensorflow as tf
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
-DATA_DIR = 'sunrgbd'
-#DATA_DIR = '/home/aiot/data'
+#DATA_DIR = 'sunrgbd'
+DATA_DIR = '/home/aiot/data'
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 sys.path.append(os.path.join(ROOT_DIR, 'models'))
 from pc_util import random_sampling, read_ply
@@ -37,6 +37,7 @@ from ap_helper_tf import parse_predictions
 import votenet_tf
 from votenet_tf import dump_results
 from PIL import Image
+from deeplab import run_semantic_seg
 
 def preprocess_point_cloud(point_cloud):
     ''' Prepare the numpy point cloud (N,3) for forward pass '''
@@ -49,115 +50,6 @@ def preprocess_point_cloud(point_cloud):
         point_cloud = random_sampling(point_cloud, FLAGS.num_point)
     pc = np.expand_dims(point_cloud.astype(np.float32), 0) # (1,20000,4)
     return pc
-
-def create_pascal_label_colormap():
-  """Creates a label colormap used in PASCAL VOC segmentation benchmark.
-
-  Returns:
-    A Colormap for visualizing segmentation results.
-  """
-  colormap = np.zeros((256, 3), dtype=int)
-  indices = np.arange(256, dtype=int)
-
-  for shift in reversed(range(8)):
-    for channel in range(3):
-      colormap[:, channel] |= ((indices >> channel) & 1) << shift
-    indices >>= 3
-
-  return colormap
-
-def label_to_color_image(label):
-  """Adds color defined by the dataset colormap to the label.
-
-  Args:
-    label: A 2D array with integer type, storing the segmentation label.
-
-  Returns:
-    result: A 2D array with floating type. The element of the array
-      is the color indexed by the corresponding element in the input label
-      to the PASCAL color map.
-
-  Raises:
-    ValueError: If label is not of rank 2 or its value is larger than color
-      map maximum entry.
-  """
-  if label.ndim != 2:
-    raise ValueError('Expect 2-D input label')
-
-  colormap = create_pascal_label_colormap()
-
-  if np.max(label) >= len(colormap):
-    raise ValueError('label value too large.')
-
-  return colormap[label]
-
-def save_semantic_result(img, pred_class):
-    orig_w, orig_h = img.size
-    mask_img = Image.fromarray(label_to_color_image(pred_class).astype(np.uint8))
-
-    # Concat resized input image and processed segmentation results.
-    output_img = Image.new('RGB', (2 * orig_w, orig_h))
-    output_img.paste(img, (0, 0))
-    output_img.paste(mask_img, (orig_w, 0))
-    output_img.save('semantic_result.jpg')
-
-
-def run_semantic_seg_tflite(tflite_model, img, save_result=False):
-    
-    from pycoral.utils.edgetpu import make_interpreter
-    from pycoral.adapters import common
-    from pycoral.adapters import segment
-    
-    interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sunrgbd_ade20k_11_quant_edgetpu.tflite')))
-    interpreter.allocate_tensors()
-    width, height = common.input_size(interpreter)         
-    
-    orig_w, orig_h = img.size      
-
-    resized_img, (scale, scale) = common.set_resized_input(
-        interpreter, img.size, lambda size: img.resize(size, Image.ANTIALIAS))
-
-    interpreter.invoke()
-    result = segment.get_output(interpreter)        
-    
-    new_width, new_height = resized_img.size
-    pred_prob = result[:new_height, :new_width, :]    
-    
-    # Return to original image size
-    x = (np.array(range(orig_h)) * scale).astype(np.int)
-    y = (np.array(range(orig_w)) * scale).astype(np.int)
-    xv, yv = np.meshgrid(x, y, indexing='ij')
-
-    pred_prob = pred_prob[xv, yv] # height, width
-    #pred_class = pred_class[xv, yv]
-
-    # Save semantic segmentation result as image file(Original vs Semantic result)
-    if save_result:
-        pred_class = np.argmax(pred_prob, axis=-1) 
-        save_semantic_result(img, pred_class)
-
-    return pred_prob
-
-def run_semantic_seg(tf_model, img, save_result=False):
-    INPUT_SIZE = 513
-    with tf.compat.v1.gfile.GFile(tf_model, "rb") as f:
-        graph_def = tf.compat.v1.GraphDef()
-        graph_def.ParseFromString(f.read())
-    
-    myGraph = tf.compat.v1.Graph()
-    with myGraph.as_default():
-        tf.compat.v1.import_graph_def(graph_def, name='')
-
-    sess = tf.compat.v1.Session(graph=myGraph)
-    from sunrgbd_data import run_semantic_segmentation
-    pred_prob, pred_class = run_semantic_segmentation(img, sess, INPUT_SIZE) # (w, h, num_class)       
-
-    # Save semantic segmentation result as image file(Original vs Semantic result)
-    if save_result:
-        save_semantic_result(img, pred_class)
-    
-    return pred_prob, pred_class
-
 
 if __name__=='__main__':
    
@@ -232,58 +124,50 @@ if __name__=='__main__':
     ## TODO: NEED TO BE REPLACED
     data_idx = 5051
     dataset = sunrgbd_object(os.path.join(DATA_DIR,'sunrgbd_trainval'), 'training', use_v1=True)
-    point_cloud = dataset.get_depth(data_idx)    
+    point_cloud = dataset.get_depth(data_idx)        
+    
     
     time_record = [('Start: ', time.time())]
-    if FLAGS.use_painted:
+    point_cloud_sampled = random_sampling(point_cloud[:,0:3], FLAGS.num_point)
+    pc = preprocess_point_cloud(point_cloud_sampled)    
         
-        ## TODO: NEED TO BE REPLACED
-        img = dataset.get_image2(data_idx)
-
-        # Run image segmentation result and get result
-        if FLAGS.use_tflite:                  
-            pred_prob = \
-                run_semantic_seg_tflite(os.path.join('tflite_models','sunrgbd_ade20k_11_quant_edgetpu.tflite'), \
-                                        img, save_result=False)  
-        else:
-            pred_prob, pred_class = \
-                run_semantic_seg('test/saved_model/sunrgbd_ade20k_12.pb', img, save_result=False)  
-        time_record.append(('Deeplab inference time:', time.time()))    
-
-        calib = dataset.get_calibration(data_idx)
-        point_cloud_sampled = random_sampling(point_cloud[:,0:3], FLAGS.num_point)
-        uv,d = calib.project_upright_depth_to_image(point_cloud_sampled) #uv: (N, 2)
-                
-        #uv[:,0] = np.rint(uv[:,0] - 1)
-        #uv[:,1] = np.rint(uv[:,1] - 1)
-        uv = np.rint(uv - 1)
-        
-        pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)] # (npoint, num_class + 1 + 1 )
-        projected_class = np.argmax(pred_prob, axis=-1) # (npoint, 1) 
-        isObj = np.where((projected_class > 0) & (projected_class < 11), 1, 0) # Point belongs to background?                    
-        isObj = np.expand_dims(isObj, axis=-1)
-
-        # 0 is background class, deeplab is trained with "person" included, (height, width, num_class)
-        pred_prob = pred_prob[:,1:(DC.num_class+1)] #(npoint, num_class)
-        
-        #projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]         
-        painted = np.concatenate([point_cloud_sampled,\
-                                isObj,
-                                pred_prob
-                                #pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
-                                ], axis=-1)
-        time_record.append(('Pointpainting time:', time.time()))
-    
-        pc = preprocess_point_cloud(painted)
-    else:
-        pc = preprocess_point_cloud(point_cloud)    
     time_record.append(('Votenet data preprocessing time:', time.time()))
+
+    inputs = {'point_clouds': tf.convert_to_tensor(pc)}
    
     # Model inference
-    inputs = {'point_clouds': tf.convert_to_tensor(pc)}
-
     tic = time.time()
-    end_points = net(inputs['point_clouds'], training=False)
+    if FLAGS.use_painted:
+        ## TODO: NEED TO BE REPLACED
+        img = dataset.get_image2(data_idx)
+        calib = dataset.get_calibration(data_idx)                
+        if FLAGS.use_tflite:
+            end_points = net(inputs['point_clouds'], training=False, img=img, calib=calib)        
+        else:
+            xyz = pc[0,:,:3]
+            pred_prob, pred_class = \
+                run_semantic_seg('test/saved_model/sunrgbd_ade20k_12.pb', img, save_result=False)  
+
+            uv,d = calib.project_upright_depth_to_image(xyz) #uv: (N, 2)
+            uv = np.rint(uv - 1)
+            
+            pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)] # (npoint, num_class + 1 + 1 )
+            projected_class = np.argmax(pred_prob, axis=-1) # (npoint, 1) 
+            isPainted = np.where((projected_class > 0) & (projected_class < 11), 1, 0) # Point belongs to background?                    
+            isPainted = np.expand_dims(isPainted, axis=-1)
+
+            # 0 is background class, deeplab is trained with "person" included, (height, width, num_class)
+            pred_prob = pred_prob[:,1:(DC.num_class+1)] #(npoint, num_class)
+            pointcloud = np.concatenate([xyz, isPainted, pred_prob, pc[0,:,3:]], axis=-1)
+
+            inputs['point_clouds'] = tf.convert_to_tensor(np.expand_dims(pointcloud, axis=0))
+            print(inputs['point_clouds'].shape)
+
+            end_points = net(inputs['point_clouds'])        
+        
+    else:        
+        end_points = net(inputs['point_clouds'], training=False)        
+        
     toc = time.time()
 
     time_record += end_points['time_record']    

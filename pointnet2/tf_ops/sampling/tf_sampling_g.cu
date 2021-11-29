@@ -233,7 +233,7 @@ __global__ void farthestpointsamplingBgKernel(int b,int n,int m,
     __syncthreads();
     
     if (threadIdx.x == 0){
-      if (wght < 1.0){ // sampling background points
+      if (wght <= 1.0){ // sampling background points
         for (int j = 0; j < n; j++){        
           if (painted[i*n + j] == 0){
             idxs[i*m+0] = j;     
@@ -249,12 +249,12 @@ __global__ void farthestpointsamplingBgKernel(int b,int n,int m,
             if (cntObj == 1.0){
               idxs[i*m+0] = j;
               painted_out[i*m + 0] = painted[i*n+j];
-              //break;
+              break;
             }
           }          
         }
-        //w = wght;
-        w = max(1.0, (cntObj / (float) n) * wght); // 1.0 ~ 9.0
+        w = wght;
+        //w = max(1.0, (cntObj / (float) n) * wght); // 1.0 ~ 9.0
       }
     }    
     
@@ -345,9 +345,8 @@ __global__ void farthestpointsamplingBgKernel2(int b,int n,int m,
   __shared__ int dists_i2[BlockSize];
   const int BufferSize=3072;
   __shared__ float buf[BufferSize*3];  
-  //__shared__ int thr;
-  __shared__ float maxy[8];
-  __shared__ float miny[8];   
+  //__shared__ int thr;     
+  __shared__ float w1, w2;
   
   
   // b: Batch size, n: Number of input points, m: Number of output(Sampled) points
@@ -360,8 +359,6 @@ __global__ void farthestpointsamplingBgKernel2(int b,int n,int m,
     int old1 = 0;
     int old2 = 0;
     float cntObj = 0;
-    maxy[i] = -10000.0;
-    miny[i] = 10000.0;    
     
     if (threadIdx.x==0){
       idxs[i*2*m+0] = old1; // First output is set to 0th point
@@ -398,9 +395,13 @@ __global__ void farthestpointsamplingBgKernel2(int b,int n,int m,
             old2 = j;
             idxs[i*2*m + m] = old2; // Initial point for painted point set
             painted_out[i*2*m + m] = painted[i*n+old2]; 
+            break;
           }
         }
-      }            
+      } 
+      w1 = wght1;    
+      w2 = wght2;
+      //w2 = max(1.0, (cntObj / (float) n) * wght2); // 1.0 ~ 9.0             
     }     
 
     old1  = idxs[i*2*m+0];
@@ -445,8 +446,8 @@ __global__ void farthestpointsamplingBgKernel2(int b,int n,int m,
         float db = (x2-xb)*(x2-xb) + (y2-yb)*(y2-yb) + (z2-zb)*(z2-zb);
         
         if (painted[i*n + k] > 0){
-          da = wght1 * da;
-          db = wght2 * db;
+          da = w1 * da;
+          db = w2 * db;
         } /*else if (cntObj < 100 && isFront1 >= 0){          
           if (isFront1 == 0){
             //Gives bigger weight to back area          

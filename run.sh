@@ -9,4 +9,4 @@
 source /home/${USER}/.bashrc # Initiate your shell environment
 source ~/anaconda3/etc/profile.d/conda.sh
 conda activate tf_3090 # Activate your conda environment
-srun python /home/keondopark/votenet_tf/train_tf.py  --checkpoint_path /home/keondopark/votenet_tf/tf_ckpt/211125_2 --log_dir logs/log_211125_2 --use_painted
+srun python /home/keondopark/votenet_tf/train_tf.py  --checkpoint_path /home/keondopark/votenet_tf/tf_ckpt/211129_2 --log_dir logs/log_211129_2 --use_painted

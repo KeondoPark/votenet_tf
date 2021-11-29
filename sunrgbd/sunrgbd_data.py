@@ -24,11 +24,14 @@ DATA_DIR = '/home/aiot/data'
 #DATA_DIR = '/home/keondopark'
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
+print(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, '../utils/'))
+sys.path.append(os.path.join(BASE_DIR, '..'))
 import pc_util
 import sunrgbd_utils
 from tqdm import tqdm
 import tensorflow as tf
+import deeplab
 
 DEFAULT_TYPE_WHITELIST = ['bed','table','sofa','chair','toilet','desk','dresser','night_stand','bookshelf','bathtub']
 
@@ -270,29 +273,6 @@ def extract_sunrgbd_data(idx_filename, split, output_folder, num_point=20000,
             np.savez_compressed(os.path.join(output_folder, '%06d_votes.npz'%(data_idx)),
                 point_votes = point_votes)
 
-def run_semantic_segmentation(image, sess, input_size):        
-        width, height = image.size
-        resize_ratio = 1.0 * input_size / max(width, height)
-        target_size = (int(resize_ratio * width), int(resize_ratio * height))
-        resized_image = image.convert('RGB').resize(target_size, Image.ANTIALIAS)
-        batch_seg_map = sess.run(
-            ['SemanticProbabilities:0',
-            'SemanticPredictions:0'],
-            feed_dict={'ImageTensor:0': [np.asarray(resized_image)]})
-        resized_seg_prob = batch_seg_map[0][0] # (height * resize_ratio, width * resize_ratio, num_class)
-        resized_seg_class = batch_seg_map[1][0] # (height * resize_ratio, width * resize_ratio)
-
-        # Map segmentation result to original image size
-        x = (np.array(range(height)) * resize_ratio).astype(np.int)
-        y = (np.array(range(width)) * resize_ratio).astype(np.int)
-
-        xv, yv = np.meshgrid(x, y, indexing='ij') # xv, yv has shape (height, width)
-
-        seg_prob = resized_seg_prob[xv, yv]
-        seg_class = resized_seg_class[xv, yv]
-
-        return seg_prob, seg_class
-
 def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=20000,
     type_whitelist=DEFAULT_TYPE_WHITELIST, use_v1=False, skip_empty_scene=True, pointpainting=False):
     """ Same as extract_sunrgbd_data EXCEPT
@@ -450,7 +430,7 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                         #pred_prob = np.eye(num_sunrgbd_class+1)[pred_class]
                         #pred_prob = pred_prob[:,:,1:]
                     else:
-                        pred_prob, pred_class = run_semantic_segmentation(img, sess, INPUT_SIZE) # (w, h, num_class)     
+                        pred_prob, pred_class = deeplab.run_semantic_segmentation(img, sess, INPUT_SIZE) # (w, h, num_class)     
                         pred_prob = pred_prob[:,:,1:(num_sunrgbd_class+1)] # 0 is background class              
                         projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
                         pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
@@ -613,10 +593,10 @@ if __name__=='__main__':
 
     if args.painted:
         assert args.tfrecord, "Need to set tfrecord flag as True"
-        extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/train_data_idx.txt'),
-            split = 'training',
-            output_folder = os.path.join(DATA_DIR, 'sunrgbd_pc_train_painted_tf_gt'),
-            num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True)
+        #extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/train_data_idx.txt'),
+        #    split = 'training',
+        #    output_folder = os.path.join(DATA_DIR, 'sunrgbd_pc_train_painted_tf_gt'),
+        #    num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True)
         extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/val_data_idx.txt'),
             split = 'training',
             output_folder = os.path.join(DATA_DIR, 'sunrgbd_pc_val_painted_tf_gt'),

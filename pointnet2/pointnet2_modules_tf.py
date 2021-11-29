@@ -264,12 +264,12 @@ class PointnetSAModuleVotes(layers.Layer):
 
         if not self.ret_unique_cnt:
             #grouped_features, grouped_xyz = self.grouper(
-            grouped_features, ball_query_idx, grouped_xyz = self.grouper(
+            grouped_features= self.grouper(
                 xyz, new_xyz, features
                 #xyz, new_xyz, batch_distances, inds, features
             )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)
         else:
-            grouped_features, ball_query_idx, grouped_xyz, unique_cnt = self.grouper(
+            grouped_features, unique_cnt = self.grouper(
             #grouped_features, grouped_xyz, unique_cnt = self.grouper(
                 xyz, new_xyz, features
             )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)        
@@ -309,7 +309,7 @@ class PointnetSAModuleVotes(layers.Layer):
 
         if not self.ret_unique_cnt:
             #return new_xyz, new_features, inds
-            return new_xyz, new_features, inds, ball_query_idx, grouped_features
+            return new_xyz, new_features, inds, grouped_features
         else:
             return new_xyz, new_features, inds, unique_cnt
 
