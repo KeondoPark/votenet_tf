@@ -27,8 +27,8 @@ import tensorflow as tf
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
-#DATA_DIR = 'sunrgbd'
-DATA_DIR = '/home/aiot/data'
+DATA_DIR = 'sunrgbd'
+#DATA_DIR = '/home/aiot/data'
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 sys.path.append(os.path.join(ROOT_DIR, 'models'))
 from pc_util import random_sampling, read_ply
@@ -135,8 +135,7 @@ if __name__=='__main__':
 
     inputs = {'point_clouds': tf.convert_to_tensor(pc)}
    
-    # Model inference
-    tic = time.time()
+    # Model inference    
     if FLAGS.use_painted:
         ## TODO: NEED TO BE REPLACED
         img = dataset.get_image2(data_idx)
@@ -166,9 +165,8 @@ if __name__=='__main__':
             end_points = net(inputs['point_clouds'])        
         
     else:        
-        end_points = net(inputs['point_clouds'], training=False)        
-        
-    toc = time.time()
+        end_points = net(inputs['point_clouds'], training=False)                
+    
 
     time_record += end_points['time_record']    
     time_record = time_record + [('Voting and Proposal time:', time.time())]
@@ -186,8 +184,16 @@ if __name__=='__main__':
         
         inf_time_log.write('Total inference time: %f \n'%(time_record[-1][1] - time_record[0][1]))
         inf_time_log.close()
-
-    print('Inference time: %f'%(toc-tic))
+    else:
+        for idx, (desc, t) in enumerate(time_record):
+            if idx == 0:                                 
+                print(desc, t)
+                prev_time = t
+                continue
+            print(desc, t - prev_time)            
+            prev_time = t
+        print('Total inference time: %f \n'%(time_record[-1][1] - time_record[0][1]))
+    
 
     end_points['point_clouds'] = inputs['point_clouds']
     pred_map_cls = parse_predictions(end_points, eval_config_dict)

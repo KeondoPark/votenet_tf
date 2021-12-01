@@ -345,7 +345,7 @@ class SamplingAndGrouping(layers.Layer):
         else:
             self.grouper = pointnet2_utils_tf.GroupAll(use_xyz, ret_grouped_xyz=True)
         
-    def call(self, xyz, isPainted, features, inds=None, bg1=False, bg2=False, wght1=1, wght2=1, xyz_ball=None, features_ball=None):
+    def call(self, xyz, isPainted, features, inds=None, new_xyz=None, ball_inds=None, bg1=False, bg2=False, wght1=1, wght2=1, xyz_ball=None, features_ball=None):
     #def call(self, xyz, features, inds=None, bg=False, wght=1, isFront=0, xyz_ball=None, features_ball=None):
         r"""
         Parameters
@@ -365,32 +365,27 @@ class SamplingAndGrouping(layers.Layer):
         if inds is None:                        
             if bg2:                                    
                 #inds = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, wght, isFront)                                
-                inds, isPainted = tf_sampling.farthest_point_sample_bg2(self.npoint, xyz, isPainted, wght1, wght2) 
-                print("BG2")                                          
+                inds, isPainted = tf_sampling.farthest_point_sample_bg2(self.npoint, xyz, isPainted, wght1, wght2)                                                          
             elif bg1:
-                inds, isPainted = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, isPainted, wght1)                
-                print("BG1")                                          
+                inds, isPainted = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, isPainted, wght1)
             else:
                 inds = tf_sampling.farthest_point_sample(self.npoint, xyz)     
         else:
             assert(inds.shape[1] == self.npoint)   
-
-        #start = time.time()     
-        new_xyz = tf_sampling.gather_point(
-            xyz, inds
-        ) if self.npoint is not None else None
-
-        #end = time.time()
-        #print("Runtime for gather_op original", end - start)
+        
+        if new_xyz is None:
+            new_xyz = tf_sampling.gather_point(
+                xyz, inds
+            ) if self.npoint is not None else None
 
         if not self.ret_unique_cnt:      
             if xyz_ball is None and features_ball is None:
                 grouped_features = self.grouper(
-                    xyz, new_xyz, features            
+                    xyz, new_xyz, features, ball_inds=ball_inds            
                 )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)
             else:
                 grouped_features = self.grouper(
-                    xyz_ball, new_xyz, features_ball         
+                    xyz_ball, new_xyz, features_ball, ball_inds=ball_inds        
                 )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)
         else:
             grouped_features, unique_cnt = self.grouper(            
