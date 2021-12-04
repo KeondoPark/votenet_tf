@@ -86,6 +86,8 @@ class Pointnet2Backbone(layers.Layer):
         self.fp2 = PointnetFPModule(mlp=[256+256,256,256], m=1024)
                 #use_tflite=use_tflite, tflite_name='fp2_quant_b8.tflite')
 
+        self.use_tflite = use_tflite
+
     def _break_up_pc(self, pc):
         #xyz = pc[..., 0:3]
         #features = pc[..., 3:] if pc.shape[-1] > 3 else None        
@@ -95,7 +97,7 @@ class Pointnet2Backbone(layers.Layer):
 
         return xyz, features
 
-    def call(self, pointcloud, end_points=None):
+    def call(self, pointcloud, end_points=None, img=None, calib=None):
         r"""
             Forward pass of the network
 
@@ -115,13 +117,40 @@ class Pointnet2Backbone(layers.Layer):
                 XXX-inds: int64 Tensor of shape (B,K) values in [0,N-1]
         """        
         if not end_points: end_points = {}
-        xyz, features = self._break_up_pc(pointcloud)
-        print(features.shape)
+        time_record = []     
+
+        if self.use_tflite:        
+            xyz = pointcloud[:,:,:3]      
+            pred_prob = run_semantic_seg_tflite(img, save_result=False)
+            time_record.append(('Deeplab inference time:', time.time()))
+            
+            xyz = xyz[0] #Assume single pointset
+            features = pointcloud[0,:,3:] #Assume single pointset
+
+            uv,d = calib.project_upright_depth_to_image(xyz) #uv: (N, 2)
+            uv = np.rint(uv - 1)                
+            
+            pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)] # (npoint, num_class + 1 + 1 )
+            projected_class = np.argmax(pred_prob, axis=-1) # (npoint, 1) 
+            isPainted = np.where((projected_class > 0) & (projected_class < 11), 1, 0) # Point belongs to background?                    
+            #isPainted = np.expand_dims(isPainted, axis=-1)
+
+            # 0 is background class, deeplab is trained with "person" included, (height, width, num_class)
+            pred_prob = pred_prob[:,1:(DC.num_class+1)] # (npoint, num_class)
+            features = np.concatenate([features, pred_prob], axis=-1)
+            features = np.expand_dims(features, axis=0)
+            xyz = np.expand_dims(xyz, axis=0)
+            isPainted = np.expand_dims(isPainted, axis=0)
+            
+            #projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]         
+            #painted = np.concatenate([xyz, isPainted, pred_prob], axis=-1)
+            time_record.append(('Pointpainting time:', time.time()))
+        else:
+            xyz, features = self._break_up_pc(pointcloud)
 
         # --------- 4 SET ABSTRACTION LAYERS ---------
         #xyz, features, fps_inds = self.sa1(xyz, features)
-        #print("========================== SA1 ===============================")
-        time_record = []
+        #print("========================== SA1 ===============================")        
         time_record.append(("Start:", time.time()))
         sa1_xyz, sa1_features, sa1_inds, sa1_grouped_features = self.sa1(xyz, features, time_record)        
         end_points['sa1_xyz'] = sa1_xyz
@@ -452,7 +481,7 @@ class Pointnet2Backbone_tflite(layers.Layer):
 
         self.fp1 = PointnetFPModule(mlp=[256+256,256,256], m=512)             
         self.fp2 = PointnetFPModule(mlp=[256+256,256,256], m=1024)                        
-        self.use_multiThr = True
+        self.use_multiThr = False
 
         
         #self.sa1_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa1_quant_2way_base.tflite')))
@@ -461,10 +490,10 @@ class Pointnet2Backbone_tflite(layers.Layer):
         #self.sa4_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa4_quant_2way_base.tflite')))
 
         from pycoral.utils.edgetpu import make_interpreter            
-        self.sa1_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa1_quant_2way_edgetpu.tflite')))
-        self.sa2_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa2_quant_2way_edgetpu.tflite')))
-        self.sa3_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa3_quant_2way_edgetpu.tflite')))
-        self.sa4_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa4_quant_2way_edgetpu.tflite')))
+        self.sa1_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite","tflite_models",'sa1_quant_2way_edgetpu.tflite')))
+        self.sa2_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite","tflite_models",'sa2_quant_2way_edgetpu.tflite')))
+        self.sa3_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite","tflite_models",'sa3_quant_2way_edgetpu.tflite')))
+        self.sa4_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite","tflite_models",'sa4_quant_2way_edgetpu.tflite')))
 
         self.sa1_interpreter.allocate_tensors()
         self.sa2_interpreter.allocate_tensors()
@@ -527,16 +556,15 @@ class Pointnet2Backbone_tflite(layers.Layer):
 
         # Run image segmentation result and get result
         if img:
-            xyz = pointcloud[:,:,:3] 
-            model_path = os.path.join('tflite_models','sunrgbd_ade20k_11_quant_edgetpu.tflite')
+            xyz = pointcloud[:,:,:3]             
             if self.use_multiThr:                    
-                future0 = self._executor.submit(run_semantic_seg_tflite, model_path, img, False)                  
+                future0 = self._executor.submit(run_semantic_seg_tflite, img, False)                  
                 sa1_inds1 = tf_sampling.farthest_point_sample(1024, xyz) # First sampling is not biased FPS, i.e. weight = 1
                 sa1_new_xyz1 = tf_sampling.gather_point(xyz, sa1_inds1)
                 sa1_ball_query_idx, _ = tf_grouping.query_ball_point(0.2, 64, xyz, sa1_new_xyz1)
                 
             else: 
-                pred_prob = run_semantic_seg_tflite(model_path, img, save_result=False)
+                pred_prob = run_semantic_seg_tflite(img, save_result=False)
                 time_record.append(('Deeplab inference time:', time.time()))
 
             if self.use_multiThr:  
@@ -600,7 +628,7 @@ class Pointnet2Backbone_tflite(layers.Layer):
         
         time_record.append(("SA1 MLP1:", time.time()))
         
-        sa1_xyz2, sa1_inds2, sa1_grouped_features2, sa1_painted2 = self.sa1(xyz, isPainted, features, bg1=True, wght1=25)        
+        sa1_xyz2, sa1_inds2, sa1_grouped_features2, sa1_painted2 = self.sa1(xyz, isPainted, features, bg1=True, wght1=4)        
         time_record.append(("SA1 sampling and grouping2:", time.time()))
         
 
@@ -615,8 +643,7 @@ class Pointnet2Backbone_tflite(layers.Layer):
 
         # ------------------------------- SA2-------------------------------        
         sa2_xyz1, sa2_inds1, sa2_grouped_features1, sa2_painted1 = self.sa2(sa1_xyz1, sa1_painted1, sa1_features1, bg1=True, wght1=1)
-        time_record.append(("SA2 sampling and grouping1:", time.time()))
-        print("SA2 painted from background:", tf.reduce_sum(sa2_painted1[0]))       
+        time_record.append(("SA2 sampling and grouping1:", time.time()))       
         
         
         
@@ -632,8 +659,7 @@ class Pointnet2Backbone_tflite(layers.Layer):
         sa1_features = layers.Concatenate(axis=1)([sa1_features1, sa1_features2])        
 
         sa2_xyz2, sa2_inds2, sa2_grouped_features2, sa2_painted2 = self.sa2(sa1_xyz2, sa1_painted2, sa1_features2, bg1=True, wght1=1, xyz_ball=sa1_xyz, features_ball=sa1_features)
-        time_record.append(("SA2 sampling and grouping2:", time.time()))
-        print("SA2 painted from painted:", tf.reduce_sum(sa2_painted2[0]))
+        time_record.append(("SA2 sampling and grouping2:", time.time()))        
 
         
         if self.use_multiThr:

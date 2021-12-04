@@ -217,7 +217,7 @@ class PointnetSAModuleVotes(layers.Layer):
         if self.use_tflite:            
             #self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))                             
             from pycoral.utils.edgetpu import make_interpreter
-            self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))
+            self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite","tflite_models",tflite_name)))
             self.interpreter.allocate_tensors()
 
             # Get input and output tensors.

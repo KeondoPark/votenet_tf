@@ -120,7 +120,7 @@ class ProposalModule(layers.Layer):
         if self.use_tflite:
             #self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models", tflite_name)))                             
             from pycoral.utils.edgetpu import make_interpreter            
-            self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))
+            self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite","tflite_models",tflite_name)))
             self.interpreter.allocate_tensors()
 
             # Get input and output tensors.
@@ -201,17 +201,17 @@ class ProposalModule(layers.Layer):
             net = layers.Reshape((self.npoint, net.shape[-1]))(net)            
             
         else:
-            #self.interpreter.set_tensor(self.input_details[0]['index'], xyz)            
             self.interpreter.set_tensor(self.input_details[0]['index'], va_grouped_features)            
+            self.interpreter.set_tensor(self.input_details[1]['index'], xyz)
             self.interpreter.invoke()
             if self.sep_coords:
                 offset = self.interpreter.get_tensor(self.output_details[0]['index'])
                 net = self.interpreter.get_tensor(self.output_details[1]['index']) 
 
                 offset = tf.convert_to_tensor(offset)
-                center = xyz + offset
-                #center = offset
-                net = tf.convert_to_tensor(net)                   
+                #center = xyz + offset
+                center = offset
+                net = tf.convert_to_tensor(net)                  
             else:
                 net = self.interpreter.get_tensor(self.output_details[0]['index']) 
                 net = tf.convert_to_tensor(net)

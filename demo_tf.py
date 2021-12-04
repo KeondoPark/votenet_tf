@@ -145,7 +145,7 @@ if __name__=='__main__':
         else:
             xyz = pc[0,:,:3]
             pred_prob, pred_class = \
-                run_semantic_seg('test/saved_model/sunrgbd_ade20k_12.pb', img, save_result=False)  
+                run_semantic_seg(img, save_result=False)  
 
             uv,d = calib.project_upright_depth_to_image(xyz) #uv: (N, 2)
             uv = np.rint(uv - 1)

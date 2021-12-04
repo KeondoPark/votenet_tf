@@ -29,7 +29,8 @@ import scipy.io as sio # to load .mat files for depth points
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
 #DATA_DIR = os.path.dirname(ROOT_DIR)
-DATA_DIR = '/home/aiot/data'
+#DATA_DIR = '/home/aiot/data'
+DATA_DIR='/media'
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 import pc_util

@@ -126,15 +126,16 @@ it = -1 # for the initialize value of `LambdaLR` and `BNMomentumScheduler`
 start_epoch = 0
 ckpt = tf.train.Checkpoint(epoch=tf.Variable(1), optimizer=optimizer, net=net)
 
-manager = tf.train.CheckpointManager(ckpt, CHECKPOINT_PATH, max_to_keep=3)
-ckpt.restore(manager.latest_checkpoint)
+if not FLAGS.use_tflite:
+    manager = tf.train.CheckpointManager(ckpt, CHECKPOINT_PATH, max_to_keep=3)
+    ckpt.restore(manager.latest_checkpoint)
 
-if manager.latest_checkpoint:
-    print("Restored from {}".format(manager.latest_checkpoint))
-    start_epoch = ckpt.epoch.numpy()
-else:
-    print("Failed to restore.")
-    exit(-1)
+    if manager.latest_checkpoint:
+        print("Restored from {}".format(manager.latest_checkpoint))
+        start_epoch = ckpt.epoch.numpy()
+    else:
+        print("Failed to restore.")
+        exit(-1)
 
 test_ds = TEST_DATASET.preprocess()
 test_ds = test_ds.prefetch(BATCH_SIZE)
@@ -157,7 +158,7 @@ def evaluate_one_epoch():
     start = time.time()
     start2 = time.time()
     for batch_idx, batch_data in enumerate(test_ds):        
-        if batch_idx*BATCH_SIZE >= 400: break
+        #if batch_idx*BATCH_SIZE >= 400: break
         if batch_idx % 10 == 0:
             end = time.time()
             log_string('---------- Eval batch: %d ----------'%(batch_idx) + str(end - start))

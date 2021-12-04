@@ -81,9 +81,9 @@ def run_semantic_segmentation_graph(image, sess, input_size):
 
     return seg_prob, seg_class
 
-def run_semantic_seg(tf_model, img, save_result=False):
+def run_semantic_seg(img, save_result=False):
     INPUT_SIZE = 513
-    with tf.compat.v1.gfile.GFile(tf_model, "rb") as f:
+    with tf.compat.v1.gfile.GFile('test/saved_model/sunrgbd_ade20k_12.pb', "rb") as f:
         graph_def = tf.compat.v1.GraphDef()
         graph_def.ParseFromString(f.read())
     
@@ -101,13 +101,13 @@ def run_semantic_seg(tf_model, img, save_result=False):
     return pred_prob, pred_class
 
 
-def run_semantic_seg_tflite(tflite_model, img, save_result=False):
+def run_semantic_seg_tflite(img, save_result=False):
     
     from pycoral.utils.edgetpu import make_interpreter
     from pycoral.adapters import common
     from pycoral.adapters import segment
     
-    interpreter = make_interpreter(os.path.join(ROOT_DIR, os.path.join("tflite_models",'sunrgbd_ade20k_11_quant_edgetpu.tflite')))
+    interpreter = make_interpreter(os.path.join(ROOT_DIR, os.path.join('tflite',"tflite_models",'sunrgbd_ade20k_11_quant_edgetpu.tflite')))
     interpreter.allocate_tensors()
     width, height = common.input_size(interpreter)         
     
