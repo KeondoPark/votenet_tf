@@ -235,13 +235,14 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         assert(num_points<=50000)
         self.use_painted = use_painted
         self.dim_features = 6        
+        self.num_class = DC.num_class
         if self.use_painted:
-            self.dim_features = 3 + 10 + 1
+            self.dim_features = 3 + (self.num_class + 1) + 1 # xyz + num_class + 1(background) + 1(isPainted)
 
         if self.use_painted:
-            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf3'%(split_set))
+            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf4'%(split_set))
         else:
-            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_tf3'%(split_set))
+            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_tf4'%(split_set))
 
         print(self.data_path)
 
@@ -266,7 +267,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         dataset = dataset.batch(batch_size) 
         self.dataset = dataset       
         
-        self.num_class = DC.num_class
+        
         self.type_mean_size_np = np.zeros((DC.num_class, 3))
         for i in range(self.num_class):
             self.type_mean_size_np[i,:] = DC.type_mean_size[DC.class2type[i]]

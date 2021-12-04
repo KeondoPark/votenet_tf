@@ -421,22 +421,22 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                                 pred_class += cur_seg
                         projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
                         pred_prob = np.eye(num_sunrgbd_class+1)[projected_class]                        
-                        pred_prob = pred_prob[:,1:(num_sunrgbd_class+1)]
+                        pred_prob = pred_prob[:,:(num_sunrgbd_class+1)]
                         print(data_idx, mask.shape, max(uv[:,0]), max(uv[:,1]), pred_class.shape)
                         print(projected_class.shape, pred_prob.shape)
 
                         #pred_prob = np.eye(num_sunrgbd_class+1)[pred_class]
                         #pred_prob = pred_prob[:,:,1:]
                     else:
-                        pred_prob, pred_class = deeplab.run_semantic_segmentation(img, sess, INPUT_SIZE) # (w, h, num_class)     
-                        pred_prob = pred_prob[:,:,1:(num_sunrgbd_class+1)] # 0 is background class              
+                        pred_prob, pred_class = deeplab.run_semantic_segmentation_graph(img, sess, INPUT_SIZE) # (w, h, num_class)     
+                        pred_prob = pred_prob[:,:,:(num_sunrgbd_class+1)] # 0 is background class              
                         projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
                         pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
 
                     #print("maximum value of uv, Expected:", w-1, h-1, "Actual:", max(uv[:,0]), max(uv[:,1]))
                     #print("Minimum of uv", min(uv[:,0]), min(uv[:,1]))
                     
-                    isPainted = np.where((projected_class > 0) & (projected_class < 11), 1, 0) # Point belongs to background?                    
+                    isPainted = np.where((projected_class > 0) & (projected_class < num_sunrgbd_class+1), 1, 0) # Point belongs to foreground?                    
                     isPainted = np.expand_dims(isPainted, axis=-1)
 
                     # Append segmentation score to each point
@@ -591,9 +591,9 @@ if __name__=='__main__':
         assert args.tfrecord, "Need to set tfrecord flag as True"
         extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/train_data_idx.txt'),
             split = 'training',
-            output_folder = os.path.join(DATA_DIR, 'sunrgbd_pc_train_painted_tf_gt'),
+            output_folder = os.path.join(DATA_DIR, 'sunrgbd_pc_train_painted_tf4'),
             num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True, use_gt=args.use_gt)
         extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/val_data_idx.txt'),
             split = 'training',
-            output_folder = os.path.join(DATA_DIR, 'sunrgbd_pc_val_painted_tf_gt'),
+            output_folder = os.path.join(DATA_DIR, 'sunrgbd_pc_val_painted_tf4'),
             num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True, use_gt=args.use_gt)
