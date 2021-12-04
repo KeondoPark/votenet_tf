@@ -274,7 +274,7 @@ def extract_sunrgbd_data(idx_filename, split, output_folder, num_point=20000,
                 point_votes = point_votes)
 
 def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=20000,
-    type_whitelist=DEFAULT_TYPE_WHITELIST, use_v1=False, skip_empty_scene=True, pointpainting=False):
+    type_whitelist=DEFAULT_TYPE_WHITELIST, use_v1=False, skip_empty_scene=True, pointpainting=False, use_gt=False):
     """ Same as extract_sunrgbd_data EXCEPT
 
     Args:
@@ -397,8 +397,6 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                     
                     # Run image segmentation result and get result
                     img = dataset.get_image2(data_idx)    
-                    
-                    use_gt = True
 
                     if use_gt: 
                         img_path = metadata[data_idx-1][4][0][12:] # indexing starts from 1
@@ -434,9 +432,6 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                         pred_prob = pred_prob[:,:,1:(num_sunrgbd_class+1)] # 0 is background class              
                         projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
                         pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
-                    
-                    
-                    
 
                     #print("maximum value of uv, Expected:", w-1, h-1, "Actual:", max(uv[:,0]), max(uv[:,1]))
                     #print("Minimum of uv", min(uv[:,0]), min(uv[:,1]))
@@ -551,6 +546,7 @@ if __name__=='__main__':
     parser.add_argument('--gen_v2_data', action='store_true', help='Generate V2 dataset.')
     parser.add_argument('--tfrecord', action='store_true', help='Generate TFRecord dataset.')
     parser.add_argument('--painted', action='store_true', help='Generate point painted TFRecord dataset.')
+    parser.add_argument('--use_gt', action='store_true', help='When pointpainting, use ground truth segmentation.')
     args = parser.parse_args()
 
     if args.viz:
@@ -593,11 +589,11 @@ if __name__=='__main__':
 
     if args.painted:
         assert args.tfrecord, "Need to set tfrecord flag as True"
-        #extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/train_data_idx.txt'),
-        #    split = 'training',
-        #    output_folder = os.path.join(DATA_DIR, 'sunrgbd_pc_train_painted_tf_gt'),
-        #    num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True)
+        extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/train_data_idx.txt'),
+            split = 'training',
+            output_folder = os.path.join(DATA_DIR, 'sunrgbd_pc_train_painted_tf_gt'),
+            num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True, use_gt=args.use_gt)
         extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/val_data_idx.txt'),
             split = 'training',
             output_folder = os.path.join(DATA_DIR, 'sunrgbd_pc_val_painted_tf_gt'),
-            num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True)
+            num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True, use_gt=args.use_gt)
