@@ -29,8 +29,8 @@ import scipy.io as sio # to load .mat files for depth points
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
 #DATA_DIR = os.path.dirname(ROOT_DIR)
-#DATA_DIR = '/home/aiot/data'
-DATA_DIR='/media'
+DATA_DIR = '/home/aiot/data'
+#DATA_DIR='/media'
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 import pc_util
@@ -237,12 +237,12 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         self.dim_features = 6        
         self.num_class = DC.num_class
         if self.use_painted:
-            self.dim_features = 3 + (self.num_class + 1) + 1 # xyz + num_class + 1(background) + 1(isPainted)
+            self.dim_features = 3 + (self.num_class) + 1 # xyz + num_class + 1(background) + 1(isPainted)
 
         if self.use_painted:
-            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf4'%(split_set))
+            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf3'%(split_set))
         else:
-            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_tf4'%(split_set))
+            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_tf3'%(split_set))
 
         print(self.data_path)
 

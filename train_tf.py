@@ -46,11 +46,12 @@ from ap_helper_tf import APCalculator, parse_predictions, parse_groundtruths
 from collections import defaultdict
 
 import votenet_tf
+import json
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='sunrgbd', help='Dataset name. sunrgbd or scannet. [default: sunrgbd]')
 parser.add_argument('--checkpoint_path', default=None, help='Model checkpoint path [default: None]')
-parser.add_argument('--log_dir', default='log', help='Dump dir to save model checkpoint [default: log]')
+parser.add_argument('--log_dir', default=None, help='Dump dir to save model checkpoint [default: log]')
 parser.add_argument('--dump_dir', default=None, help='Dump dir to save sample outputs [default: None]')
 parser.add_argument('--num_point', type=int, default=20000, help='Point Number [default: 20000]')
 parser.add_argument('--num_target', type=int, default=256, help='Proposal number [default: 256]')
@@ -70,11 +71,12 @@ parser.add_argument('--use_color', action='store_true', help='Use RGB color in i
 parser.add_argument('--use_sunrgbd_v2', action='store_true', help='Use V2 box labels for SUN RGB-D dataset')
 parser.add_argument('--overwrite', action='store_true', help='Overwrite existing log and dump folders.')
 parser.add_argument('--dump_results', action='store_true', help='Dump results.')
-parser.add_argument('--use_painted', action='store_true', help='Use Point painting')
-parser.add_argument('--not_sep_coords', action='store_false', help='Do not use separate layer for coordinates in Voting and Proposal layers')
+parser.add_argument('--config_path', default=None, required=True, help='Model configuration path')
 FLAGS = parser.parse_args()
 
 # ------------------------------------------------------------------------- GLOBAL CONFIG BEG
+model_config = json.load(open(FLAGS.config_path))
+
 BATCH_SIZE = FLAGS.batch_size
 NUM_POINT = FLAGS.num_point
 MAX_EPOCH = FLAGS.max_epoch
@@ -84,13 +86,17 @@ BN_DECAY_RATE = FLAGS.bn_decay_rate
 LR_DECAY_STEPS = [int(x) for x in FLAGS.lr_decay_steps.split(',')]
 LR_DECAY_RATES = [float(x) for x in FLAGS.lr_decay_rates.split(',')]
 assert(len(LR_DECAY_STEPS)==len(LR_DECAY_RATES))
-LOG_DIR = FLAGS.log_dir
+if FLAGS.log_dir is None:
+    LOG_DIR = os.path.join('logs', model_config['model_id'])
+else:
+    LOG_DIR = FLAGS.log_dir
 DEFAULT_DUMP_DIR = os.path.join(BASE_DIR, os.path.basename(LOG_DIR))
 DUMP_DIR = FLAGS.dump_dir if FLAGS.dump_dir is not None else DEFAULT_DUMP_DIR
-DEFAULT_CHECKPOINT_PATH = os.path.join(LOG_DIR, 'checkpoint.tar')
+DEFAULT_CHECKPOINT_PATH = os.path.join('tf_ckpt', model_config['model_id'])
 CHECKPOINT_PATH = FLAGS.checkpoint_path if FLAGS.checkpoint_path is not None \
     else DEFAULT_CHECKPOINT_PATH
 FLAGS.DUMP_DIR = DUMP_DIR
+use_painted = model_config['use_painted']
 
 # Prepare LOG_DIR and DUMP_DIR
 if os.path.exists(LOG_DIR) and FLAGS.overwrite:
@@ -108,6 +114,7 @@ if not os.path.exists(LOG_DIR):
 
 LOG_FOUT = open(os.path.join(LOG_DIR, 'log_train.txt'), 'a')
 LOG_FOUT.write(str(FLAGS)+'\n')
+LOG_FOUT.write(str(model_config)+'\n')
 def log_string(out_str):
     LOG_FOUT.write(out_str+'\n')
     LOG_FOUT.flush()
@@ -127,11 +134,11 @@ if FLAGS.dataset == 'sunrgbd':
     TRAIN_DATASET = SunrgbdDetectionVotesDataset_tfrecord('train', num_points=NUM_POINT,
         augment=True, shuffle=True, batch_size=BATCH_SIZE,
         use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
-        use_painted=FLAGS.use_painted)
+        use_painted=use_painted)
     TEST_DATASET = SunrgbdDetectionVotesDataset_tfrecord('val', num_points=NUM_POINT,
         augment=False,  shuffle=False, batch_size=BATCH_SIZE,
         use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
-        use_painted=FLAGS.use_painted)
+        use_painted=use_painted)
 else:
     print('Unknown dataset %s. Exiting...'%(FLAGS.dataset))
     exit(-1)
@@ -141,10 +148,10 @@ else:
 num_input_channel = int(FLAGS.use_color)*3 + int(not FLAGS.no_height)*1
 
 ### Point Paiting : Sementation score is appended at the end of point cloud
-if FLAGS.use_painted:
-    # Probabilties that each point belongs to each class + background class + is the point belong to background(Boolean)
-    num_input_channel += DATASET_CONFIG.num_class + 1 + 1
-    
+if use_painted:
+    # Probabilties that each point belongs to each class + is the point belong to background(Boolean)
+    num_input_channel += DATASET_CONFIG.num_class + 1
+
 
 
 mirrored_strategy = tf.distribute.MirroredStrategy()
@@ -157,7 +164,7 @@ with mirrored_strategy.scope():
                 input_feature_dim=num_input_channel,
                 vote_factor=FLAGS.vote_factor,
                 sampling=FLAGS.cluster_sampling,
-                sep_coords=FLAGS.not_sep_coords)
+                model_config=model_config)
 
 #if torch.cuda.device_count() > 1:
 #  log_string("Let's use %d GPUs!" % (torch.cuda.device_count()))
@@ -226,8 +233,8 @@ test_ds = TEST_DATASET.preprocess()
 test_ds = test_ds.prefetch(BATCH_SIZE)
 
 # TFBoard Visualizers
-TRAIN_VISUALIZER = TfVisualizer(FLAGS, 'train')
-TEST_VISUALIZER = TfVisualizer(FLAGS, 'test')
+TRAIN_VISUALIZER = TfVisualizer(LOG_DIR, 'train')
+TEST_VISUALIZER = TfVisualizer(LOG_DIR, 'test')
 
 
 # Used for AP calculation

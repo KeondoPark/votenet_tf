@@ -7,11 +7,20 @@ import tensorflow as tf
 from tensorflow.python.framework import ops
 import sys
 import os
+
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
-sampling_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_sampling_so.so')) #For Jetson Nano
-#sampling_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_sampling_so_server.so')) #For server
 
+import json
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR)))
+environ_file = os.path.join(ROOT_DIR,'configs','environ.json')
+environ = json.load(open(environ_file))['environ']
+
+if environ == 'server':    
+    sampling_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_sampling_so_server.so')) #For server
+elif environ ==' jetson':
+    sampling_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_sampling_so.so')) #For Jetson Nano
 
 def prob_sample(inp,inpr):
     '''

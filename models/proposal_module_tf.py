@@ -65,7 +65,7 @@ def decode_scores(net, end_points, num_class, num_heading_bin, num_size_cluster,
 
 
 class ProposalModule(layers.Layer):
-    def __init__(self, num_class, num_heading_bin, num_size_cluster, mean_size_arr, num_proposal, sampling, seed_feat_dim=256, sep_coords=True, use_tflite=False, tflite_name=None):
+    def __init__(self, num_class, num_heading_bin, num_size_cluster, mean_size_arr, num_proposal, sampling, seed_feat_dim, model_config):
         super().__init__() 
         """
         num_class: Number of classes
@@ -111,16 +111,21 @@ class ProposalModule(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True
             )
-        self.use_tflite = use_tflite
-        self.sep_coords = sep_coords
+        self.use_tflite = model_config['use_tflite']
+        self.sep_coords = model_config['sep_coords']
         
         mlp_spec = [self.seed_feat_dim, 128, 128, 128]
         mlp_spec[0] += 3  
 
         if self.use_tflite:
-            #self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models", tflite_name)))                             
-            from pycoral.utils.edgetpu import make_interpreter            
-            self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite","tflite_models",tflite_name)))
+            self.use_edgetpu = model_config['use_edgetpu']
+            tflite_folder = model_config['tflite_folder']
+            tflite_file = model_config['voting_tflite']
+            if self.use_edgetpu:            
+                from pycoral.utils.edgetpu import make_interpreter            
+                self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join(tflite_folder, tflite_file)))
+            else:
+                self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join(tflite_folder, tflite_file)))                             
             self.interpreter.allocate_tensors()
 
             # Get input and output tensors.
@@ -181,26 +186,7 @@ class ProposalModule(layers.Layer):
             log_string('Unknown sampling strategy: %s. Exiting!'%(self.sampling))
             exit()        
         
-        if not self.use_tflite:
-            new_features = self.mlp_module(va_grouped_features)
-            features = self.max_pool(new_features)
-            #features = layers.Reshape((self.npoint, 1, features.shape[-1]))(features) # Expand to use Conv2D
-            
-            # --------- PROPOSAL GENERATION ---------
-            net = self.relu1(self.bn1(self.conv1(features)))
-            net = self.relu2(self.bn2(self.conv2(net)))
-            if self.sep_coords:
-                offset = self.conv3_1(net) # (batch_size, num_proposal, 3+2+num_heading_bin*2+num_size_cluster*4)                
-                net = self.conv3_2(net)                
-            else:
-                net = self.conv3(net)
-                offset = net[:,:,:,0:3]            
-                net = net[:,:,:,3:]    
-            offset = layers.Reshape((self.npoint, 3))(offset)                
-            center = xyz + offset            
-            net = layers.Reshape((self.npoint, net.shape[-1]))(net)            
-            
-        else:
+        if self.use_tflite:
             self.interpreter.set_tensor(self.input_details[0]['index'], va_grouped_features)            
             self.interpreter.set_tensor(self.input_details[1]['index'], xyz)
             self.interpreter.invoke()
@@ -220,6 +206,26 @@ class ProposalModule(layers.Layer):
                 offset = layers.Reshape((self.npoint, 3))(offset)                
                 center = xyz + offset            
                 net = layers.Reshape((self.npoint, net.shape[-1]))(net)
+
+        else:
+            new_features = self.mlp_module(va_grouped_features)
+            features = self.max_pool(new_features)
+            #features = layers.Reshape((self.npoint, 1, features.shape[-1]))(features) # Expand to use Conv2D
+            
+            # --------- PROPOSAL GENERATION ---------
+            net = self.relu1(self.bn1(self.conv1(features)))
+            net = self.relu2(self.bn2(self.conv2(net)))
+            if self.sep_coords:
+                offset = self.conv3_1(net) # (batch_size, num_proposal, 3+2+num_heading_bin*2+num_size_cluster*4)                
+                net = self.conv3_2(net)                
+            else:
+                net = self.conv3(net)
+                offset = net[:,:,:,0:3]            
+                net = net[:,:,:,3:]    
+            offset = layers.Reshape((self.npoint, 3))(offset)                
+            center = xyz + offset            
+            net = layers.Reshape((self.npoint, net.shape[-1]))(net)            
+            
 
         # Return from expanded shape
         #net = layers.Reshape((self.npoint, net.shape[-1]))(net)

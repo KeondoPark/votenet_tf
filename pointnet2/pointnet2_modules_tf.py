@@ -185,8 +185,8 @@ class PointnetSAModuleVotes(layers.Layer):
             normalize_xyz: bool = False, # noramlize local XYZ with radius
             sample_uniformly: bool = False,
             ret_unique_cnt: bool = False,
-            use_tflite: bool = False,
-            tflite_name: str = None
+            model_config = None,
+            layer_name = 'sa1'
     ):
         super().__init__()
 
@@ -213,11 +213,18 @@ class PointnetSAModuleVotes(layers.Layer):
         if use_xyz and len(mlp_spec)>0:
             mlp_spec[0] += 3  
         
-        self.use_tflite = use_tflite
-        if self.use_tflite:            
-            #self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))                             
-            from pycoral.utils.edgetpu import make_interpreter
-            self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite","tflite_models",tflite_name)))
+        self.use_tflite = model_config['use_tflite']
+        
+        if self.use_tflite:
+            self.use_edgetpu = model_config['use_edgetpu']
+            tflite_folder = model_config['tflite_folder']
+            tflite_file = model_config[layer_name + '_tflite']
+            if self.use_edgetpu:            
+                from pycoral.utils.edgetpu import make_interpreter
+                self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join(tflite_folder, tflite_file)))
+            else:
+                self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join(tflite_folder, tflite_file)))                             
+            
             self.interpreter.allocate_tensors()
 
             # Get input and output tensors.
@@ -676,20 +683,32 @@ class PointnetFPModule(layers.Layer):
         Use batchnorm
     """
 
-    def __init__(self, *, mlp: List[int], bn: bool = True, m: int, use_tflite : bool = False, tflite_name: str = None):
+    def __init__(self, *, mlp: List[int], bn: bool = True, m: int, model_config = None, layer_name = 'fp1'):
         super().__init__()
-        self.use_tflite = use_tflite
-        if self.use_tflite:
-            #from pycoral.utils.edgetpu import make_interpreter            
-            self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))                             
-            #self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",tflite_name)))
-            self.interpreter.allocate_tensors()
+        self.use_fp_mlp = model_config['use_fp_mlp']
+        self.use_tflite = model_config['use_tflite']
+        
+        if self.use_fp_mlp:
+            if self.use_tflite:
+                self.use_edgetpu = model_config['use_edgetpu']
+                tflite_folder = model_config['tflite_folder']
+                tflite_file = model_config[layer_name + '_tflite']
 
-            # Get input and output tensors.
-            self.input_details = self.interpreter.get_input_details()
-            self.output_details = self.interpreter.get_output_details()
-        else:
-            self.mlp = tf_utils.SharedMLP(mlp, bn=bn, input_shape=[m,1,mlp[0]])
+                if self.use_edgetpu:
+                    from pycoral.utils.edgetpu import make_interpreter            
+                    self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join(tflite_folder,tflite_file)))
+                else:
+                    self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join(tflite_folder,tflite_file)))
+                
+                self.interpreter.allocate_tensors()
+
+                # Get input and output tensors.
+                self.input_details = self.interpreter.get_input_details()
+                self.output_details = self.interpreter.get_output_details()
+            else:
+                self.mlp = tf_utils.SharedMLP(mlp, bn=bn, input_shape=[m,1,mlp[0]])
+        else: 
+            self.mlp = None
         
 
     def call(
@@ -734,22 +753,22 @@ class PointnetFPModule(layers.Layer):
                                    axis=2)  #(B, n, C2 + C1)
         else:
             prop_features = interpolated_feats
-        """
-        start = time.time()
+        
+        
         #new_features = tf.expand_dims(new_features, axis=-2)
-        prop_features = layers.Reshape((prop_features.shape[1], 1, prop_features.shape[2]))(prop_features)
-        if self.use_tflite:
-            self.interpreter.set_tensor(self.input_details[0]['index'], prop_features)
-            self.interpreter.invoke()
-            res_features = self.interpreter.get_tensor(self.output_details[0]['index'])
+        if self.use_fp_mlp:
+            print("FP MLP!")
+            prop_features = layers.Reshape((prop_features.shape[1], 1, prop_features.shape[2]))(prop_features)
+            if self.use_tflite:
+                self.interpreter.set_tensor(self.input_details[0]['index'], prop_features)
+                self.interpreter.invoke()
+                res_features = self.interpreter.get_tensor(self.output_details[0]['index'])
+            else:
+                res_features = self.mlp(prop_features)
+            return layers.Reshape((res_features.shape[1], res_features.shape[-1]))(res_features), prop_features
         else:
-            res_features = self.mlp(prop_features)
-        #print("Runtime for Shared mlp", time.time() - start)
-
-        #return tf.squeeze(new_features, axis=-2)   
-        return layers.Reshape((res_features.shape[1], res_features.shape[-1]))(res_features), prop_features
-        """
-        return prop_features, prop_features
+            return prop_features, prop_features
+        
 '''
 class PointnetLFPModuleMSG(nn.Module):
     """ Modified based on _PointnetSAModuleBase and PointnetSAModuleMSG

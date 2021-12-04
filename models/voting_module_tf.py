@@ -19,7 +19,7 @@ ROOT_DIR = os.path.dirname(BASE_DIR)
 
 
 class VotingModule(layers.Layer):
-    def __init__(self, vote_factor, seed_feature_dim, sep_coords=True, use_tflite=False, tflite_name=None):
+    def __init__(self, vote_factor, seed_feature_dim, model_config):
         """ Votes generation from seed point features.
 
         Args:
@@ -40,13 +40,21 @@ class VotingModule(layers.Layer):
         self.vote_factor = vote_factor
         self.in_dim = seed_feature_dim
         self.out_dim = self.in_dim # due to residual feature, in_dim has to be == out_dim
-        self.use_tflite = use_tflite
-        self.sep_coords = sep_coords
+
+        self.use_tflite = model_config['use_tflite']
+        self.sep_coords = model_config['sep_coords']
 
         if self.use_tflite:
-            #self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models", tflite_name)))                             
-            from pycoral.utils.edgetpu import make_interpreter            
-            self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite","tflite_models",tflite_name)))
+            self.use_edgetpu = model_config['use_edgetpu']
+            tflite_folder = model_config['tflite_folder']
+            tflite_file = model_config['voting_tflite']
+
+            if self.use_edgetpu:            
+                from pycoral.utils.edgetpu import make_interpreter            
+                self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join(tflite_folder,tflite_file)))
+            else:
+                self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join(tflite_folder, tflite_file)))                             
+            
             self.interpreter.allocate_tensors()
 
             # Get input and output tensors.

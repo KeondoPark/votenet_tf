@@ -4,8 +4,17 @@ import sys
 import os
 BASE_DIR = os.path.dirname(__file__)
 sys.path.append(BASE_DIR)
-interpolate_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_interpolate_so.so')) # For Jetson Nano
-#interpolate_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_interpolate_so_server.so')) # For server
+
+import json
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR)))
+environ_file = os.path.join(ROOT_DIR,'configs','environ.json')
+environ = json.load(open(environ_file))['environ']
+
+if environ == 'server':    
+    interpolate_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_interpolate_so_server.so')) #For server
+elif environ ==' jetson':
+    interpolate_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_interpolate_so.so')) #For Jetson Nano
+
 def three_nn(xyz1, xyz2):
     '''
     Input:

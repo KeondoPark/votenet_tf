@@ -218,6 +218,7 @@ class BNMomentumScheduler(object):
 
     def step(self, epoch=None):
         def reset_momentum(sharedMLP):
+            if sharedMLP is None: return
             for l in sharedMLP.mlp_layers:
                 if isinstance(l.bn_unit, (tf.keras.layers.BatchNormalization)):      
                     #print("Batch norm reschdule!", l.bn_unit.name)

@@ -44,7 +44,8 @@ class VoteNet(tf.keras.Model):
     """
 
     def __init__(self, num_class, num_heading_bin, num_size_cluster, mean_size_arr,
-        input_feature_dim=0, num_proposal=256, vote_factor=1, sampling='vote_fps', use_tflite=False, sep_coords=True):
+        model_config,
+        input_feature_dim=0, num_proposal=256, vote_factor=1, sampling='vote_fps'):
         super().__init__()
 
         self.num_class = num_class
@@ -55,22 +56,29 @@ class VoteNet(tf.keras.Model):
         self.num_proposal =  num_proposal
         self.vote_factor = vote_factor
         self.sampling=sampling
-        self.use_tflite = use_tflite
+        use_tflite = model_config['use_tflite']
+        two_way = model_config['two_way']
 
-        if use_tflite:
-            # inference only
-            self.backbone_net = Pointnet2Backbone_tflite(input_feature_dim=self.input_feature_dim, use_tflite=use_tflite)
+        if two_way:
+            if use_tflite:
+                # inference only
+                self.backbone_net = Pointnet2Backbone_tflite(input_feature_dim=self.input_feature_dim, model_config=model_config)
+            else:
+                # Backbone point feature learning
+                self.backbone_net = Pointnet2Backbone_p(input_feature_dim=self.input_feature_dim, model_config=model_config)
         else:
-            # Backbone point feature learning
-            self.backbone_net = Pointnet2Backbone_p(input_feature_dim=self.input_feature_dim, use_tflite=use_tflite)
+            self.backbone_net = Pointnet2Backbone(input_feature_dim=self.input_feature_dim, model_config=model_config)
+            
         # Hough voting
-        self.vgen = VotingModule(self.vote_factor, seed_feature_dim=128, \
-            sep_coords=sep_coords, use_tflite=use_tflite, tflite_name='voting_quant_2way_coords_edgetpu.tflite')
+        self.vgen = VotingModule(self.vote_factor, seed_feature_dim=256, \
+            model_config=model_config)
+            #sep_coords=sep_coords, use_tflite=use_tflite, tflite_name='voting_quant_2way_coords_edgetpu.tflite')
 
         # Vote aggregation and detection
         self.pnet = ProposalModule(num_class, num_heading_bin, num_size_cluster,
             mean_size_arr, num_proposal, sampling, seed_feat_dim=128, \
-            sep_coords=sep_coords, use_tflite=use_tflite, tflite_name='va_quant_2way_coords_edgetpu.tflite')
+            model_config=model_config)
+            #sep_coords=sep_coords, use_tflite=use_tflite, tflite_name='va_quant_2way_coords_edgetpu.tflite')
 
     def call(self, point_cloud, img=None, calib=None):
         """ Forward pass of the network

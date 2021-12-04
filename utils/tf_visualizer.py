@@ -13,12 +13,12 @@ import tf_logger
 
 
 class Visualizer():
-    def __init__(self, opt, name='train'):
+    def __init__(self, LOG_DIR, name='train'):
         # self.opt = opt
         #self.logger = tf_logger.Logger(os.path.join(opt.logging_dir, opt.name))
         #self.log_name = os.path.join(opt.checkpoint_dir, opt.name, 'loss_log.txt')
-        self.logger = tf_logger.Logger(os.path.join(opt.log_dir, name))
-        self.log_name = os.path.join(opt.log_dir, 'tf_visualizer_log.txt')
+        self.logger = tf_logger.Logger(os.path.join(LOG_DIR, name))
+        self.log_name = os.path.join(LOG_DIR, 'tf_visualizer_log.txt')
         with open(self.log_name, "a") as log_file:
             now = time.strftime("%c")
             log_file.write('================ Training Loss (%s) ================\n' % now)
