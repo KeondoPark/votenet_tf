@@ -10,7 +10,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR)))
 environ_file = os.path.join(ROOT_DIR,'configs','environ.json')
 environ = json.load(open(environ_file))['environ']
 
-if environ == 'server':    
+if 'server' in environ:    
     grouping_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_grouping_so_server.so')) #For server
 elif environ == 'jetson':
     grouping_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_grouping_so.so')) #For Jetson Nano

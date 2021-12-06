@@ -168,7 +168,7 @@ if __name__=='__main__':
 
     # Set file paths and dataset config
     if FLAGS.checkpoint_path is None:
-        checkpoint_path = os.path.join('tf_ckpt', model_config['model_id'])
+        checkpoint_path = os.path.join(BASE_DIR, 'tf_ckpt', model_config['model_id'])
     else:
         checkpoint_path = FLAGS.checkpoint_path
 
@@ -337,8 +337,8 @@ if __name__=='__main__':
                 net = self.conv3(net)
                 return net
 
-    #converting_layers = ['sa1','sa2','sa3','sa4','fp1','fp2','voting','va']
-    converting_layers = ['voting','va']
+    converting_layers = ['sa1','sa2','sa3','sa4','fp1','fp2','voting','va']
+    #converting_layers = ['voting','va']
     if 'sa1' in converting_layers:    
         sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[1024,64,1+10+3])
         dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,64,1+10+3])) # (B, npoint, nsample, C+3)
@@ -396,7 +396,10 @@ if __name__=='__main__':
 
     if 'voting' in converting_layers:
         voting = nnInVotingModule(vote_factor=1, seed_feature_dim=256, sep_coords=sep_coords)        
-        dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,256])) # (B, num_seed, 1, 128*3)
+        if model_config['use_fp_mlp']:
+            dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,256])) # (B, num_seed, 1, 256*3)
+        else: 
+            dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,256*3])) # (B, num_seed, 1, 256*3)
         dummy_in_voting_xyz =  tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,3])) # (B, num_seed, 1, 3)        
         dummy_in_voting = [dummy_in_voting_features, dummy_in_voting_xyz]        
         dummy_out = voting(dummy_in_voting)

@@ -4,8 +4,8 @@ Output: tflite_models/2way_nofp_nosep/voting_quant_edgetpu.tflite
 
 Operator                       Count      Status
 
-QUANTIZE                       1          Operation is otherwise supported, but not mapped due to some unspecified limitation
+ADD                            1          Mapped to Edge TPU
 STRIDED_SLICE                  2          Mapped to Edge TPU
 CONV_2D                        4          Mapped to Edge TPU
-ADD                            1          Mapped to Edge TPU
 DEQUANTIZE                     2          Operation is working on an unsupported data type
+QUANTIZE                       1          Operation is otherwise supported, but not mapped due to some unspecified limitation
