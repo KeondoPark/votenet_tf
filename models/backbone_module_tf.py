@@ -54,7 +54,7 @@ class Pointnet2Backbone(layers.Layer):
                 npoint=1024,
                 radius=0.4,
                 nsample=32,
-                mlp=[128, 128, 128, 128],
+                mlp=[128, 128, 128, 256],
                 use_xyz=True,
                 normalize_xyz=True,
                 model_config=model_config,
@@ -65,7 +65,7 @@ class Pointnet2Backbone(layers.Layer):
                 npoint=512,
                 radius=0.8,
                 nsample=16,
-                mlp=[128, 128, 128, 128],
+                mlp=[256, 128, 128, 256],
                 use_xyz=True,
                 normalize_xyz=True,
                 model_config=model_config,
@@ -76,7 +76,7 @@ class Pointnet2Backbone(layers.Layer):
                 npoint=256,
                 radius=1.2,
                 nsample=16,
-                mlp=[128, 128, 128, 128],
+                mlp=[256, 128, 128, 256],
                 use_xyz=True,
                 normalize_xyz=True,
                 model_config=model_config,
@@ -95,7 +95,7 @@ class Pointnet2Backbone(layers.Layer):
         #features = pc[..., 3:] if pc.shape[-1] > 3 else None        
 
         xyz = pc[:,:,0:3]
-        features =  pc[:,:, 4:]
+        features =  pc[:,:,3:]
 
         return xyz, features
 
@@ -477,7 +477,7 @@ class Pointnet2Backbone_tflite(layers.Layer):
         self.use_edgetpu = model_config['use_edgetpu']
         
         self.fp1 = PointnetFPModule(mlp=None, m=512, model_config=model_config, layer_name='fp1')
-        self.fp2 = PointnetFPModule(mlp=None, m=1024, model_config=model_config, layer_name='fp1')                        
+        self.fp2 = PointnetFPModule(mlp=None, m=1024, model_config=model_config, layer_name='fp2')                        
         
 
         if self.use_edgetpu:
