@@ -691,14 +691,15 @@ class PointnetFPModule(layers.Layer):
         if self.use_fp_mlp:
             if self.use_tflite:
                 self.use_edgetpu = model_config['use_edgetpu']
-                tflite_folder = model_config['tflite_folder']
-                tflite_file = model_config[layer_name + '_tflite']
+                tflite_folder = model_config['tflite_folder']                
 
                 if self.use_edgetpu:
                     from pycoral.utils.edgetpu import make_interpreter            
-                    self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join(tflite_folder,tflite_file)))
+                    tflite_file = layer_name  + '_quant_edgetpu.tflite'
+                    self.interpreter = make_interpreter(os.path.join(ROOT_DIR, tflite_folder, tflite_file))
                 else:
-                    self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join(tflite_folder,tflite_file)))
+                    tflite_file = layer_name  + '_quant.tflite'
+                    self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR, tflite_folder, tflite_file))
                 
                 self.interpreter.allocate_tensors()
 

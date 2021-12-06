@@ -56,11 +56,11 @@ class VoteNet(tf.keras.Model):
         self.num_proposal =  num_proposal
         self.vote_factor = vote_factor
         self.sampling=sampling
-        use_tflite = model_config['use_tflite']
+        self.use_tflite = model_config['use_tflite']
         two_way = model_config['two_way']
 
         if two_way:
-            if use_tflite:
+            if self.use_tflite:
                 # inference only
                 self.backbone_net = Pointnet2Backbone_tflite(input_feature_dim=self.input_feature_dim, model_config=model_config)
             else:

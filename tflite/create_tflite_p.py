@@ -4,7 +4,7 @@ import numpy as np
 import time
 import argparse
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROOT_DIR = BASE_DIR
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 sys.path.append(os.path.join(ROOT_DIR, 'models'))
@@ -21,14 +21,16 @@ from sunrgbd_detection_dataset_tf import SunrgbdDetectionVotesDataset_tfrecord, 
 from model_util_sunrgbd import SunrgbdDatasetConfig
 from sunrgbd_detection_dataset_tf import DC # dataset config
 import voting_module_tf
+import json
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--checkpoint_path', default=None, help='Model checkpoint path [default: None]')
-parser.add_argument('--out_dir', default="tflite/tflite_models", help='Folder name where output tflite files are saved')
+parser.add_argument('--out_dir', default=None, help='Folder name where output tflite files are saved')
 parser.add_argument('--gpu_mem_limit', type=int, default=0, help='GPU memory usage')
 parser.add_argument('--use_rep_data', action='store_true', help='When iterating representative dataset, use saved data')
 parser.add_argument('--rep_data_dir', default='tflite/tflite_rep_data', help='Saved representative data directory')
 parser.add_argument('--not_sep_coords', action='store_false', help='Do not use separate layer for coordinates in Voting and Proposal layers')
+parser.add_argument('--config_path', default=None, required=True, help='Model configuration path')
 FLAGS = parser.parse_args()
 
 # Limit GPU Memory usage, 256MB suffices
@@ -79,12 +81,17 @@ def wrapper_representative_data_gen_mlp(keyword, base_model):
                 sa2_grouped_features = end_points['sa2_grouped_features1'] if rnd > 0.5  else end_points['sa2_grouped_features2']
                 sa3_grouped_features = end_points['sa3_grouped_features1'] if rnd > 0.5  else end_points['sa3_grouped_features2']
                 sa4_grouped_features = end_points['sa4_grouped_features1'] if rnd > 0.5  else end_points['sa4_grouped_features2']
+                fp1_grouped_features = end_points['fp1_grouped_features']
+                fp2_grouped_features = end_points['fp2_grouped_features']
                 va_grouped_features = end_points['va_grouped_features']
 
                 feature_dict = {'sa1':sa1_grouped_features,
                         'sa2':sa2_grouped_features,
                         'sa3':sa3_grouped_features,
-                        'sa4':sa4_grouped_features}
+                        'sa4':sa4_grouped_features,
+                        'fp1':fp1_grouped_features,
+                        'fp2':fp2_grouped_features
+                        }
                 if keyword == 'va':                    
                     va_xyz = end_points['aggregated_vote_xyz']
                     #va_features = layers.Reshape((256,-1))(va_grouped_features)
@@ -152,30 +159,42 @@ def tflite_convert(keyword, model, base_model, out_dir, mlp=True):
     converter.inference_output_type = tf.float32
     tflite_model = converter.convert()
 
-    with open(os.path.join(out_dir, keyword + '_quant_2way.tflite'), 'wb') as f:
+    with open(os.path.join(out_dir, keyword + '_quant.tflite'), 'wb') as f:
         f.write(tflite_model)
 
 if __name__=='__main__':
     
+    model_config = json.load(open(FLAGS.config_path))
+
     # Set file paths and dataset config
-    demo_dir = os.path.join(BASE_DIR, 'demo_files')         
-    #checkpoint_path = os.path.join(demo_dir, 'tv_ckpt_210810')        
-    checkpoint_path = FLAGS.checkpoint_path
-    pc_path = os.path.join(demo_dir, 'input_pc_sunrgbd.ply')        
+    if FLAGS.checkpoint_path is None:
+        checkpoint_path = os.path.join('tf_ckpt', model_config['model_id'])
+    else:
+        checkpoint_path = FLAGS.checkpoint_path
+
+    if FLAGS.out_dir is None:
+        OUT_DIR = os.path.join(BASE_DIR, model_config['tflite_folder'])
+
+        if not os.path.exists(OUT_DIR):
+            os.mkdir(OUT_DIR)    
+    else:
+        OUT_DIR = FLAGS.out_dir
+
+    #Use separate layer for coordinates in voting and va layer
+    sep_coords = model_config['sep_coords']
 
     eval_config_dict = {'remove_empty_box': True, 'use_3d_nms': True, 'nms_iou': 0.25,
         'use_old_type_nms': False, 'cls_nms': False, 'per_class_proposal': False,
         'conf_thresh': 0.5, 'dataset_config': DC}
 
     # Init the model and optimzier    
-    net = votenet_tf.VoteNet(num_proposal=256, input_feature_dim=1+10, vote_factor=1,
+    net = votenet_tf.VoteNet(num_proposal=256, input_feature_dim=DC.num_class+1, vote_factor=1,
         #sampling='seed_fps', num_class=DC.num_class,
         sampling='vote_fps', num_class=DC.num_class,
         num_heading_bin=DC.num_heading_bin,
         num_size_cluster=DC.num_size_cluster,
         mean_size_arr=DC.mean_size_arr,
-        use_tflite=False,
-        sep_coords=FLAGS.not_sep_coords)
+        model_config=model_config)
     print('Constructed model.')
     
     # Load checkpoint
@@ -318,28 +337,7 @@ if __name__=='__main__':
                 net = self.conv3(net)
                 return net
 
-            
-
-            
-        """
-        def call(self, grouped_features):                        
-            if self.nsample:
-                if self.nsample == 16:
-                    new_features = self.max_pool(self.sharedMLP(grouped_features))
-                elif self.nsample > 16:
-                    new_features = self.max_pool2(self.max_pool(self.sharedMLP(grouped_features)))
-            else:                
-                new_features = self.sharedMLP(grouped_features)
-
-            # --------- PROPOSAL GENERATION ---------
-            net = self.relu1(self.bn1(self.conv1(new_features)))
-            net = self.relu2(self.bn2(self.conv2(net))) 
-            net = self.conv3(net) # (batch_size, num_proposal, 2+3+num_heading_bin*2+num_size_cluster*4)
-            
-            return net
-        """
-
-    #converting_layers = ['sa3','sa4','voting','va']
+    #converting_layers = ['sa1','sa2','sa3','sa4','fp1','fp2','voting','va']
     converting_layers = ['voting','va']
     if 'sa1' in converting_layers:    
         sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[1024,64,1+10+3])
@@ -348,35 +346,57 @@ if __name__=='__main__':
         # Copy weights from the base model    
         layer = sa1_mlp.sharedMLP
         layer.set_weights(net.backbone_net.sa1_mlp.mlp_module.get_weights()) 
-        tflite_convert('sa1', sa1_mlp, net, FLAGS.out_dir)
+        print("=" * 30, "Converting SA1 layer", "=" * 30)
+        tflite_convert('sa1', sa1_mlp, net, OUT_DIR)
 
     if 'sa2' in converting_layers:
-        sa2_mlp = SharedMLPModel(mlp_spec=[128, 128, 128, 128], nsample=32, input_shape=[512,32,128+3])
+        sa2_mlp = SharedMLPModel(mlp_spec=[128, 128, 128, 256], nsample=32, input_shape=[512,32,128+3])
         dummy_in_sa2 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,512,32,128+3])) # (B, npoint, nsample, C+3)
         dummy_out = sa2_mlp(dummy_in_sa2)
         layer = sa2_mlp.sharedMLP
         layer.set_weights(net.backbone_net.sa2_mlp.mlp_module.get_weights())
-        tflite_convert('sa2', sa2_mlp, net, FLAGS.out_dir)
+        print("=" * 30, "Converting SA2 layer", "=" * 30)
+        tflite_convert('sa2', sa2_mlp, net, OUT_DIR)
 
     if 'sa3' in converting_layers:
-        sa3_mlp = SharedMLPModel(mlp_spec=[128, 128, 128, 128], nsample=16, input_shape=[256,16,256+3])
-        dummy_in_sa3 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,128+3])) # (B, npoint, nsample, C+3)
+        sa3_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16, input_shape=[256,16,256+3])
+        dummy_in_sa3 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,256+3])) # (B, npoint, nsample, C+3)
         dummy_out = sa3_mlp(dummy_in_sa3)
         layer = sa3_mlp.sharedMLP
         layer.set_weights(net.backbone_net.sa3_mlp.mlp_module.get_weights())
-        tflite_convert('sa3', sa3_mlp, net, FLAGS.out_dir)
+        print("=" * 30, "Converting SA3 layer", "=" * 30)
+        tflite_convert('sa3', sa3_mlp, net, OUT_DIR)
 
     if 'sa4' in converting_layers:
-        sa4_mlp = SharedMLPModel(mlp_spec=[128, 128, 128, 128], nsample=16, input_shape=[128,16,256+3])
-        dummy_in_sa4 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,128,16,128+3])) # (B, npoint, nsample, C+3)
+        sa4_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16, input_shape=[128,16,256+3])
+        dummy_in_sa4 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,128,16,256+3])) # (B, npoint, nsample, C+3)
         dummy_out = sa4_mlp(dummy_in_sa4)
         layer = sa4_mlp.sharedMLP
         layer.set_weights(net.backbone_net.sa4_mlp.mlp_module.get_weights())
-        tflite_convert('sa4', sa4_mlp, net, FLAGS.out_dir)
+        print("=" * 30, "Converting SA4 layer", "=" * 30)
+        tflite_convert('sa4', sa4_mlp, net, OUT_DIR)
+
+    if 'fp1' in converting_layers and model_config['use_fp_mlp']:
+        fp1_mlp = SharedMLPModel(mlp_spec=[256+256,256,256], input_shape=[512,1,512])
+        dummy_in_fp1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,512,1,512])) # (B, npoint, nsample, C+3)
+        dummy_out = fp1_mlp(dummy_in_fp1)
+        layer = fp1_mlp.sharedMLP
+        layer.set_weights(net.backbone_net.fp1.mlp.get_weights())
+        print("=" * 30, "Converting FP1 layer", "=" * 30)
+        tflite_convert('fp1', fp1_mlp, net, OUT_DIR)
+    
+    if 'fp2' in converting_layers and model_config['use_fp_mlp']:
+        fp2_mlp = SharedMLPModel(mlp_spec=[256+256,256,256], input_shape=[1024,1,512])
+        dummy_in_fp2 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,512])) # (B, npoint, nsample, C+3)
+        dummy_out = fp2_mlp(dummy_in_fp2)
+        layer = fp2_mlp.sharedMLP
+        layer.set_weights(net.backbone_net.fp2.mlp.get_weights())
+        print("=" * 30, "Converting FP2 layer", "=" * 30)
+        tflite_convert('fp2', fp2_mlp, net, OUT_DIR)
 
     if 'voting' in converting_layers:
-        voting = nnInVotingModule(vote_factor=1, seed_feature_dim=128, sep_coords=FLAGS.not_sep_coords)        
-        dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,128*3])) # (B, num_seed, 1, 128*3)
+        voting = nnInVotingModule(vote_factor=1, seed_feature_dim=256, sep_coords=sep_coords)        
+        dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,256])) # (B, num_seed, 1, 128*3)
         dummy_in_voting_xyz =  tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,3])) # (B, num_seed, 1, 3)        
         dummy_in_voting = [dummy_in_voting_features, dummy_in_voting_xyz]        
         dummy_out = voting(dummy_in_voting)
@@ -384,7 +404,7 @@ if __name__=='__main__':
         layer.conv0.set_weights(net.vgen.conv0.get_weights())
         layer.conv1.set_weights(net.vgen.conv1.get_weights())
         layer.conv2.set_weights(net.vgen.conv2.get_weights())
-        if FLAGS.not_sep_coords:
+        if sep_coords:
             layer.conv3_1.set_weights(net.vgen.conv3_1.get_weights())
             layer.conv3_2.set_weights(net.vgen.conv3_2.get_weights())            
         else:
@@ -392,13 +412,14 @@ if __name__=='__main__':
         layer.bn0.set_weights(net.vgen.bn0.get_weights())
         layer.bn1.set_weights(net.vgen.bn1.get_weights())
         layer.bn2.set_weights(net.vgen.bn2.get_weights())
-        tflite_convert('voting', voting, net, FLAGS.out_dir, mlp=False)
+        print("=" * 30, "Converting Voting layer", "=" * 30)
+        tflite_convert('voting', voting, net, OUT_DIR, mlp=False)
 
 
     if 'va' in converting_layers:
-        va_mlp = vaModule(mlp_spec=[128, 128, 128, 128], nsample=16, input_shape=[256,16,128+3], sep_coords=FLAGS.not_sep_coords)
+        va_mlp = vaModule(mlp_spec=[128, 128, 128, 128], nsample=16, input_shape=[256,16,256+3], sep_coords=sep_coords)
         #dummy_in_va = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,3 + (16*(128+3))]), dtype=tf.float32) # (B, npoint, nsample, C+3)                
-        dummy_va_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,(128+3)]), dtype=tf.float32) # (B, npoint, 3 + nsample*(C+3)) 
+        dummy_va_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,(256+3)]), dtype=tf.float32) # (B, npoint, 3 + nsample*(C+3)) 
         dummy_va_xyz = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,3]), dtype=tf.float32) # (B, npoint, 3 + nsample*(C+3)) 
         dummy_in_va = [dummy_va_features, dummy_va_xyz]
         dummy_out = va_mlp(dummy_in_va)
@@ -408,15 +429,16 @@ if __name__=='__main__':
         layer = va_mlp
         layer.conv1.set_weights(net.pnet.conv1.get_weights())
         layer.conv2.set_weights(net.pnet.conv2.get_weights())
-        if FLAGS.not_sep_coords:
+        if sep_coords:
             layer.conv3_1.set_weights(net.pnet.conv3_1.get_weights())
             layer.conv3_2.set_weights(net.pnet.conv3_2.get_weights())            
         else:
             layer.conv3.set_weights(net.pnet.conv3.get_weights())
         layer.bn1.set_weights(net.pnet.bn1.get_weights())
         layer.bn2.set_weights(net.pnet.bn2.get_weights())
-
-        tflite_convert('va', va_mlp, net, FLAGS.out_dir)
+        
+        print("=" * 30, "Converting VA layer", "=" * 30)
+        tflite_convert('va', va_mlp, net, OUT_DIR)
 
     if not os.path.exists(FLAGS.out_dir):
         os.mkdir(FLAGS.out_dir)

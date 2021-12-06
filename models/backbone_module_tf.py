@@ -482,15 +482,16 @@ class Pointnet2Backbone_tflite(layers.Layer):
 
         if self.use_edgetpu:
             from pycoral.utils.edgetpu import make_interpreter            
-            self.sa1_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa1_quant_2way_edgetpu.tflite')))
-            self.sa2_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa2_quant_2way_edgetpu.tflite')))
-            self.sa3_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa3_quant_2way_edgetpu.tflite')))
-            self.sa4_interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa4_quant_2way_edgetpu.tflite')))
+            tflite_folder = model_config['tflite_folder']
+            self.sa1_interpreter = make_interpreter(os.path.join(ROOT_DIR, tflite_folder, 'sa1_quant_edgetpu.tflite'))
+            self.sa2_interpreter = make_interpreter(os.path.join(ROOT_DIR, tflite_folder, 'sa2_quant_edgetpu.tflite'))
+            self.sa3_interpreter = make_interpreter(os.path.join(ROOT_DIR, tflite_folder, 'sa3_quant_edgetpu.tflite'))
+            self.sa4_interpreter = make_interpreter(os.path.join(ROOT_DIR, tflite_folder, 'sa4_quant_edgetpu.tflite'))
         else:
-            self.sa1_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa1_quant_2way_base.tflite')))
-            self.sa2_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa2_quant_2way_base.tflite')))
-            self.sa3_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa3_quant_2way_base.tflite')))
-            self.sa4_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join("tflite_models",'sa4_quant_2way_base.tflite')))
+            self.sa1_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR, tflite_folder, 'sa1_quant.tflite'))
+            self.sa2_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR, tflite_folder, 'sa2_quant.tflite'))
+            self.sa3_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR, tflite_folder, 'sa3_quant.tflite'))
+            self.sa4_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR, tflite_folder, 'sa4_quant.tflite'))
         
         self.sa1_interpreter.allocate_tensors()
         self.sa2_interpreter.allocate_tensors()
