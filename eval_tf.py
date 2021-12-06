@@ -53,10 +53,12 @@ parser.add_argument('--nms_iou', type=float, default=0.25, help='NMS IoU thresho
 parser.add_argument('--conf_thresh', type=float, default=0.05, help='Filter out predictions with obj prob less than it. [default: 0.05]')
 parser.add_argument('--faster_eval', action='store_true', help='Faster evaluation by skippling empty bounding box removal.')
 parser.add_argument('--shuffle_dataset', action='store_true', help='Shuffle the dataset (random order).')
-parser.add_argument('--use_painted', action='store_true', help='Use Point painting')
-parser.add_argument('--use_tflite', action='store_true', help='Use tflite')
-parser.add_argument('--not_sep_coords', action='store_false', help='Do not use separate layer for coordinates in Voting and Proposal layers')
+parser.add_argument('--config_path', default=None, required=True, help='Model configuration path')
+
 FLAGS = parser.parse_args()
+
+import json
+model_config = json.load(open(FLAGS.config_path))
 
 if FLAGS.use_cls_nms:
     assert(FLAGS.use_3d_nms)
@@ -65,7 +67,9 @@ if FLAGS.use_cls_nms:
 BATCH_SIZE = FLAGS.batch_size
 NUM_POINT = FLAGS.num_point
 DUMP_DIR = FLAGS.dump_dir
-CHECKPOINT_PATH = FLAGS.checkpoint_path
+DEFAULT_CHECKPOINT_PATH = os.path.join('tf_ckpt', model_config['model_id'])
+CHECKPOINT_PATH = FLAGS.checkpoint_path if FLAGS.checkpoint_path is not None \
+    else DEFAULT_CHECKPOINT_PATH
 assert(CHECKPOINT_PATH is not None)
 FLAGS.DUMP_DIR = DUMP_DIR
 AP_IOU_THRESHOLDS = [float(x) for x in FLAGS.ap_iou_thresholds.split(',')]
@@ -90,7 +94,7 @@ if FLAGS.dataset == 'sunrgbd':
     TEST_DATASET = SunrgbdDetectionVotesDataset_tfrecord('val', num_points=NUM_POINT,
         augment=False,  shuffle=FLAGS.shuffle_dataset, batch_size=BATCH_SIZE,
         use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
-        use_painted=FLAGS.use_painted)
+        use_painted=model_config['use_painted'])
 else:
     print('Unknown dataset %s. Exiting...'%(FLAGS.dataset))
     exit(-1)
@@ -100,7 +104,7 @@ else:
 num_input_channel = int(FLAGS.use_color)*3 + int(not FLAGS.no_height)*1
 
 ### Point Paiting : Sementation score is appended at the end of point cloud
-if FLAGS.use_painted:
+if model_config['use_painted']:
     num_input_channel += DATASET_CONFIG.num_class
 
 
@@ -112,8 +116,7 @@ net = votenet_tf.VoteNet(num_class=DATASET_CONFIG.num_class,
                input_feature_dim=num_input_channel,
                vote_factor=FLAGS.vote_factor,
                sampling=FLAGS.cluster_sampling,
-               use_tflite=FLAGS.use_tflite,
-               sep_coords=FLAGS.not_sep_coords)
+               model_config=model_config)
 
 import loss_helper_tf
 criterion = loss_helper_tf.get_loss
@@ -126,7 +129,7 @@ it = -1 # for the initialize value of `LambdaLR` and `BNMomentumScheduler`
 start_epoch = 0
 ckpt = tf.train.Checkpoint(epoch=tf.Variable(1), optimizer=optimizer, net=net)
 
-if not FLAGS.use_tflite:
+if not model_config['use_tflite']:
     manager = tf.train.CheckpointManager(ckpt, CHECKPOINT_PATH, max_to_keep=3)
     ckpt.restore(manager.latest_checkpoint)
 

@@ -19,7 +19,7 @@ environ = json.load(open(environ_file))['environ']
 
 if environ == 'server':    
     sampling_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_sampling_so_server.so')) #For server
-elif environ ==' jetson':
+elif environ == 'jetson':
     sampling_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_sampling_so.so')) #For Jetson Nano
 
 def prob_sample(inp,inpr):

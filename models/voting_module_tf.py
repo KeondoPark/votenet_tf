@@ -46,13 +46,14 @@ class VotingModule(layers.Layer):
 
         if self.use_tflite:
             self.use_edgetpu = model_config['use_edgetpu']
-            tflite_folder = model_config['tflite_folder']
-            tflite_file = model_config['voting_tflite']
+            tflite_folder = model_config['tflite_folder']            
 
             if self.use_edgetpu:            
+                tflite_file = 'voting_quant_edgetpu.tflite'
                 from pycoral.utils.edgetpu import make_interpreter            
                 self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join(tflite_folder,tflite_file)))
             else:
+                tflite_file = 'voting_quant.tflite'
                 self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join(tflite_folder, tflite_file)))                             
             
             self.interpreter.allocate_tensors()
@@ -96,7 +97,8 @@ class VotingModule(layers.Layer):
 
         if self.use_tflite:
             self.interpreter.set_tensor(self.input_details[0]['index'], seed_features)
-            self.interpreter.set_tensor(self.input_details[1]['index'], seed_xyz)
+            if len(self.input_details) > 1:
+                self.interpreter.set_tensor(self.input_details[1]['index'], seed_xyz)
             self.interpreter.invoke()
             if self.sep_coords:
                 offset = self.interpreter.get_tensor(self.output_details[0]['index'])

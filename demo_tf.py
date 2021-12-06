@@ -18,9 +18,8 @@ parser.add_argument('--dataset', default='sunrgbd', help='Dataset: sunrgbd or sc
 parser.add_argument('--num_point', type=int, default=20000, help='Point Number [default: 20000]')
 parser.add_argument('--checkpoint_path', default=None, help='Model checkpoint path [default: None]')
 parser.add_argument('--gpu_mem_limit', type=int, default=0, help='GPU memory usage')
-parser.add_argument('--use_tflite', action='store_true', help='Use tflite')
-parser.add_argument('--use_painted', action='store_true', help='Use tflite')
 parser.add_argument('--inf_time_file', default=None, help='Record inference time')
+parser.add_argument('--config_path', default=None, required=True, help='Model configuration path')
 FLAGS = parser.parse_args()
 
 import tensorflow as tf
@@ -38,10 +37,13 @@ import votenet_tf
 from votenet_tf import dump_results
 from PIL import Image
 from deeplab import run_semantic_seg
+import json
+
+model_config = json.load(open(FLAGS.config_path))
 
 def preprocess_point_cloud(point_cloud):
     ''' Prepare the numpy point cloud (N,3) for forward pass '''
-    if not FLAGS.use_painted:
+    if not model_config['use_painted']:
         point_cloud = point_cloud[:,0:3] # do not use color for now
     floor_height = np.percentile(point_cloud[:,2],0.99)
     height = point_cloud[:,2] - floor_height
@@ -52,7 +54,7 @@ def preprocess_point_cloud(point_cloud):
     return pc
 
 if __name__=='__main__':
-   
+    
     # Limit GPU Memory usage, 256MB suffices in jetson nano
     if FLAGS.gpu_mem_limit:
         gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -94,13 +96,13 @@ if __name__=='__main__':
         num_heading_bin=DC.num_heading_bin,
         num_size_cluster=DC.num_size_cluster,
         mean_size_arr=DC.mean_size_arr,
-        use_tflite=FLAGS.use_tflite)
+        model_config=model_config)
     print('Constructed model.')
     
     # Load checkpoint
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)    
 
-    if FLAGS.use_tflite:          
+    if model_config['use_tflite']:          
         restore_list = []  
         #restore_list.append(tf.train.Checkpoint(pnet=net.pnet))
         #restore_list.append(tf.train.Checkpoint(vgen=net.vgen))
@@ -136,11 +138,11 @@ if __name__=='__main__':
     inputs = {'point_clouds': tf.convert_to_tensor(pc)}
    
     # Model inference    
-    if FLAGS.use_painted:
+    if model_config['use_painted']:
         ## TODO: NEED TO BE REPLACED
         img = dataset.get_image2(data_idx)
         calib = dataset.get_calibration(data_idx)                
-        if FLAGS.use_tflite:
+        if model_config['use_tflite']:
             end_points = net(inputs['point_clouds'], training=False, img=img, calib=calib)        
         else:
             xyz = pc[0,:,:3]

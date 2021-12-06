@@ -28,10 +28,16 @@ import tensorflow as tf
 import scipy.io as sio # to load .mat files for depth points
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
+
+import json
+environ_file = os.path.join(ROOT_DIR,'configs','environ.json')
+environ = json.load(open(environ_file))['environ']
+
 #DATA_DIR = os.path.dirname(ROOT_DIR)
-#DATA_DIR = '/home/aiot/data'
-#DATA_DIR='/media'
-DATA_DIR='/data'
+if environ == 'server':    
+    DATA_DIR = '/home/aiot/data'
+elif environ == 'jetson':
+    DATA_DIR='/media'
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 import pc_util

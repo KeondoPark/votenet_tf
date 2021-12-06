@@ -12,7 +12,7 @@ environ = json.load(open(environ_file))['environ']
 
 if environ == 'server':    
     interpolate_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_interpolate_so_server.so')) #For server
-elif environ ==' jetson':
+elif environ == 'jetson':
     interpolate_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_interpolate_so.so')) #For Jetson Nano
 
 def three_nn(xyz1, xyz2):

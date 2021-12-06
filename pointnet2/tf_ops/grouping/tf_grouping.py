@@ -12,7 +12,7 @@ environ = json.load(open(environ_file))['environ']
 
 if environ == 'server':    
     grouping_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_grouping_so_server.so')) #For server
-elif environ ==' jetson':
+elif environ == 'jetson':
     grouping_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_grouping_so.so')) #For Jetson Nano
 
 
