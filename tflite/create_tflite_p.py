@@ -217,7 +217,7 @@ if __name__=='__main__':
     tic = time.time()
     end_points = net(inputs['point_clouds'], training=False)
     toc = time.time()
-    print('Inference time: %f'%(toc-tic))
+    print('Inference time: %f'%(toc-tic))    
 
     ############################## Above is base model inference ######################################
     ############################## Below is tflite conversion #########################################
@@ -410,7 +410,7 @@ if __name__=='__main__':
         if sep_coords:
             w, b = net.vgen.conv3.get_weights()
             layer.conv3_1.set_weights([w[:,:,:,:3], b[:3]])
-            layer.conv3_2.set_weights([w[:,:,:,3:], b[3:]])            
+            layer.conv3_2.set_weights([w[:,:,:,3:], b[3:]])             
 
             #layer.conv3_1.set_weights(net.vgen.conv3_1.get_weights())
             #layer.conv3_2.set_weights(net.vgen.conv3_2.get_weights())            
@@ -451,3 +451,4 @@ if __name__=='__main__':
         
         print("=" * 30, "Converting VA layer", "=" * 30)
         tflite_convert('va', va_mlp, net, OUT_DIR)
+        
