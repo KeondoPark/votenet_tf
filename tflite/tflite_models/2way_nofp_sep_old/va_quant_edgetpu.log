@@ -1,10 +1,11 @@
 Edge TPU Compiler version 16.0.384591198
-Input: tflite_models/2way_nofp_sep/voting_quant.tflite
-Output: tflite_models/2way_nofp_sep/voting_quant_edgetpu.tflite
+Input: tflite_models/2way_nofp_sep/va_quant.tflite
+Output: tflite_models/2way_nofp_sep/va_quant_edgetpu.tflite
 
 Operator                       Count      Status
 
-ADD                            1          Mapped to Edge TPU
+RESHAPE                        2          Mapped to Edge TPU
+CONV_2D                        7          Mapped to Edge TPU
 DEQUANTIZE                     2          Operation is working on an unsupported data type
 QUANTIZE                       1          Operation is otherwise supported, but not mapped due to some unspecified limitation
-CONV_2D                        5          Mapped to Edge TPU
+MAX_POOL_2D                    1          Mapped to Edge TPU
