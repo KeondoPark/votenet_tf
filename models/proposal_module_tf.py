@@ -145,11 +145,11 @@ class ProposalModule(layers.Layer):
             
             # 2: objectness_scores, 3: offset(From vote to center), score/residuals for num_heading_bin(12),
             # score/(H,W,C) for size, Class score
-            if self.sep_coords:
-                self.conv3_1 = layers.Conv2D(filters=3, kernel_size=1)
-                self.conv3_2 = layers.Conv2D(filters=2+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
-            else:
-                self.conv3 = layers.Conv2D(filters=2+3+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
+            #if self.sep_coords:
+            #    self.conv3_1 = layers.Conv2D(filters=3, kernel_size=1)
+            #    self.conv3_2 = layers.Conv2D(filters=2+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
+            #else:
+            self.conv3 = layers.Conv2D(filters=2+3+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
             
             self.bn1 = layers.BatchNormalization(axis=-1)
             self.bn2 = layers.BatchNormalization(axis=-1)
@@ -197,8 +197,8 @@ class ProposalModule(layers.Layer):
                 net = self.interpreter.get_tensor(self.output_details[1]['index']) 
 
                 offset = tf.convert_to_tensor(offset)
-                #center = xyz + offset
-                center = offset
+                center = xyz + offset
+                #center = offset
                 net = tf.convert_to_tensor(net)                  
             else:
                 net = self.interpreter.get_tensor(self.output_details[0]['index']) 
@@ -217,13 +217,14 @@ class ProposalModule(layers.Layer):
             # --------- PROPOSAL GENERATION ---------
             net = self.relu1(self.bn1(self.conv1(features)))
             net = self.relu2(self.bn2(self.conv2(net)))
-            if self.sep_coords:
-                offset = self.conv3_1(net) # (batch_size, num_proposal, 3+2+num_heading_bin*2+num_size_cluster*4)                
-                net = self.conv3_2(net)                
-            else:
-                net = self.conv3(net)
-                offset = net[:,:,:,0:3]            
-                net = net[:,:,:,3:]    
+            #if self.sep_coords:
+            #    offset = self.conv3_1(net) # (batch_size, num_proposal, 3+2+num_heading_bin*2+num_size_cluster*4)                
+            #    net = self.conv3_2(net)                
+            #else:
+            net = self.conv3(net)
+            offset = net[:,:,:,0:3]            
+            net = net[:,:,:,3:]    
+            
             offset = layers.Reshape((self.npoint, 3))(offset)                
             center = xyz + offset            
             net = layers.Reshape((self.npoint, net.shape[-1]))(net)            

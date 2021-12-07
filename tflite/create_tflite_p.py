@@ -395,7 +395,7 @@ if __name__=='__main__':
         tflite_convert('fp2', fp2_mlp, net, OUT_DIR)
 
     if 'voting' in converting_layers:
-        voting = nnInVotingModule(vote_factor=1, seed_feature_dim=256, sep_coords=True)        
+        voting = nnInVotingModule(vote_factor=1, seed_feature_dim=256, sep_coords=sep_coords)        
         if model_config['use_fp_mlp']:
             dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,256])) # (B, num_seed, 1, 256*3)
         else: 

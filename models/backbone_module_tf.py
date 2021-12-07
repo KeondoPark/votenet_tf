@@ -168,7 +168,7 @@ class Pointnet2Backbone(layers.Layer):
         #end_points.append(prop_features) #20
         
         #print("========================== FP2 ===============================")
-        fp2_features, fp2_grouped_features = self.fp1(end_points['sa2_xyz'], end_points['sa3_xyz'], end_points['sa2_features'], features)        
+        fp2_features, fp2_grouped_features = self.fp2(end_points['sa2_xyz'], end_points['sa3_xyz'], end_points['sa2_features'], features)        
         end_points['fp2_features'] = fp2_features
         end_points['fp2_grouped_features'] = fp2_grouped_features
         end_points['fp2_xyz'] = end_points['sa2_xyz']        
