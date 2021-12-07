@@ -217,7 +217,7 @@ if __name__=='__main__':
     tic = time.time()
     end_points = net(inputs['point_clouds'], training=False)
     toc = time.time()
-    print('Inference time: %f'%(toc-tic))
+    print('Inference time: %f'%(toc-tic))    
 
     ############################## Above is base model inference ######################################
     ############################## Below is tflite conversion #########################################
@@ -395,7 +395,7 @@ if __name__=='__main__':
         tflite_convert('fp2', fp2_mlp, net, OUT_DIR)
 
     if 'voting' in converting_layers:
-        voting = nnInVotingModule(vote_factor=1, seed_feature_dim=256, sep_coords=True)        
+        voting = nnInVotingModule(vote_factor=1, seed_feature_dim=256, sep_coords=sep_coords)        
         if model_config['use_fp_mlp']:
             dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,256])) # (B, num_seed, 1, 256*3)
         else: 
@@ -410,7 +410,7 @@ if __name__=='__main__':
         if sep_coords:
             w, b = net.vgen.conv3.get_weights()
             layer.conv3_1.set_weights([w[:,:,:,:3], b[:3]])
-            layer.conv3_2.set_weights([w[:,:,:,3:], b[3:]])            
+            layer.conv3_2.set_weights([w[:,:,:,3:], b[3:]])             
 
             #layer.conv3_1.set_weights(net.vgen.conv3_1.get_weights())
             #layer.conv3_2.set_weights(net.vgen.conv3_2.get_weights())            
@@ -451,3 +451,4 @@ if __name__=='__main__':
         
         print("=" * 30, "Converting VA layer", "=" * 30)
         tflite_convert('va', va_mlp, net, OUT_DIR)
+        
