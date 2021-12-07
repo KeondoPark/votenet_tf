@@ -12,5 +12,5 @@ conda activate votenet_tf # Activate your conda environment
 srun python eval_tf.py  \
 --use_3d_nms --use_cls_nms --per_class_proposal \
 --faster_eval --batch_size 1 --ap_iou_thresholds 0.25 \
---dump_dir evals/eval30 --config_path configs/inf_211204_2.json
+--dump_dir evals/eval30 --config_path configs/inf_211204_3.json
 
