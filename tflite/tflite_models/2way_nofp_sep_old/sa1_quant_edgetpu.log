@@ -4,8 +4,8 @@ Output: tflite_models/2way_nofp_sep/sa1_quant_edgetpu.tflite
 
 Operator                       Count      Status
 
-QUANTIZE                       1          Operation is otherwise supported, but not mapped due to some unspecified limitation
-MAX_POOL_2D                    2          Mapped to Edge TPU
-CONV_2D                        3          Mapped to Edge TPU
-DEQUANTIZE                     1          Operation is working on an unsupported data type
 RESHAPE                        1          More than one subgraph is not supported
+QUANTIZE                       1          Operation is otherwise supported, but not mapped due to some unspecified limitation
+CONV_2D                        3          Mapped to Edge TPU
+MAX_POOL_2D                    2          Mapped to Edge TPU
+DEQUANTIZE                     1          Operation is working on an unsupported data type

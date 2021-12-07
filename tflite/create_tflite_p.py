@@ -295,7 +295,7 @@ if __name__=='__main__':
                 vote_features = net0 + residual_features 
                 return [offset, vote_features]
 
-    class vaModule(tf.keras.Model)    :
+    class vaModule(tf.keras.Model):
         def __init__(self, mlp_spec, input_shape, nsample=0, sep_coords=True):
             super().__init__()
             self.sharedMLP = tf_utils.SharedMLP(mlp_spec, bn=True, input_shape=input_shape)
@@ -337,8 +337,8 @@ if __name__=='__main__':
                 net = self.conv3(net)
                 return net
 
-    converting_layers = ['sa1','sa2','sa3','sa4','fp1','fp2','voting','va']
-    #converting_layers = ['voting','va']
+    #converting_layers = ['sa1','sa2','sa3','sa4','fp1','fp2','voting','va']
+    converting_layers = ['voting','va']
     if 'sa1' in converting_layers:    
         sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[1024,64,1+10+3])
         dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,64,1+10+3])) # (B, npoint, nsample, C+3)
@@ -395,7 +395,7 @@ if __name__=='__main__':
         tflite_convert('fp2', fp2_mlp, net, OUT_DIR)
 
     if 'voting' in converting_layers:
-        voting = nnInVotingModule(vote_factor=1, seed_feature_dim=256, sep_coords=sep_coords)        
+        voting = nnInVotingModule(vote_factor=1, seed_feature_dim=256, sep_coords=True)        
         if model_config['use_fp_mlp']:
             dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,256])) # (B, num_seed, 1, 256*3)
         else: 
@@ -408,10 +408,15 @@ if __name__=='__main__':
         layer.conv1.set_weights(net.vgen.conv1.get_weights())
         layer.conv2.set_weights(net.vgen.conv2.get_weights())
         if sep_coords:
-            layer.conv3_1.set_weights(net.vgen.conv3_1.get_weights())
-            layer.conv3_2.set_weights(net.vgen.conv3_2.get_weights())            
+            w, b = net.vgen.conv3.get_weights()
+            layer.conv3_1.set_weights([w[:,:,:,:3], b[:3]])
+            layer.conv3_2.set_weights([w[:,:,:,3:], b[3:]])            
+
+            #layer.conv3_1.set_weights(net.vgen.conv3_1.get_weights())
+            #layer.conv3_2.set_weights(net.vgen.conv3_2.get_weights())            
         else:
             layer.conv3.set_weights(net.vgen.conv3.get_weights())
+
         layer.bn0.set_weights(net.vgen.bn0.get_weights())
         layer.bn1.set_weights(net.vgen.bn1.get_weights())
         layer.bn2.set_weights(net.vgen.bn2.get_weights())
@@ -433,8 +438,12 @@ if __name__=='__main__':
         layer.conv1.set_weights(net.pnet.conv1.get_weights())
         layer.conv2.set_weights(net.pnet.conv2.get_weights())
         if sep_coords:
-            layer.conv3_1.set_weights(net.pnet.conv3_1.get_weights())
-            layer.conv3_2.set_weights(net.pnet.conv3_2.get_weights())            
+            w, b = net.pnet.conv3.get_weights()
+            layer.conv3_1.set_weights([w[:,:,:,:3], b[:3]])
+            layer.conv3_2.set_weights([w[:,:,:,3:], b[3:]])
+
+            #layer.conv3_1.set_weights(net.pnet.conv3_1.get_weights())
+            #layer.conv3_2.set_weights(net.pnet.conv3_2.get_weights())            
         else:
             layer.conv3.set_weights(net.pnet.conv3.get_weights())
         layer.bn1.set_weights(net.pnet.bn1.get_weights())
@@ -442,15 +451,3 @@ if __name__=='__main__':
         
         print("=" * 30, "Converting VA layer", "=" * 30)
         tflite_convert('va', va_mlp, net, OUT_DIR)
-
-    if not os.path.exists(FLAGS.out_dir):
-        os.mkdir(FLAGS.out_dir)
-
-    
-    
-    
-    
-    
-    
-    
-    
