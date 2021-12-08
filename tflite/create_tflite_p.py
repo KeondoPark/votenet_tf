@@ -77,10 +77,17 @@ def wrapper_representative_data_gen_mlp(keyword, base_model):
                 print("Using inference results", i, "-th batch...")
 
                 rnd = np.random.rand(1)
-                sa1_grouped_features = end_points['sa1_grouped_features1'] if rnd > 0.5  else end_points['sa1_grouped_features2']
-                sa2_grouped_features = end_points['sa2_grouped_features1'] if rnd > 0.5  else end_points['sa2_grouped_features2']
-                sa3_grouped_features = end_points['sa3_grouped_features1'] if rnd > 0.5  else end_points['sa3_grouped_features2']
-                sa4_grouped_features = end_points['sa4_grouped_features1'] if rnd > 0.5  else end_points['sa4_grouped_features2']
+                if 'sa1_grouped_features1' in end_points:
+                    sa1_grouped_features = end_points['sa1_grouped_features1'] if rnd > 0.5  else end_points['sa1_grouped_features2']
+                    sa2_grouped_features = end_points['sa2_grouped_features1'] if rnd > 0.5  else end_points['sa2_grouped_features2']
+                    sa3_grouped_features = end_points['sa3_grouped_features1'] if rnd > 0.5  else end_points['sa3_grouped_features2']
+                    sa4_grouped_features = end_points['sa4_grouped_features1'] if rnd > 0.5  else end_points['sa4_grouped_features2']
+                else:
+                    sa1_grouped_features = end_points['sa1_grouped_features']
+                    sa2_grouped_features = end_points['sa2_grouped_features']
+                    sa3_grouped_features = end_points['sa3_grouped_features']
+                    sa4_grouped_features = end_points['sa4_grouped_features']
+
                 fp1_grouped_features = end_points['fp1_grouped_features']
                 fp2_grouped_features = end_points['fp2_grouped_features']
                 va_grouped_features = end_points['va_grouped_features']
@@ -337,42 +344,71 @@ if __name__=='__main__':
                 net = self.conv3(net)
                 return net
 
-    #converting_layers = ['sa1','sa2','sa3','sa4','fp1','fp2','voting','va']
-    converting_layers = ['voting','va']
+    converting_layers = ['sa1','sa2','sa3','sa4','fp1','fp2','voting','va']
+    #converting_layers = ['voting','va']
     if 'sa1' in converting_layers:    
-        sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[1024,64,1+10+3])
-        dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,64,1+10+3])) # (B, npoint, nsample, C+3)
+        if model_config['two_way']:
+            sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[1024,64,1+10+3])
+            dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,64,1+10+3])) # (B, npoint, nsample, C+3)
+        else:
+            sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[2048,64,1+10+3+1])
+            dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,2048,64,1+10+3+1])) # (B, npoint, nsample, C+3)
         dummy_out = sa1_mlp(dummy_in_sa1)
         # Copy weights from the base model    
         layer = sa1_mlp.sharedMLP
-        layer.set_weights(net.backbone_net.sa1_mlp.mlp_module.get_weights()) 
+        if model_config['two_way']:
+            layer.set_weights(net.backbone_net.sa1_mlp.mlp_module.get_weights()) 
+        else:
+            layer.set_weights(net.backbone_net.sa1.mlp_module.get_weights()) 
         print("=" * 30, "Converting SA1 layer", "=" * 30)
         tflite_convert('sa1', sa1_mlp, net, OUT_DIR)
 
     if 'sa2' in converting_layers:
-        sa2_mlp = SharedMLPModel(mlp_spec=[128, 128, 128, 256], nsample=32, input_shape=[512,32,128+3])
-        dummy_in_sa2 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,512,32,128+3])) # (B, npoint, nsample, C+3)
+        if model_config['two_way']:
+            sa2_mlp = SharedMLPModel(mlp_spec=[128, 128, 128, 256], nsample=32, input_shape=[512,32,128+3])
+            dummy_in_sa2 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,512,32,128+3])) # (B, npoint, nsample, C+3)
+        else:
+            sa2_mlp = SharedMLPModel(mlp_spec=[128, 128, 128, 256], nsample=32, input_shape=[1024,32,128+3])
+            dummy_in_sa2 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,32,128+3])) # (B, npoint, nsample, C+3)
         dummy_out = sa2_mlp(dummy_in_sa2)
         layer = sa2_mlp.sharedMLP
-        layer.set_weights(net.backbone_net.sa2_mlp.mlp_module.get_weights())
+        if model_config['two_way']:
+            layer.set_weights(net.backbone_net.sa2_mlp.mlp_module.get_weights()) 
+        else:
+            layer.set_weights(net.backbone_net.sa2.mlp_module.get_weights()) 
         print("=" * 30, "Converting SA2 layer", "=" * 30)
         tflite_convert('sa2', sa2_mlp, net, OUT_DIR)
 
     if 'sa3' in converting_layers:
-        sa3_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16, input_shape=[256,16,256+3])
-        dummy_in_sa3 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,256+3])) # (B, npoint, nsample, C+3)
+        if model_config['two_way']:
+            sa3_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16, input_shape=[256,16,256+3])
+            dummy_in_sa3 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,256+3])) # (B, npoint, nsample, C+3)
+        else:
+            sa3_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16, input_shape=[512,16,256+3])
+            dummy_in_sa3 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,512,16,256+3])) # (B, npoint, nsample, C+3)
         dummy_out = sa3_mlp(dummy_in_sa3)
         layer = sa3_mlp.sharedMLP
-        layer.set_weights(net.backbone_net.sa3_mlp.mlp_module.get_weights())
+        if model_config['two_way']:
+            layer.set_weights(net.backbone_net.sa3_mlp.mlp_module.get_weights()) 
+        else:
+            layer.set_weights(net.backbone_net.sa3.mlp_module.get_weights()) 
         print("=" * 30, "Converting SA3 layer", "=" * 30)
         tflite_convert('sa3', sa3_mlp, net, OUT_DIR)
 
     if 'sa4' in converting_layers:
-        sa4_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16, input_shape=[128,16,256+3])
-        dummy_in_sa4 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,128,16,256+3])) # (B, npoint, nsample, C+3)
+        if model_config['two_way']:
+            sa4_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16, input_shape=[128,16,256+3])
+            dummy_in_sa4 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,128,16,256+3])) # (B, npoint, nsample, C+3)
+        else:
+            sa4_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16, input_shape=[256,16,256+3])
+            dummy_in_sa4 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,256+3])) # (B, npoint, nsample, C+3)
+
         dummy_out = sa4_mlp(dummy_in_sa4)
         layer = sa4_mlp.sharedMLP
-        layer.set_weights(net.backbone_net.sa4_mlp.mlp_module.get_weights())
+        if model_config['two_way']:
+            layer.set_weights(net.backbone_net.sa4_mlp.mlp_module.get_weights()) 
+        else:
+            layer.set_weights(net.backbone_net.sa4.mlp_module.get_weights()) 
         print("=" * 30, "Converting SA4 layer", "=" * 30)
         tflite_convert('sa4', sa4_mlp, net, OUT_DIR)
 
