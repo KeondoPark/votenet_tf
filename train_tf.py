@@ -200,7 +200,7 @@ with mirrored_strategy.scope():
     print("Start epoch:", ckpt.epoch)
     if manager.latest_checkpoint:
         print("Restored from {}".format(manager.latest_checkpoint))
-        start_epoch = ckpt.epoch.numpy()
+        start_epoch = ckpt.epoch.numpy()-1
     else:
         print("Initializing from scratch.")
 
@@ -298,8 +298,8 @@ def evaluate_one_epoch(batch_data):
     end_points = net(point_cloud, training=False)
 
     for i, label in label_dict.items():
-            if label_dict[i] not in end_points:
-                end_points[label_dict[i]] = batch_data[i] 
+        if label_dict[i] not in end_points:
+            end_points[label_dict[i]] = batch_data[i] 
     
     config = tf.constant(DATASET_CONFIG.num_heading_bin, dtype=tf.int32), \
         tf.constant(DATASET_CONFIG.num_size_cluster, dtype=tf.int32), \
@@ -382,7 +382,7 @@ def train(start_epoch):
         log_string("Saved checkpoint for step {}: {}".format(int(ckpt.epoch), save_path))
         
         #if EPOCH_CNT == 0 or EPOCH_CNT % 10 == 9: # Eval every 10 epochs
-        if EPOCH_CNT % 20 == 19: # Eval every 20 epochs        
+        if EPOCH_CNT % 20 == 19 or EPOCH_CNT==20: # Eval every 20 epochs        
             stat_dict = defaultdict(int) # collect statistics            
             ap_calculator = APCalculator(ap_iou_thresh=FLAGS.ap_iou_thresh,
                 class2type_map=DATASET_CONFIG.class2type)     

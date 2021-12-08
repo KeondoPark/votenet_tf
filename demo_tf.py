@@ -26,8 +26,18 @@ import tensorflow as tf
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
-DATA_DIR = 'sunrgbd'
-#DATA_DIR = '/home/aiot/data'
+
+import json
+environ_file = os.path.join(ROOT_DIR,'configs','environ.json')
+environ = json.load(open(environ_file))['environ']
+
+if environ == 'server':    
+    DATA_DIR = '/home/aiot/data'
+elif environ == 'jetson':
+    DATA_DIR= 'sunrgbd'
+elif environ == 'server2':    
+    DATA_DIR = '/data'
+
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 sys.path.append(os.path.join(ROOT_DIR, 'models'))
 from pc_util import random_sampling, read_ply
@@ -40,6 +50,7 @@ from deeplab import run_semantic_seg
 import json
 
 model_config = json.load(open(FLAGS.config_path))
+DEFAULT_CHECKPOINT_PATH = os.path.join('tf_ckpt', model_config['model_id'])
 
 def preprocess_point_cloud(point_cloud):
     ''' Prepare the numpy point cloud (N,3) for forward pass '''
@@ -72,7 +83,8 @@ if __name__=='__main__':
     if FLAGS.dataset == 'sunrgbd':
         sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
         from sunrgbd_detection_dataset_tf import DC # dataset config
-        from sunrgbd_data import sunrgbd_object  
+        from sunrgbd_data import sunrgbd_object
+        checkpoint_path = FLAGS.checkpoint_path if FLAGS.checkpoint_path is not None else DEFAULT_CHECKPOINT_PATH  
         checkpoint_path = FLAGS.checkpoint_path # os.path.join(demo_dir, 'tf_ckpt_210812')        
         pc_path = os.path.join(demo_dir, 'input_pc_sunrgbd.ply')
         #pc_path = os.path.join(demo_dir, 'pc_person2.ply')

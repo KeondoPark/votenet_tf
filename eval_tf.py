@@ -161,7 +161,7 @@ def evaluate_one_epoch():
     start = time.time()
     start2 = time.time()
     for batch_idx, batch_data in enumerate(test_ds):        
-        if batch_idx*BATCH_SIZE >= 100: break
+        #if batch_idx*BATCH_SIZE >= 100: break
         if batch_idx % 10 == 0:
             end = time.time()
             log_string('---------- Eval batch: %d ----------'%(batch_idx) + str(end - start))

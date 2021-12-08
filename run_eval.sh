@@ -14,3 +14,4 @@ srun python eval_tf.py  \
 --faster_eval --batch_size 1 --ap_iou_thresholds 0.25 \
 --dump_dir evals/inf_211204_3_sep --config_path configs/inf_211204_3_sep.json
 
+
