@@ -168,7 +168,7 @@ class Pointnet2Backbone(layers.Layer):
         #end_points.append(prop_features) #20
         
         #print("========================== FP2 ===============================")
-        fp2_features, fp2_grouped_features = self.fp1(end_points['sa2_xyz'], end_points['sa3_xyz'], end_points['sa2_features'], features)        
+        fp2_features, fp2_grouped_features = self.fp2(end_points['sa2_xyz'], end_points['sa3_xyz'], end_points['sa2_features'], features)        
         end_points['fp2_features'] = fp2_features
         end_points['fp2_grouped_features'] = fp2_grouped_features
         end_points['fp2_xyz'] = end_points['sa2_xyz']        
@@ -296,13 +296,11 @@ class Pointnet2Backbone_p(layers.Layer):
 
         sa1_xyz = layers.Concatenate(axis=1)([sa1_xyz1, sa1_xyz2])
         sa1_features = layers.Concatenate(axis=1)([sa1_features1, sa1_features2])
-
         
         
         # ------------------------------- SA2-------------------------------        
         sa2_xyz1, sa2_inds1, sa2_grouped_features1, sa2_painted1 = self.sa2(sa1_xyz1, sa1_painted1, sa1_features1, bg1=True, wght1=1)
-        time_record.append(("SA2 sampling and grouping:", time.time()))
-        print("SA2 painted from background:", tf.reduce_sum(sa2_painted1[0]))       
+        time_record.append(("SA2 sampling and grouping:", time.time()))        
         
         sa2_features1 = self.sa2_mlp(sa2_grouped_features1)
         time_record.append(("SA2 MLP:", time.time()))
@@ -311,8 +309,7 @@ class Pointnet2Backbone_p(layers.Layer):
         sa1_features = layers.Concatenate(axis=1)([sa1_features1, sa1_features2])        
 
         sa2_xyz2, sa2_inds2, sa2_grouped_features2, sa2_painted2 = self.sa2(sa1_xyz2, sa1_painted2, sa1_features2, bg1=True, wght1=1, xyz_ball=sa1_xyz, features_ball=sa1_features)
-        time_record.append(("SA2 sampling and grouping:", time.time()))
-        print("SA2 painted from painted:", tf.reduce_sum(sa2_painted2[0]))        
+        time_record.append(("SA2 sampling and grouping:", time.time()))        
 
         sa2_features2 = self.sa2_mlp(sa2_grouped_features2)
         time_record.append(("SA2 MLP:", time.time()))

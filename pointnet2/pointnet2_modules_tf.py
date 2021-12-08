@@ -750,8 +750,7 @@ class PointnetFPModule(layers.Layer):
             interpolated_feats = tf.tile(known_feats, [1, tf.shape(unknow_feats)[1] / tf.shape(known_feats)[1], 1])
 
         if unknow_feats is not None:
-            prop_features = layers.concatenate([interpolated_feats, unknow_feats],
-                                   axis=2)  #(B, n, C2 + C1)
+            prop_features = layers.concatenate([interpolated_feats, unknow_feats], axis=2)  #(B, n, C2 + C1)
         else:
             prop_features = interpolated_feats
         

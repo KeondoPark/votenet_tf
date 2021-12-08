@@ -66,11 +66,11 @@ class VotingModule(layers.Layer):
             self.conv1 = layers.Conv2D(filters=self.in_dim, kernel_size=1)        
             self.conv2 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
 
-            if self.sep_coords:
-                self.conv3_1 = layers.Conv2D(filters=(3) * self.vote_factor, kernel_size=1) 
-                self.conv3_2 = layers.Conv2D(filters=(self.out_dim) * self.vote_factor, kernel_size=1) 
-            else:
-                self.conv3 = layers.Conv2D(filters=(self.out_dim+3) * self.vote_factor, kernel_size=1)
+            #if self.sep_coords:
+            #    self.conv3_1 = layers.Conv2D(filters=(3) * self.vote_factor, kernel_size=1) 
+            #    self.conv3_2 = layers.Conv2D(filters=(self.out_dim) * self.vote_factor, kernel_size=1) 
+            #else:
+            self.conv3 = layers.Conv2D(filters=(self.out_dim+3) * self.vote_factor, kernel_size=1)
             
             self.bn0 = layers.BatchNormalization(axis=-1)
             self.bn1 = layers.BatchNormalization(axis=-1)
@@ -103,8 +103,8 @@ class VotingModule(layers.Layer):
             if self.sep_coords:
                 offset = self.interpreter.get_tensor(self.output_details[0]['index'])
                 vote_features = self.interpreter.get_tensor(self.output_details[1]['index'])
-                vote_xyz = offset
-                #vote_xyz = seed_xyz + offset
+                #vote_xyz = offset
+                vote_xyz = seed_xyz + offset
 
             else:
                 offset = self.interpreter.get_tensor(self.output_details[0]['index'])
@@ -115,14 +115,14 @@ class VotingModule(layers.Layer):
             net0 = self.relu0(self.bn0(self.conv0(seed_features))) #(B, num_seed, 1, in_dim)
             net = self.relu1(self.bn1(self.conv1(net0))) 
             net = self.relu2(self.bn2(self.conv2(net))) 
-            if self.sep_coords:
-                offset = self.conv3_1(net) # (batch_size, num_seed, 1, 3*vote_factor)            
-                net = self.conv3_2(net)
-                residual_features = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net)
-            else:
-                net = self.conv3(net)
-                offset = net[:,:,:,0:3]
-                residual_features = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net[:,:,:,3:]) # (batch_size, num_seed, vote_factor, out_dim)        
+            #if self.sep_coords:
+            #    offset = self.conv3_1(net) # (batch_size, num_seed, 1, 3*vote_factor)            
+            #    net = self.conv3_2(net)
+            #    residual_features = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net)
+            #else:
+            net = self.conv3(net)
+            offset = net[:,:,:,0:3]
+            residual_features = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net[:,:,:,3:]) # (batch_size, num_seed, vote_factor, out_dim)        
             
             net0 = layers.Reshape((num_seed, self.vote_factor, net0.shape[-1]))(net0)
             vote_features = net0 + residual_features 

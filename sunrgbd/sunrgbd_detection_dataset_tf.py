@@ -329,13 +329,15 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         point_cloud = tf.concat((pc_coord, pc_RGB), axis=-1)
         return point_cloud, bboxes, point_votes, n_valid_box
 
-
     def preprocess_height(self, point_cloud, bboxes, votes, n_valid_box):
         y_coords = point_cloud[:, :, 2]
         y_coords = tf.sort(y_coords, direction='DESCENDING', axis=-1)
         floor_height = y_coords[:, int(0.99*N_POINT), None]         
-        height = point_cloud[:,:,2] - tf.tile(floor_height, [1,N_POINT])        
-        point_cloud = tf.concat([point_cloud, tf.expand_dims(height, axis=-1)], axis=-1) # (N,4) or (N,7)        
+        height = point_cloud[:,:,2] - tf.tile(floor_height, [1,N_POINT])
+        if self.use_painted:
+            point_cloud = tf.concat([point_cloud, tf.expand_dims(height, axis=-1)], axis=-1) # (N, C+1)
+        elif not self.augment and not self.use_color:
+            point_cloud = tf.concat([point_cloud[:,:,:3], tf.expand_dims(height, axis=-1)], axis=-1) # (N,4)
         return point_cloud, bboxes, votes, n_valid_box
     
     def augment_tensor(self, point_cloud, bboxes, point_votes, n_valid_box):
@@ -412,10 +414,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
                 point_cloud = tf.concat((pc_coords, pc_painting, pc_height), axis=-1)
             else:
                 point_cloud = tf.concat((pc_coords, pc_height), axis=-1)
-
-        # Keep painting information separately
         
-            
         bboxes = tf.concat((bboxes_coords, bboxes_edges, bboxes_angle, bboxes[:,:,7:]), axis=-1)
         point_votes = tf.concat((votes0, votes1, votes2, votes3, point_votes[:,:,10:]), axis=-1)           
         
