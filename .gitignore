@@ -6,4 +6,4 @@ test/
 votenet_tf/
 tf_ckpt/
 logs/
-configs/environ.json
+configs/environ*
