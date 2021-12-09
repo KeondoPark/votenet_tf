@@ -77,7 +77,7 @@ class VoteNet(tf.keras.Model):
 
         # Vote aggregation and detection
         self.pnet = ProposalModule(num_class, num_heading_bin, num_size_cluster,
-            mean_size_arr, num_proposal, sampling, seed_feat_dim=128, \
+            mean_size_arr, num_proposal, sampling, seed_feat_dim=256, \
             model_config=model_config)
             #sep_coords=sep_coords, use_tflite=use_tflite, tflite_name='va_quant_2way_coords_edgetpu.tflite')
 

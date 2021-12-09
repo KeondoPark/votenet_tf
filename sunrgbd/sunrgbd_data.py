@@ -31,7 +31,7 @@ import pc_util
 import sunrgbd_utils
 from tqdm import tqdm
 import tensorflow as tf
-import deeplab
+from deeplab.deeplab import run_semantic_segmentation_graph
 
 DEFAULT_TYPE_WHITELIST = ['bed','table','sofa','chair','toilet','desk','dresser','night_stand','bookshelf','bathtub']
 
@@ -428,7 +428,7 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                         #pred_prob = np.eye(num_sunrgbd_class+1)[pred_class]
                         #pred_prob = pred_prob[:,:,1:]
                     else:
-                        pred_prob, pred_class = deeplab.run_semantic_segmentation_graph(img, sess, INPUT_SIZE) # (w, h, num_class)     
+                        pred_prob, pred_class = run_semantic_segmentation_graph(img, sess, INPUT_SIZE) # (w, h, num_class)     
                         pred_prob = pred_prob[:,:,:(num_sunrgbd_class+1)] # 0 is background class              
                         projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
                         pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]

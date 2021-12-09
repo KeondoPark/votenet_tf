@@ -233,7 +233,7 @@ class PointnetSAModuleVotes(layers.Layer):
             self.input_details = self.interpreter.get_input_details()
             self.output_details = self.interpreter.get_output_details()
         else:
-            self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=bn, activation='relu', input_shape=[npoint, nsample, mlp_spec[0]])        
+            self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=bn, activation='relu6', input_shape=[npoint, nsample, mlp_spec[0]])        
             #self.max_pool = layers.MaxPooling2D(pool_size=(1, self.nsample), strides=1, data_format="channels_last")
             self.max_pool = layers.MaxPooling2D(pool_size=(1, 16), strides=(1,16), data_format="channels_last")
             self.max_pool2 = layers.MaxPooling2D(pool_size=(1, int(self.nsample/16)), strides=(1,int(self.nsample/16)), data_format="channels_last")

@@ -75,9 +75,9 @@ class VotingModule(layers.Layer):
             self.bn0 = layers.BatchNormalization(axis=-1)
             self.bn1 = layers.BatchNormalization(axis=-1)
             self.bn2 = layers.BatchNormalization(axis=-1)
-            self.relu0 = layers.ReLU()
-            self.relu1 = layers.ReLU()
-            self.relu2 = layers.ReLU()
+            self.relu0 = layers.ReLU(6)
+            self.relu1 = layers.ReLU(6)
+            self.relu2 = layers.ReLU(6)
         
     def call(self, seed_xyz, seed_features):
         """ Forward pass.
@@ -112,8 +112,8 @@ class VotingModule(layers.Layer):
                 vote_xyz = seed_xyz + offset
 
         else:
-            net0 = self.relu0(self.bn0(self.conv0(seed_features))) #(B, num_seed, 1, in_dim)
-            net = self.relu1(self.bn1(self.conv1(net0))) 
+            #net0 = self.relu0(self.bn0(self.conv0(seed_features))) #(B, num_seed, 1, in_dim)
+            net = self.relu1(self.bn1(self.conv1(seed_features))) 
             net = self.relu2(self.bn2(self.conv2(net))) 
             #if self.sep_coords:
             #    offset = self.conv3_1(net) # (batch_size, num_seed, 1, 3*vote_factor)            
@@ -124,8 +124,9 @@ class VotingModule(layers.Layer):
             offset = net[:,:,:,0:3]
             residual_features = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net[:,:,:,3:]) # (batch_size, num_seed, vote_factor, out_dim)        
             
-            net0 = layers.Reshape((num_seed, self.vote_factor, net0.shape[-1]))(net0)
-            vote_features = net0 + residual_features 
+            #net0 = layers.Reshape((num_seed, self.vote_factor, net0.shape[-1]))(net0)
+            #vote_features = net0 + residual_features 
+            vote_features = seed_features + residual_features
 
             vote_xyz = seed_xyz + offset 
         
