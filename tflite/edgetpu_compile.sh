@@ -1,6 +1,6 @@
 #!/bin/bash
 
-TFLITE_DIR="tflite_models/1way_fp"
+TFLITE_DIR="tflite_models/deeplab"
 
 for entry in "$TFLITE_DIR"/*
 do    

@@ -249,9 +249,12 @@ class BNMomentumScheduler(object):
                 reset_momentum(layer.fp2.mlp)
 
             if hasattr(layer, 'bn1'):
-                #print("Batch norm reschdule!")
+                print("Batch norm reschdule!")
                 layer.bn1.monemtum = self.lmbd(epoch) 
                 layer.bn2.momentum = self.lmbd(epoch)
+
+            if hasattr(layer, 'bn0'):
+                layer.bn0.monemtum = self.lmbd(epoch) 
     
              
 

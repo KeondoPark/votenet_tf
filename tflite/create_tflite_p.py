@@ -29,7 +29,6 @@ parser.add_argument('--out_dir', default=None, help='Folder name where output tf
 parser.add_argument('--gpu_mem_limit', type=int, default=0, help='GPU memory usage')
 parser.add_argument('--use_rep_data', action='store_true', help='When iterating representative dataset, use saved data')
 parser.add_argument('--rep_data_dir', default='tflite/tflite_rep_data', help='Saved representative data directory')
-parser.add_argument('--not_sep_coords', action='store_false', help='Do not use separate layer for coordinates in Voting and Proposal layers')
 parser.add_argument('--config_path', default=None, required=True, help='Model configuration path')
 FLAGS = parser.parse_args()
 
@@ -446,10 +445,7 @@ if __name__=='__main__':
         if sep_coords:
             w, b = net.vgen.conv3.get_weights()
             layer.conv3_1.set_weights([w[:,:,:,:3], b[:3]])
-            layer.conv3_2.set_weights([w[:,:,:,3:], b[3:]])             
-
-            #layer.conv3_1.set_weights(net.vgen.conv3_1.get_weights())
-            #layer.conv3_2.set_weights(net.vgen.conv3_2.get_weights())            
+            layer.conv3_2.set_weights([w[:,:,:,3:], b[3:]])                       
         else:
             layer.conv3.set_weights(net.vgen.conv3.get_weights())
 
@@ -477,9 +473,7 @@ if __name__=='__main__':
             w, b = net.pnet.conv3.get_weights()
             layer.conv3_1.set_weights([w[:,:,:,:3], b[:3]])
             layer.conv3_2.set_weights([w[:,:,:,3:], b[3:]])
-
-            #layer.conv3_1.set_weights(net.pnet.conv3_1.get_weights())
-            #layer.conv3_2.set_weights(net.pnet.conv3_2.get_weights())            
+        
         else:
             layer.conv3.set_weights(net.pnet.conv3.get_weights())
         layer.bn1.set_weights(net.pnet.bn1.get_weights())

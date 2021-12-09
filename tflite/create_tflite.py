@@ -29,6 +29,7 @@ parser.add_argument('--gpu_mem_limit', type=int, default=0, help='GPU memory usa
 parser.add_argument('--use_rep_data', action='store_true', help='When iterating representative dataset, use saved data')
 parser.add_argument('--rep_data_dir', default='tflite_rep_data', help='Saved representative data directory')
 parser.add_argument('--not_sep_coords', action='store_false', help='Do not use separate layer for coordinates in Voting and Proposal layers')
+parser.add_argument('--config_path', default=None, required=True, help='Model configuration path')
 FLAGS = parser.parse_args()
 
 # Limit GPU Memory usage, 256MB suffices
@@ -156,12 +157,25 @@ def tflite_convert(keyword, model, base_model, out_dir, mlp=True):
         f.write(tflite_model)
 
 if __name__=='__main__':
-    
+
+    model_config = json.load(open(FLAGS.config_path))
+
     # Set file paths and dataset config
-    demo_dir = os.path.join(BASE_DIR, 'demo_files')         
-    #checkpoint_path = os.path.join(demo_dir, 'tv_ckpt_210810')        
-    checkpoint_path = FLAGS.checkpoint_path
-    pc_path = os.path.join(demo_dir, 'input_pc_sunrgbd.ply')        
+    if FLAGS.checkpoint_path is None:
+        checkpoint_path = os.path.join(BASE_DIR, 'tf_ckpt', model_config['model_id'])
+    else:
+        checkpoint_path = FLAGS.checkpoint_path
+
+    if FLAGS.out_dir is None:
+        OUT_DIR = os.path.join(BASE_DIR, model_config['tflite_folder'])
+
+        if not os.path.exists(OUT_DIR):
+            os.mkdir(OUT_DIR)    
+    else:
+        OUT_DIR = FLAGS.out_dir
+
+    #Use separate layer for coordinates in voting and va layer
+    sep_coords = model_config['sep_coords']
 
     eval_config_dict = {'remove_empty_box': True, 'use_3d_nms': True, 'nms_iou': 0.25,
         'use_old_type_nms': False, 'cls_nms': False, 'per_class_proposal': False,
@@ -322,7 +336,7 @@ if __name__=='__main__':
         # Copy weights from the base model    
         layer = sa1_mlp.sharedMLP
         layer.set_weights(net.backbone_net.sa1.mlp_module.get_weights()) 
-        tflite_convert('sa1', sa1_mlp, net, FLAGS.out_dir)
+        tflite_convert('sa1', sa1_mlp, net, OUT_DIR)
 
     if 'sa2' in converting_layers:
         sa2_mlp = SharedMLPModel(mlp_spec=[128, 128, 128, 128], nsample=32, input_shape=[1024,32,128+3])
@@ -330,23 +344,23 @@ if __name__=='__main__':
         dummy_out = sa2_mlp(dummy_in_sa2)
         layer = sa2_mlp.sharedMLP
         layer.set_weights(net.backbone_net.sa2.mlp_module.get_weights())
-        tflite_convert('sa2', sa2_mlp, net, FLAGS.out_dir)
+        tflite_convert('sa2', sa2_mlp, net, OUT_DIR)
 
     if 'sa3' in converting_layers:
         sa3_mlp = SharedMLPModel(mlp_spec=[128, 128, 128, 128], nsample=16, input_shape=[512,16,256+3])
-        dummy_in_sa3 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,512,16,128+3])) # (B, npoint, nsample, C+3)
+        dummy_in_sa3 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,512,16,256+3])) # (B, npoint, nsample, C+3)
         dummy_out = sa3_mlp(dummy_in_sa3)
         layer = sa3_mlp.sharedMLP
         layer.set_weights(net.backbone_net.sa3.mlp_module.get_weights())
-        tflite_convert('sa3', sa3_mlp, net, FLAGS.out_dir)
+        tflite_convert('sa3', sa3_mlp, net, OUT_DIR)
 
     if 'sa4' in converting_layers:
         sa4_mlp = SharedMLPModel(mlp_spec=[128, 128, 128, 128], nsample=16, input_shape=[256,16,256+3])
-        dummy_in_sa4 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,128+3])) # (B, npoint, nsample, C+3)
+        dummy_in_sa4 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,256+3])) # (B, npoint, nsample, C+3)
         dummy_out = sa4_mlp(dummy_in_sa4)
         layer = sa4_mlp.sharedMLP
         layer.set_weights(net.backbone_net.sa4.mlp_module.get_weights())
-        tflite_convert('sa4', sa4_mlp, net, FLAGS.out_dir)
+        tflite_convert('sa4', sa4_mlp, net, OUT_DIR)
 
 
     if 'fp1' in converting_layers:
@@ -355,7 +369,7 @@ if __name__=='__main__':
         dummy_out = fp1_mlp(dummy_in_fp1)
         layer = fp1_mlp.sharedMLP
         layer.set_weights(net.backbone_net.fp1.mlp.get_weights()) 
-        tflite_convert('fp1', fp1_mlp, net, FLAGS.out_dir) 
+        tflite_convert('fp1', fp1_mlp, net, OUT_DIR) 
 
 
     if 'fp2' in converting_layers:
@@ -364,7 +378,7 @@ if __name__=='__main__':
         dummy_out = fp2_mlp(dummy_in_fp2)
         layer = fp2_mlp.sharedMLP
         layer.set_weights(net.backbone_net.fp2.mlp.get_weights())
-        tflite_convert('fp2', fp2_mlp, net, FLAGS.out_dir)
+        tflite_convert('fp2', fp2_mlp, net, OUT_DIR)
 
 
     if 'voting' in converting_layers:

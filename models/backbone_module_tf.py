@@ -18,10 +18,11 @@ sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 sys.path.append(os.path.join(ROOT_DIR, 'pointnet2'))
 
 from pointnet2_modules_tf import PointnetSAModuleVotes, PointnetFPModule, SamplingAndGrouping, PointnetMLP, SamplingAndAttention
-from deeplab import run_semantic_seg, run_semantic_seg_tflite
+from deeplab.deeplab import run_semantic_seg, run_semantic_seg_tflite
 from sunrgbd_detection_dataset_tf import DC # dataset config
 from tf_ops.sampling import tf_sampling
 from tf_ops.grouping import tf_grouping
+
 class Pointnet2Backbone(layers.Layer):
     r"""
        Backbone network for point cloud feature learning.
@@ -108,7 +109,7 @@ class Pointnet2Backbone(layers.Layer):
             ----------
             pointcloud: Variable(torch.cuda.FloatTensor)
                 (B, N, 3 + input_feature_dim) tensor
-                Point cloud to run predicts on
+                Point cloud to run  predicts on
                 Each point in the point-cloud MUST
                 be formated as (x, y, z, features...)
 
