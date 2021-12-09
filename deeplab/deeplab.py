@@ -83,7 +83,7 @@ def run_semantic_segmentation_graph(image, sess, input_size):
 
 def run_semantic_seg(img, save_result=False):
     INPUT_SIZE = 513
-    with tf.compat.v1.gfile.GFile('saved_model/sunrgbd_ade20k_12.pb', "rb") as f:
+    with tf.compat.v1.gfile.GFile(os.path.join(ROOT_DIR,'saved_model','sunrgbd_ade20k_12.pb'), "rb") as f:
         graph_def = tf.compat.v1.GraphDef()
         graph_def.ParseFromString(f.read())
     
