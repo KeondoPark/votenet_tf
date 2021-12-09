@@ -21,7 +21,7 @@ from pointnet2_modules_tf import PointnetSAModuleVotes, PointnetFPModule, Sampli
 from deeplab import run_semantic_seg, run_semantic_seg_tflite
 from sunrgbd_detection_dataset_tf import DC # dataset config
 from tf_ops.sampling import tf_sampling
-
+from tf_ops.grouping import tf_grouping
 class Pointnet2Backbone(layers.Layer):
     r"""
        Backbone network for point cloud feature learning.
@@ -38,6 +38,7 @@ class Pointnet2Backbone(layers.Layer):
 
         use_tflite = model_config['use_tflite']
         use_fp_mlp = model_config['use_fp_mlp']
+        self.use_painted = model_config['use_painted']
 
         self.sa1 = PointnetSAModuleVotes(
                 npoint=2048,
@@ -96,10 +97,10 @@ class Pointnet2Backbone(layers.Layer):
 
         xyz = pc[:,:,0:3]
         features =  pc[:,:,3:]
-
+        
         return xyz, features
 
-    def call(self, pointcloud, end_points=None):
+    def call(self, pointcloud, end_points=None, img=None, calib=None):
         r"""
             Forward pass of the network
 
@@ -549,36 +550,35 @@ class Pointnet2Backbone_tflite(layers.Layer):
         time_record.append(("Pointpainted Votenet start:", time.time()))
 
         sa1_inds1 = None
+        sa1_new_xyz1 = None
+        sa1_ball_inds1 = None
 
         # Run image segmentation result and get result
-        if img:
-            xyz = pointcloud[:,:,:3] 
-            model_path = os.path.join('tflite_models','sunrgbd_ade20k_11_quant_edgetpu.tflite')
-            if self.use_multiThr:                    
-                future0 = self._executor.submit(run_semantic_seg_tflite, model_path, img, False)  
-                sa1_inds1 = tf_sampling.farthest_point_sample(1024, xyz) # First sampling is not biased FPS, i.e. weight = 1
-                
-            else: 
-                pred_prob = run_semantic_seg_tflite(model_path, img, save_result=False)
-                time_record.append(('Deeplab inference time:', time.time()))
-
+        if img and self.use_multiThr:
+            xyz = pointcloud[:,:,:3]             
+            #if self.use_multiThr:                    
+            future0 = self._executor.submit(run_semantic_seg_tflite, img, False)  
+            sa1_inds1 = tf_sampling.farthest_point_sample(1024, xyz) # First sampling is not biased FPS, i.e. weight = 1
+            sa1_new_xyz1 = tf_sampling.gather_point(xyz, sa1_inds1)
+            sa1_ball_inds1, _ = tf_grouping.query_ball_point(0.2, 64, xyz, sa1_new_xyz1)
+            
             xyz = xyz[0] #Assume single pointset
 
             uv,d = calib.project_upright_depth_to_image(xyz) #uv: (N, 2)
             uv = np.rint(uv - 1)
 
-            if self.use_multiThr:  
-                pred_prob = future0.result()
-                time_record.append(('Deeplab inference time:', time.time()))                
+            #if self.use_multiThr:  
+            pred_prob = future0.result()
+            time_record.append(('Deeplab inference time:', time.time()))                
             
             pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)] # (npoint, num_class + 1 + 1 )
             projected_class = np.argmax(pred_prob, axis=-1) # (npoint, 1) 
             isPainted = np.where((projected_class > 0) & (projected_class < 11), 1, 0) # Point belongs to background?                    
-            isPainted = np.expand_dims(isPainted, axis=-1)
+            #isPainted = np.expand_dims(isPainted, axis=-1)
 
             # 0 is background class, deeplab is trained with "person" included, (height, width, num_class)
             pred_prob = pred_prob[:,1:(DC.num_class+1)] # (npoint, num_class)
-            features = np.concatenate([pointcloud[:,3:], pred_prob], axis=-1)
+            features = np.concatenate([pointcloud[0,:,3:], pred_prob], axis=-1)
             features = np.expand_dims(features, axis=0)
             xyz = np.expand_dims(xyz, axis=0)
             isPainted = np.expand_dims(isPainted, axis=0)
@@ -593,7 +593,7 @@ class Pointnet2Backbone_tflite(layers.Layer):
         # ------------------------------- SA1-------------------------------        
         #Sample more background points
         
-        time_record.append(("SA Start:", time.time()))
+        #time_record.append(("SA Start:", time.time()))
 
         """
         sa1_xyz, sa1_inds, sa1_grouped_features, sa1_painted = self.sa1(xyz, isPainted, features, bg2=True, wght1=0.01, wght2=4)
@@ -610,7 +610,8 @@ class Pointnet2Backbone_tflite(layers.Layer):
         sa1_painted2 = sa1_painted[:,1024:]         
         """
 
-        sa1_xyz1, sa1_inds1, sa1_grouped_features1, sa1_painted1 = self.sa1(xyz, isPainted, features, sa1_inds1, bg1=True, wght1=1)
+        sa1_xyz1, sa1_inds1, sa1_grouped_features1, sa1_painted1 = self.sa1(xyz, isPainted, features, sa1_inds1, new_xyz=sa1_new_xyz1, ball_inds=sa1_ball_inds1, bg1=True, wght1=1)
+        time_record.append(("SA1 sampling and grouping:", time.time()))
         #print("Painted from original", tf.reduce_sum(isPainted[0]))
         #print("Painted from SA1", tf.reduce_sum(sa1_painted[0]))        
                 
@@ -622,7 +623,7 @@ class Pointnet2Backbone_tflite(layers.Layer):
         time_record.append(("SA1 MLP:", time.time()))
         
         sa1_xyz2, sa1_inds2, sa1_grouped_features2, sa1_painted2 = self.sa1(xyz, isPainted, features, bg1=True, wght1=25)        
-        #time_record.append(("SA1 sampling and grouping:", time.time()))
+        time_record.append(("SA1 sampling and grouping:", time.time()))
         
 
         

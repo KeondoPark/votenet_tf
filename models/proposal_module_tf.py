@@ -224,7 +224,7 @@ class ProposalModule(layers.Layer):
             net = self.conv3(net)
             offset = net[:,:,:,0:3]            
             net = net[:,:,:,3:]    
-
+            
             offset = layers.Reshape((self.npoint, 3))(offset)                
             center = xyz + offset            
             net = layers.Reshape((self.npoint, net.shape[-1]))(net)            
