@@ -46,7 +46,7 @@ from ap_helper_tf import parse_predictions
 import votenet_tf
 from votenet_tf import dump_results
 from PIL import Image
-from deeplab.deeplab import run_semantic_seg, run_semantic_seg_tflite
+from deeplab import run_semantic_seg, run_semantic_seg_tflite
 import json
 
 model_config = json.load(open(FLAGS.config_path))
