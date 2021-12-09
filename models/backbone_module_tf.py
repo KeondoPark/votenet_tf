@@ -107,7 +107,7 @@ class Pointnet2Backbone(layers.Layer):
             ----------
             pointcloud: Variable(torch.cuda.FloatTensor)
                 (B, N, 3 + input_feature_dim) tensor
-                Point cloud to run predicts on
+                Point cloud to run  predicts on
                 Each point in the point-cloud MUST
                 be formated as (x, y, z, features...)
 

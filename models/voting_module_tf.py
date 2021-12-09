@@ -75,9 +75,9 @@ class VotingModule(layers.Layer):
             self.bn0 = layers.BatchNormalization(axis=-1)
             self.bn1 = layers.BatchNormalization(axis=-1)
             self.bn2 = layers.BatchNormalization(axis=-1)
-            self.relu0 = layers.ReLU(6)
-            self.relu1 = layers.ReLU(6)
-            self.relu2 = layers.ReLU(6)
+            self.relu0 = layers.ReLU()
+            self.relu1 = layers.ReLU()
+            self.relu2 = layers.ReLU()
         
     def call(self, seed_xyz, seed_features):
         """ Forward pass.

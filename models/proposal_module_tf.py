@@ -153,8 +153,8 @@ class ProposalModule(layers.Layer):
             
             self.bn1 = layers.BatchNormalization(axis=-1)
             self.bn2 = layers.BatchNormalization(axis=-1)
-            self.relu1 = layers.ReLU(6)
-            self.relu2 = layers.ReLU(6)
+            self.relu1 = layers.ReLU()
+            self.relu2 = layers.ReLU()
 
     def call(self, xyz, features, end_points):
         """
