@@ -46,7 +46,7 @@ from ap_helper_tf import parse_predictions
 import votenet_tf
 from votenet_tf import dump_results
 from PIL import Image
-from deeplab import run_semantic_seg
+from deeplab import run_semantic_seg, run_semantic_seg_tflite
 import json
 
 model_config = json.load(open(FLAGS.config_path))
@@ -154,12 +154,15 @@ if __name__=='__main__':
         ## TODO: NEED TO BE REPLACED
         img = dataset.get_image2(data_idx)
         calib = dataset.get_calibration(data_idx)                
-        if model_config['use_tflite']:
+        if model_config['use_multiThr']:
             end_points = net(inputs['point_clouds'], training=False, img=img, calib=calib)        
         else:
             xyz = pc[0,:,:3]
-            pred_prob, pred_class = \
-                run_semantic_seg(img, save_result=False)  
+            if model_config['use_tflite']:
+                pred_prob = run_semantic_seg_tflite(img, save_result=False)                
+            else:                
+                pred_prob, pred_class = run_semantic_seg(img, save_result=False)  
+            time_record.append(('Deeplab inference time:', time.time()))
 
             uv,d = calib.project_upright_depth_to_image(xyz) #uv: (N, 2)
             uv = np.rint(uv - 1)
@@ -172,10 +175,9 @@ if __name__=='__main__':
             # 0 is background class, deeplab is trained with "person" included, (height, width, num_class)
             pred_prob = pred_prob[:,1:(DC.num_class+1)] #(npoint, num_class)
             pointcloud = np.concatenate([xyz, isPainted, pred_prob, pc[0,:,3:]], axis=-1)
+            time_record.append(('Pointpainting time:', time.time()))
 
             inputs['point_clouds'] = tf.convert_to_tensor(np.expand_dims(pointcloud, axis=0))
-            print(inputs['point_clouds'].shape)
-
             end_points = net(inputs['point_clouds'])        
         
     else:        

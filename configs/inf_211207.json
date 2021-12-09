@@ -1,0 +1,11 @@
+{    
+    "model_id": "211207", 
+    "use_painted": true,   
+    "two_way": false,       
+    "use_fp_mlp": true, 
+    "sep_coords": false,
+    "use_tflite": true,
+    "tflite_folder": "tflite/tflite_models/1way_fp",    
+    "use_edgetpu": true,        
+    "use_multiThr": false
+}

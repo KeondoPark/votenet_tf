@@ -57,6 +57,7 @@ class VoteNet(tf.keras.Model):
         self.vote_factor = vote_factor
         self.sampling=sampling
         self.use_tflite = model_config['use_tflite']
+        self.use_multiThr = model_config['use_multiThr']
         two_way = model_config['two_way']
 
         if two_way:
@@ -95,7 +96,7 @@ class VoteNet(tf.keras.Model):
         Returns:
             end_points: list
         """
-        if self.use_tflite:
+        if self.use_tflite and self.use_multiThr:
             end_points = self.backbone_net(point_cloud, img=img, calib=calib)
         else:
             end_points = self.backbone_net(point_cloud)
