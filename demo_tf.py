@@ -46,7 +46,7 @@ from ap_helper_tf import parse_predictions
 import votenet_tf
 from votenet_tf import dump_results
 from PIL import Image
-from deeplab import run_semantic_seg, run_semantic_seg_tflite
+from deeplab.deeplab import run_semantic_seg, run_semantic_seg_tflite
 import json
 
 model_config = json.load(open(FLAGS.config_path))
@@ -177,6 +177,8 @@ if __name__=='__main__':
             time_record.append(('Pointpainting time:', time.time()))
 
             inputs['point_clouds'] = tf.convert_to_tensor(np.expand_dims(pointcloud, axis=0))
+
+            print(inputs['point_clouds'].shape)
             end_points = net(inputs['point_clouds'])        
         
     else:        
