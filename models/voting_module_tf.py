@@ -112,8 +112,8 @@ class VotingModule(layers.Layer):
                 vote_xyz = seed_xyz + offset
 
         else:
-            #net0 = self.relu0(self.bn0(self.conv0(seed_features))) #(B, num_seed, 1, in_dim)
-            net = self.relu1(self.bn1(self.conv1(seed_features))) 
+            net0 = self.relu0(self.bn0(self.conv0(seed_features))) #(B, num_seed, 1, in_dim)
+            net = self.relu1(self.bn1(self.conv1(net0))) 
             net = self.relu2(self.bn2(self.conv2(net))) 
             #if self.sep_coords:
             #    offset = self.conv3_1(net) # (batch_size, num_seed, 1, 3*vote_factor)            
