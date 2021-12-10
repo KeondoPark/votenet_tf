@@ -121,12 +121,13 @@ class VotingModule(layers.Layer):
             #    residual_features = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net)
             #else:
             net = self.conv3(net)
+
             offset = net[:,:,:,0:3]
             residual_features = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net[:,:,:,3:]) # (batch_size, num_seed, vote_factor, out_dim)        
             
-            #net0 = layers.Reshape((num_seed, self.vote_factor, net0.shape[-1]))(net0)
-            #vote_features = net0 + residual_features 
-            vote_features = seed_features + residual_features
+            net0 = layers.Reshape((num_seed, self.vote_factor, net0.shape[-1]))(net0)
+            vote_features = net0 + residual_features 
+            #vote_features = seed_features + residual_features
 
             vote_xyz = seed_xyz + offset 
         

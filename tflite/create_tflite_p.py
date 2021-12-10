@@ -46,11 +46,13 @@ if FLAGS.gpu_mem_limit:
 
 BATCH_SIZE = 1
 
+model_config = json.load(open(FLAGS.config_path))
+
 if not FLAGS.use_rep_data:
     TRAIN_DATASET = SunrgbdDetectionVotesDataset_tfrecord('train', num_points=20000,
         augment=False, shuffle=True, batch_size=BATCH_SIZE,
         use_color=False, use_height=True,
-        use_painted=True)
+        use_painted=model_config['use_painted'])
 
     ds = TRAIN_DATASET.preprocess()
     ds = ds.prefetch(BATCH_SIZE)
@@ -170,8 +172,6 @@ def tflite_convert(keyword, model, base_model, out_dir, mlp=True):
 
 if __name__=='__main__':
     
-    model_config = json.load(open(FLAGS.config_path))
-
     # Set file paths and dataset config
     if FLAGS.checkpoint_path is None:
         checkpoint_path = os.path.join(BASE_DIR, 'tf_ckpt', model_config['model_id'])
@@ -194,7 +194,9 @@ if __name__=='__main__':
         'conf_thresh': 0.5, 'dataset_config': DC}
 
     # Init the model and optimzier    
-    net = votenet_tf.VoteNet(num_proposal=256, input_feature_dim=DC.num_class+1, vote_factor=1,
+    net = votenet_tf.VoteNet(num_proposal=256, 
+        input_feature_dim=DC.num_class+1 if model_config['use_painted'] else 1, 
+        vote_factor=1,
         #sampling='seed_fps', num_class=DC.num_class,
         sampling='vote_fps', num_class=DC.num_class,
         num_heading_bin=DC.num_heading_bin,
@@ -212,10 +214,13 @@ if __name__=='__main__':
 
     print("Loaded checkpoint %s (epoch: %d)"%(checkpoint_path, epoch))
    
-    # Load and preprocess input point cloud     
-    pc = tf.convert_to_tensor(np.random.random([BATCH_SIZE,20000,3+1+1+10]))
-    #pc = preprocess_point_cloud(point_cloud)
-    #print('Loaded point cloud data: %s'%(pc_path))
+    # Load and preprocess input point cloud
+    if not model_config['use_painted']:
+        pc = tf.convert_to_tensor(np.random.random([BATCH_SIZE,20000,3+1]))
+    elif model_config['two_way']:
+        pc = tf.convert_to_tensor(np.random.random([BATCH_SIZE,20000,3+1+10]))
+    else:
+        pc = tf.convert_to_tensor(np.random.random([BATCH_SIZE,20000,3+1+1+10]))
    
     # Model inference
     inputs = {'point_clouds': tf.convert_to_tensor(pc)}
@@ -346,7 +351,10 @@ if __name__=='__main__':
     converting_layers = ['sa1','sa2','sa3','sa4','fp1','fp2','voting','va']
     #converting_layers = ['voting','va']
     if 'sa1' in converting_layers:    
-        if model_config['two_way']:
+        if not model_config['use_painted']:
+            sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[2048,64,1+3])
+            dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,2048,64,1+3])) # (B, npoint, nsample, C+3)
+        elif model_config['two_way']:
             sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[1024,64,1+10+3])
             dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,64,1+10+3])) # (B, npoint, nsample, C+3)
         else:

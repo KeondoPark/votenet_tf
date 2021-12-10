@@ -177,6 +177,8 @@ if __name__=='__main__':
             time_record.append(('Pointpainting time:', time.time()))
 
             inputs['point_clouds'] = tf.convert_to_tensor(np.expand_dims(pointcloud, axis=0))
+
+            print(inputs['point_clouds'].shape)
             end_points = net(inputs['point_clouds'])        
         
     else:        
