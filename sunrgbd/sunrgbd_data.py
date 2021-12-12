@@ -33,7 +33,8 @@ from tqdm import tqdm
 import tensorflow as tf
 from deeplab.deeplab import run_semantic_segmentation_graph
 
-DEFAULT_TYPE_WHITELIST = ['bed','table','sofa','chair','toilet','desk','dresser','night_stand','bookshelf','bathtub']
+#DEFAULT_TYPE_WHITELIST = ['bed','table','sofa','chair','toilet','desk','dresser','night_stand','bookshelf','bathtub']
+DEFAULT_TYPE_WHITELIST = ['bed','table','sofa','chair','toilet','desk','dresser','night_stand','bookshelf','bathtub','person']
 
 class sunrgbd_object(object):
     ''' Load and parse object data '''
@@ -274,7 +275,7 @@ def extract_sunrgbd_data(idx_filename, split, output_folder, num_point=20000,
                 point_votes = point_votes)
 
 def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=20000,
-    type_whitelist=DEFAULT_TYPE_WHITELIST, use_v1=False, skip_empty_scene=True, pointpainting=False, use_gt=False):
+    type_whitelist=DEFAULT_TYPE_WHITELIST, use_v1=False, skip_empty_scene=True, pointpainting=False, use_gt=False, include_person=False):
     """ Same as extract_sunrgbd_data EXCEPT
 
     Args:
@@ -328,12 +329,16 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
     n_shards = int(len(data_idx_list) / n_pc_shard) + (1 if len(data_idx_list) % n_pc_shard != 0 else 0)
 
     MAX_NUM_OBJ = 64
-    num_sunrgbd_class = len(DEFAULT_TYPE_WHITELIST)
+
+    if include_person:
+        type_whitelist += ['person']
+        num_sunrgbd_class = len(type_whitelist)
+        print(type_whitelist)
 
     # Load semantic segmentation model(Written and trained in TF1.15)
     if pointpainting:
         INPUT_SIZE = 513
-        with tf.compat.v1.gfile.GFile('../test/saved_model/sunrgbd_ade20k_12.pb', "rb") as f:
+        with tf.compat.v1.gfile.GFile('../deeplab/saved_model/sunrgbd_ade20k_12.pb', "rb") as f:
             graph_def = tf.compat.v1.GraphDef()
             graph_def.ParseFromString(f.read())
         
@@ -412,7 +417,7 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                         else:
                             names=names[0]
 
-                        label = {'bed':1, 'table':2, 'sofa':3, 'chair':4, 'toilet':5, 'desk':6, 'dresser':7, 'night_stand':8, 'bookshelf':9, 'bathtub':10}
+                        label = {'bed':1, 'table':2, 'sofa':3, 'chair':4, 'toilet':5, 'desk':6, 'dresser':7, 'night_stand':8, 'bookshelf':9, 'bathtub':10, 'person':11}
                         for idx, name in enumerate(names):            
                             name = name[0]            
                             if name in label:
@@ -547,6 +552,7 @@ if __name__=='__main__':
     parser.add_argument('--tfrecord', action='store_true', help='Generate TFRecord dataset.')
     parser.add_argument('--painted', action='store_true', help='Generate point painted TFRecord dataset.')
     parser.add_argument('--use_gt', action='store_true', help='When pointpainting, use ground truth segmentation.')
+    parser.add_argument('--include_person', action='store_true', help='Include person in the detection class list')
     args = parser.parse_args()
 
     if args.viz:
@@ -589,11 +595,20 @@ if __name__=='__main__':
 
     if args.painted:
         assert args.tfrecord, "Need to set tfrecord flag as True"
-        extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/train_data_idx.txt'),
+        if args.include_person:
+            train_data_idx_file = 'train_data_idx_person.txt'
+            val_data_idx_file = 'val_data_idx_person.txt'
+        else:
+            train_data_idx_file = 'train_data_idx.txt'
+            val_data_idx_file = 'val_data_idx.txt'
+
+        extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval', train_data_idx_file),
             split = 'training',
-            output_folder = os.path.join(DATA_DIR, 'sunrgbd_pc_train_painted_tf4'),
-            num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True, use_gt=args.use_gt)
-        extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/val_data_idx.txt'),
+            output_folder = os.path.join(DATA_DIR, 'sunrgbd_pc_train_painted_tf_person'),
+            num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True, use_gt=args.use_gt,
+            include_person=args.include_person)
+        extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval', val_data_idx_file),
             split = 'training',
-            output_folder = os.path.join(DATA_DIR, 'sunrgbd_pc_val_painted_tf4'),
-            num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True, use_gt=args.use_gt)
+            output_folder = os.path.join(DATA_DIR, 'sunrgbd_pc_val_painted_tf_person'),
+            num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True, use_gt=args.use_gt,
+            include_person=args.include_person)
