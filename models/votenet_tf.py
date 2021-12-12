@@ -72,14 +72,13 @@ class VoteNet(tf.keras.Model):
             
         # Hough voting
         self.vgen = VotingModule(self.vote_factor, seed_feature_dim=256, \
-            model_config=model_config)
-            #sep_coords=sep_coords, use_tflite=use_tflite, tflite_name='voting_quant_2way_coords_edgetpu.tflite')
+            model_config=model_config)            
 
         # Vote aggregation and detection
         self.pnet = ProposalModule(num_class, num_heading_bin, num_size_cluster,
             mean_size_arr, num_proposal, sampling, seed_feat_dim=256, \
             model_config=model_config)
-            #sep_coords=sep_coords, use_tflite=use_tflite, tflite_name='va_quant_2way_coords_edgetpu.tflite')
+            
 
     def call(self, point_cloud, img=None, calib=None):
         """ Forward pass of the network
@@ -101,25 +100,19 @@ class VoteNet(tf.keras.Model):
         else:
             end_points = self.backbone_net(point_cloud)
         # --------- HOUGH VOTING ---------
-        #xyz = end_points['fp2_xyz']
-        #features = end_points['fp2_features']
         end_points['seed_inds'] = end_points['fp2_inds']
         end_points['seed_xyz'] = end_points['fp2_xyz']
         end_points['seed_features'] = end_points['fp2_features']
         
-        #start = time.time() 
-        xyz, features = self.vgen(end_points['seed_xyz'], end_points['seed_features'])
-        #print("Runtime for Voting module:", time.time() - start)
+        
+        xyz, features = self.vgen(end_points['seed_xyz'], end_points['seed_features'])        
         features_norm = tf.norm(features, ord=2, axis=1)
         features = tf.divide(features, tf.expand_dims(features_norm, axis=1))        
         end_points['vote_xyz'] = xyz
         end_points['vote_features'] = features        
-        
-        #start = time.time() 
+                
         end_points = self.pnet(xyz, features, end_points)
-        #print("Runtime for Proposal module:", time.time() - start)
-
-        #return end_points
+        
         return end_points
 
 

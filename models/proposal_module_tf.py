@@ -224,14 +224,6 @@ class ProposalModule(layers.Layer):
             net = self.conv3(net)
             offset = net[:,:,:,0:3]            
             net = net[:,:,:,3:]    
-
-            w, b = self.conv3.get_weights()
-            np.save('proposal_w_coords.npy', w[:,:,:,:3])
-            np.save('proposal_b_coords.npy', b[:3])
-            np.save('proposal_w_features.npy', w[:,:,:,3:])
-            np.save('proposal_b_features.npy', b[3:])
-            np.save('proposal_act_coords.npy', offset.numpy())
-            np.save('proposal_act_features.npy', net.numpy())
             
             offset = layers.Reshape((self.npoint, 3))(offset)                
             center = xyz + offset            
