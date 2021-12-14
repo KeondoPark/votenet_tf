@@ -19,7 +19,7 @@ from tensorflow.keras import layers
 
 from sunrgbd_detection_dataset_tf import SunrgbdDetectionVotesDataset_tfrecord, MAX_NUM_OBJ
 from model_util_sunrgbd import SunrgbdDatasetConfig
-from sunrgbd_detection_dataset_tf import DC # dataset config
+#from sunrgbd_detection_dataset_tf import DC # dataset config
 import voting_module_tf
 import json
 
@@ -49,10 +49,14 @@ BATCH_SIZE = 1
 model_config = json.load(open(FLAGS.config_path))
 
 if not FLAGS.use_rep_data:
+    if 'include_person' in model_config and model_config['include_person']:
+        DATASET_CONFIG = SunrgbdDatasetConfig(include_person=True)
+    else:
+        DATASET_CONFIG = SunrgbdDatasetConfig()
     TRAIN_DATASET = SunrgbdDetectionVotesDataset_tfrecord('train', num_points=20000,
         augment=False, shuffle=True, batch_size=BATCH_SIZE,
         use_color=False, use_height=True,
-        use_painted=model_config['use_painted'])
+        use_painted=model_config['use_painted'], DC=DATASET_CONFIG)
 
     ds = TRAIN_DATASET.preprocess()
     ds = ds.prefetch(BATCH_SIZE)
@@ -191,17 +195,17 @@ if __name__=='__main__':
 
     eval_config_dict = {'remove_empty_box': True, 'use_3d_nms': True, 'nms_iou': 0.25,
         'use_old_type_nms': False, 'cls_nms': False, 'per_class_proposal': False,
-        'conf_thresh': 0.5, 'dataset_config': DC}
+        'conf_thresh': 0.5, 'dataset_config': DATASET_CONFIG}
 
     # Init the model and optimzier    
     net = votenet_tf.VoteNet(num_proposal=256, 
-        input_feature_dim=DC.num_class+1 if model_config['use_painted'] else 1, 
+        input_feature_dim=DATASET_CONFIG.num_class+1 if model_config['use_painted'] else 1, 
         vote_factor=1,
-        #sampling='seed_fps', num_class=DC.num_class,
-        sampling='vote_fps', num_class=DC.num_class,
-        num_heading_bin=DC.num_heading_bin,
-        num_size_cluster=DC.num_size_cluster,
-        mean_size_arr=DC.mean_size_arr,
+        #sampling='seed_fps', num_class=DATASET_CONFIG.num_class,
+        sampling='vote_fps', num_class=DATASET_CONFIG.num_class,
+        num_heading_bin=DATASET_CONFIG.num_heading_bin,
+        num_size_cluster=DATASET_CONFIG.num_size_cluster,
+        mean_size_arr=DATASET_CONFIG.mean_size_arr,
         model_config=model_config)
     print('Constructed model.')
     
@@ -218,9 +222,9 @@ if __name__=='__main__':
     if not model_config['use_painted']:
         pc = tf.convert_to_tensor(np.random.random([BATCH_SIZE,20000,3+1]))
     elif model_config['two_way']:
-        pc = tf.convert_to_tensor(np.random.random([BATCH_SIZE,20000,3+1+10]))
+        pc = tf.convert_to_tensor(np.random.random([BATCH_SIZE,20000,3+1+DATASET_CONFIG.num_class+1+1]))
     else:
-        pc = tf.convert_to_tensor(np.random.random([BATCH_SIZE,20000,3+1+1+10]))
+        pc = tf.convert_to_tensor(np.random.random([BATCH_SIZE,20000,3+1+DATASET_CONFIG.num_class+1]))
    
     # Model inference
     inputs = {'point_clouds': tf.convert_to_tensor(pc)}
@@ -319,9 +323,9 @@ if __name__=='__main__':
             self.conv2 = layers.Conv2D(filters=128, kernel_size=1)
             if self.sep_coords:
                 self.conv3_1 = layers.Conv2D(filters=3, kernel_size=1) 
-                self.conv3_2 = layers.Conv2D(filters=2+DC.num_heading_bin*2+DC.num_size_cluster*4+DC.num_class, kernel_size=1) 
+                self.conv3_2 = layers.Conv2D(filters=2+DATASET_CONFIG.num_heading_bin*2+DATASET_CONFIG.num_size_cluster*4+DATASET_CONFIG.num_class, kernel_size=1) 
             else:
-                self.conv3 = layers.Conv2D(filters=2+3+DC.num_heading_bin*2+DC.num_size_cluster*4+DC.num_class, kernel_size=1)
+                self.conv3 = layers.Conv2D(filters=2+3+DATASET_CONFIG.num_heading_bin*2+DATASET_CONFIG.num_size_cluster*4+DATASET_CONFIG.num_class, kernel_size=1)
             self.bn1 = layers.BatchNormalization(axis=-1)
             self.bn2 = layers.BatchNormalization(axis=-1)
             self.relu1 = layers.ReLU(6)
@@ -355,10 +359,10 @@ if __name__=='__main__':
             sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[2048,64,1+3])
             dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,2048,64,1+3])) # (B, npoint, nsample, C+3)
         elif model_config['two_way']:
-            sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[1024,64,1+10+3])
-            dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,64,1+10+3])) # (B, npoint, nsample, C+3)
+            sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[1024,64,3+1+DATASET_CONFIG.num_class+1])
+            dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,64,3+1+DATASET_CONFIG.num_class+1])) # (B, npoint, nsample, C+3)
         else:
-            sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[2048,64,1+10+3+1])
+            sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[2048,64,3+1+DATASET_CONFIG.num_class+1+1])
             dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,2048,64,1+10+3+1])) # (B, npoint, nsample, C+3)
         dummy_out = sa1_mlp(dummy_in_sa1)
         # Copy weights from the base model    
