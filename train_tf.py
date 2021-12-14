@@ -130,15 +130,18 @@ if FLAGS.dataset == 'sunrgbd':
     sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
     from sunrgbd_detection_dataset_tf import SunrgbdDetectionVotesDataset_tfrecord, MAX_NUM_OBJ
     from model_util_sunrgbd import SunrgbdDatasetConfig
-    DATASET_CONFIG = SunrgbdDatasetConfig()
+    if 'include_person' in model_config and model_config['include_person']:
+        DATASET_CONFIG = SunrgbdDatasetConfig(include_person=True)
+    else:
+        DATASET_CONFIG = SunrgbdDatasetConfig()
     TRAIN_DATASET = SunrgbdDetectionVotesDataset_tfrecord('train', num_points=NUM_POINT,
         augment=True, shuffle=True, batch_size=BATCH_SIZE,
         use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
-        use_painted=use_painted)
+        use_painted=use_painted, DC=DATASET_CONFIG)
     TEST_DATASET = SunrgbdDetectionVotesDataset_tfrecord('val', num_points=NUM_POINT,
         augment=False,  shuffle=False, batch_size=BATCH_SIZE,
         use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
-        use_painted=use_painted)
+        use_painted=use_painted, DC=DATASET_CONFIG)
 else:
     print('Unknown dataset %s. Exiting...'%(FLAGS.dataset))
     exit(-1)
@@ -150,7 +153,7 @@ num_input_channel = int(FLAGS.use_color)*3 + int(not FLAGS.no_height)*1
 ### Point Paiting : Sementation score is appended at the end of point cloud
 if use_painted:
     # Probabilties that each point belongs to each class + is the point belong to background(Boolean)
-    num_input_channel += DATASET_CONFIG.num_class + 1
+    num_input_channel += DATASET_CONFIG.num_class + 1 + 1
 
 
 

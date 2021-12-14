@@ -63,7 +63,7 @@ class VoteNet(tf.keras.Model):
         if two_way:
             if self.use_tflite:
                 # inference only
-                self.backbone_net = Pointnet2Backbone_tflite(input_feature_dim=self.input_feature_dim, model_config=model_config)
+                self.backbone_net = Pointnet2Backbone_tflite(input_feature_dim=self.input_feature_dim, model_config=model_config, num_class=num_class)
             else:
                 # Backbone point feature learning
                 self.backbone_net = Pointnet2Backbone_p(input_feature_dim=self.input_feature_dim, model_config=model_config)
