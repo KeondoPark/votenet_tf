@@ -19,7 +19,6 @@ sys.path.append(os.path.join(ROOT_DIR, 'pointnet2'))
 
 from pointnet2_modules_tf import PointnetSAModuleVotes, PointnetFPModule, SamplingAndGrouping, PointnetMLP, SamplingAndAttention
 from deeplab.deeplab import run_semantic_seg, run_semantic_seg_tflite
-from sunrgbd_detection_dataset_tf import DC # dataset config
 from tf_ops.sampling import tf_sampling
 from tf_ops.grouping import tf_grouping
 
@@ -509,6 +508,7 @@ class Pointnet2Backbone_tflite(layers.Layer):
 
         self._executor = ThreadPoolExecutor(2)
         self.loop = asyncio.get_event_loop()
+        self.num_class = num_class
 
     def _break_up_pc(self, pc):
         xyz = pc[:,:,0:3]        
@@ -578,7 +578,7 @@ class Pointnet2Backbone_tflite(layers.Layer):
             #isPainted = np.expand_dims(isPainted, axis=-1)
 
             # 0 is background class, deeplab is trained with "person" included, (height, width, num_class)
-            pred_prob = pred_prob[:,1:(DC.num_class+1)] # (npoint, num_class)
+            pred_prob = pred_prob[:,1:(self.num_class+1)] # (npoint, num_class)
             features = np.concatenate([pointcloud[0,:,3:], pred_prob], axis=-1)
             features = np.expand_dims(features, axis=0)
             xyz = np.expand_dims(xyz, axis=0)

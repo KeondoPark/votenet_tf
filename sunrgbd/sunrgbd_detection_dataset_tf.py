@@ -46,14 +46,13 @@ import pc_util
 import sunrgbd_utils
 from model_util_sunrgbd import SunrgbdDatasetConfig
 
-DC = SunrgbdDatasetConfig() # dataset specific config
 MAX_NUM_OBJ = 64 # maximum number of objects allowed per scene
 MEAN_COLOR_RGB = np.array([0.5,0.5,0.5]) # sunrgbd color is in 0~1
 
 class SunrgbdDetectionVotesDataset(keras.utils.Sequence):
     def __init__(self, split_set='train', num_points=20000,
         use_color=False, use_height=False, use_v1=False,
-        augment=False, scan_idx_list=None):
+        augment=False, scan_idx_list=None, DC=None):
 
         assert(num_points<=50000)
         self.use_v1 = use_v1 
@@ -77,6 +76,7 @@ class SunrgbdDetectionVotesDataset(keras.utils.Sequence):
         self.augment = augment
         self.use_color = use_color
         self.use_height = use_height
+        self.DC = DC
        
     def __len__(self):
         return len(self.scan_names)
@@ -179,11 +179,11 @@ class SunrgbdDetectionVotesDataset(keras.utils.Sequence):
             bbox = bboxes[i]
             semantic_class = bbox[7]
             box3d_center = bbox[0:3]
-            angle_class, angle_residual = DC.angle2class(bbox[6])
+            angle_class, angle_residual = self.DC.angle2class(bbox[6])
             # NOTE: The mean size stored in size2class is of full length of box edges,
             # while in sunrgbd_data.py data dumping we dumped *half* length l,w,h.. so have to time it by 2 here 
             box3d_size = bbox[3:6]*2
-            size_class, size_residual = DC.size2class(box3d_size, DC.class2type[semantic_class])
+            size_class, size_residual = self.DC.size2class(box3d_size, self.DC.class2type[semantic_class])
             box3d_centers[i,:] = box3d_center
             angle_classes[i] = angle_class
             angle_residuals[i] = angle_residual
@@ -239,16 +239,20 @@ class SunrgbdDetectionVotesDataset_tfrecord():
     def __init__(self, split_set='train', num_points=20000,
         use_color=False, use_height=False, 
         augment=False, batch_size=8, shuffle=True,
-        use_painted=False):
+        use_painted=False, DC=None):
 
         assert(num_points<=50000)
         self.use_painted = use_painted
         self.dim_features = 6        
+        self.DC = DC
         self.num_class = DC.num_class
-        if self.use_painted:
-            self.dim_features = 3 + (self.num_class) + 1 # xyz + num_class + 1(background) + 1(isPainted)
 
         if self.use_painted:
+            self.dim_features = 3 + (self.num_class + 1) + 1 # xyz + num_class + 1(background) + 1(isPainted)
+
+        if DC.include_person:
+            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf_person'%(split_set))
+        elif self.use_painted:
             self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf3'%(split_set))
         else:
             self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_tf'%(split_set))
@@ -462,7 +466,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
                 bbox = bboxes[b,i]
                 semantic_class = bbox[7]
                 box3d_center = bbox[0:3]
-                angle_class, angle_residual = DC.angle2class(bbox[6])
+                angle_class, angle_residual = self.DC.angle2class(bbox[6])
                 # NOTE: The mean size stored in size2class is of full length of box edges,
                 # while in sunrgbd_data.py data dumping we dumped *half* length l,w,h.. so have to time it by 2 here 
                 #box3d_size = bbox[3:6]*2

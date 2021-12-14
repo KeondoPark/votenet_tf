@@ -20,8 +20,7 @@ import sys
 import cv2
 import argparse
 from PIL import Image
-DATA_DIR = '/home/aiot/data'
-#DATA_DIR = '/home/keondopark'
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 print(BASE_DIR)
@@ -31,10 +30,23 @@ import pc_util
 import sunrgbd_utils
 from tqdm import tqdm
 import tensorflow as tf
+import time
 from deeplab.deeplab import run_semantic_segmentation_graph
 
-#DEFAULT_TYPE_WHITELIST = ['bed','table','sofa','chair','toilet','desk','dresser','night_stand','bookshelf','bathtub']
-DEFAULT_TYPE_WHITELIST = ['bed','table','sofa','chair','toilet','desk','dresser','night_stand','bookshelf','bathtub','person']
+import json
+ROOT_DIR = os.path.dirname(BASE_DIR)
+environ_file = os.path.join(ROOT_DIR,'configs','environ.json')
+environ = json.load(open(environ_file))['environ']
+
+if environ == 'server':    
+    DATA_DIR = '/home/aiot/data'
+elif environ == 'jetson':
+    DATA_DIR='/media'
+elif environ == 'server2':
+    DATA_DIR = '/data'
+
+
+DEFAULT_TYPE_WHITELIST = ['bed','table','sofa','chair','toilet','desk','dresser','night_stand','bookshelf','bathtub']
 
 class sunrgbd_object(object):
     ''' Load and parse object data '''
@@ -337,33 +349,35 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
 
     # Load semantic segmentation model(Written and trained in TF1.15)
     if pointpainting:
-        INPUT_SIZE = 513
-        with tf.compat.v1.gfile.GFile('../deeplab/saved_model/sunrgbd_ade20k_12.pb', "rb") as f:
-            graph_def = tf.compat.v1.GraphDef()
-            graph_def.ParseFromString(f.read())
-        
-        myGraph = tf.compat.v1.Graph()
-        with myGraph.as_default():
-            tf.compat.v1.import_graph_def(graph_def, name='')
+        if use_gt: 
+            from scipy import io
+            sunrgbd_mat = io.loadmat(os.path.join(DATA_DIR,'OFFICIAL_SUNRGBD','SUNRGBDMeta3DBB_v2.mat')) 
+            metadata = sunrgbd_mat['SUNRGBDMeta'][0] 
+        else:
+            INPUT_SIZE = 513
+            with tf.compat.v1.gfile.GFile('../deeplab/saved_model/sunrgbd_ade20k_12.pb', "rb") as f:
+                graph_def = tf.compat.v1.GraphDef()
+                graph_def.ParseFromString(f.read())
+            
+            myGraph = tf.compat.v1.Graph()
+            with myGraph.as_default():
+                tf.compat.v1.import_graph_def(graph_def, name='')
 
-        sess = tf.compat.v1.Session(graph=myGraph)
+            sess = tf.compat.v1.Session(graph=myGraph)
 
     f = open('sunrgbd_semented_pts_stats.txt', 'a+')
-
+    
     for shard in tqdm(range(n_shards)):
         tfrecords_shard_path = os.path.join(output_folder, "{}_{}.records".format("sunrgbd", '%.5d-of-%.5d' % (shard, n_shards - 1)))
         start_idx = shard * n_pc_shard
         end_idx = min((shard+1) * n_pc_shard, len(data_idx_list))
-        data_idx_shard_list = data_idx_list[start_idx:end_idx]
-        from scipy import io
-        sunrgbd_mat = io.loadmat(os.path.join(DATA_DIR,'OFFICIAL_SUNRGBD','SUNRGBDMeta3DBB_v2.mat')) 
-        metadata = sunrgbd_mat['SUNRGBDMeta'][0] 
+        data_idx_shard_list = data_idx_list[start_idx:end_idx]        
 
         with tf.io.TFRecordWriter(tfrecords_shard_path) as writer:
-            for data_idx in data_idx_shard_list: 
+            for data_idx in data_idx_shard_list:                 
                 if data_idx == 2983: continue   #Errorneous data
-                #if data_idx < 5051 + 1900: continue
-                #print('------------- ', data_idx)
+                #if data_idx < 20000: continue
+                print('------------- ', data_idx)
                 objects = dataset.get_label_objects(data_idx)
 
                 # Skip scenes with 0 object
@@ -388,20 +402,25 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                 n_valid_box = cnt
                     
                 pc_upright_depth = dataset.get_depth(data_idx)
-                pc_upright_depth_subsampled = pc_util.random_sampling(pc_upright_depth, num_point)                
+                pc_upright_depth_subsampled = pc_util.random_sampling(pc_upright_depth, num_point)          
 
                 if pointpainting:
                     ########## Add 2D segmentation result to point cloud(Point Painting) ##########
                     # Project points to image
                     calib = dataset.get_calibration(data_idx)
                     uv,d = calib.project_upright_depth_to_image(pc_upright_depth_subsampled[:,0:3]) #uv: (N, 2)
+
+                    # Run image segmentation result and get result
+                    img = dataset.get_image2(data_idx)            
                     
                     # Round to the nearest integer; since uv starts from 1. subtract 1.
                     uv[:,0] = np.rint(uv[:,0] - 1)
                     uv[:,1] = np.rint(uv[:,1] - 1)
-                    
-                    # Run image segmentation result and get result
-                    img = dataset.get_image2(data_idx)    
+
+                    w, h = img.size
+
+                    uv[:,0] = np.minimum(uv[:,0], w-1)
+                    uv[:,1] = np.minimum(uv[:,1], h-1)
 
                     if use_gt: 
                         img_path = metadata[data_idx-1][4][0][12:] # indexing starts from 1
@@ -449,17 +468,8 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                                             isPainted,\
                                             pred_prob
                                             ], axis=-1)
-
-                    #painted = painted[(-painted[:,3]).argsort()]
-                    #pc_util.write_ply_color(painted[:,0:3],
-                    #        projected_class,os.path.join('/home/keondopark', 'painted_viz.ply'))
-                    #print("painted shape", painted.shape)
-                    
+                                                               
                     ######################################################################################################
-
-                #np.savez_compressed(os.path.join(output_folder,'%06d_pc.npz'%(data_idx)),
-                #    pc=pc_upright_depth_subsampled)
-                #np.save(os.path.join(output_folder, '%06d_bbox.npy'%(data_idx)), obbs)
             
                 N = pc_upright_depth_subsampled.shape[0]
                 point_votes = np.zeros((N,10)) # 3 votes and 1 vote mask 
@@ -487,18 +497,18 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                                 point_votes[j,7:10] = votes[i,:]
                         point_vote_idx[inds] = np.minimum(2, point_vote_idx[inds]+1)
                     except:
-                        print('ERROR ----',  data_idx, obj.classname)
+                        print('ERROR ----',  data_idx, obj.classname)                
+                
 
-                f.write(str(data_idx) + '\t' + str(np.sum(isPainted)) + '\t' 
-                        + str(np.sum(point_votes[:,0])) + '\t' + str(np.sum(point_votes[:,0] * isPainted)) +'\n')
-                #np.savez_compressed(os.path.join(output_folder, '%06d_votes.npz'%(data_idx)),
-                #    point_votes = point_votes)
+                #f.write(str(data_idx) + '\t' + str(np.sum(isPainted)) + '\t' 
+                #        + str(np.sum(point_votes[:,0])) + '\t' + str(np.sum(point_votes[:,0] * isPainted)) +'\n')                                
                 if pointpainting:
                     tf_example = create_example(painted_pc, obbs, point_votes, n_valid_box) 
                 else:
                     tf_example = create_example(pc_upright_depth_subsampled, obbs, point_votes, n_valid_box)
-                
+                                
                 writer.write(tf_example.SerializeToString())                
+                
     f.close()
 
 def get_box3d_dim_statistics(idx_filename,
