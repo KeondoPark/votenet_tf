@@ -135,6 +135,16 @@ class SUNRGBD_Calibration(object):
         pts_3d_upright_depth = np.transpose(np.dot(self.Rtilt, np.transpose(pts_3d_depth)))
         return self.project_upright_depth_to_upright_camera(pts_3d_upright_depth)
 
+class SUNRGBD_Calib_FromArr(SUNRGBD_Calibration):
+
+    def __init__(self, Rtilt, K):
+        self.Rtilt = np.reshape(Rtilt, (3,3), order='F')
+        self.K = np.reshape(K, (3,3), order='F')
+        self.f_u = self.K[0,0]
+        self.f_v = self.K[1,1]
+        self.c_u = self.K[0,2]
+        self.c_v = self.K[1,2]
+
  
  
 def rotx(t):

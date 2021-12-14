@@ -9,18 +9,8 @@
 import os
 import sys
 import numpy as np
-import argparse
 import importlib
 import time
-
-parser = argparse.ArgumentParser()
-parser.add_argument('--dataset', default='sunrgbd', help='Dataset: sunrgbd or scannet [default: sunrgbd]')
-parser.add_argument('--num_point', type=int, default=20000, help='Point Number [default: 20000]')
-parser.add_argument('--checkpoint_path', default=None, help='Model checkpoint path [default: None]')
-parser.add_argument('--gpu_mem_limit', type=int, default=0, help='GPU memory usage')
-parser.add_argument('--inf_time_file', default=None, help='Record inference time')
-parser.add_argument('--config_path', default=None, required=True, help='Model configuration path')
-FLAGS = parser.parse_args()
 
 import tensorflow as tf
 
@@ -48,9 +38,8 @@ from votenet_tf import dump_results
 from PIL import Image
 from deeplab.deeplab import run_semantic_seg, run_semantic_seg_tflite
 import json
+from multiprocessing import Queue
 
-model_config = json.load(open(FLAGS.config_path))
-DEFAULT_CHECKPOINT_PATH = os.path.join('tf_ckpt', model_config['model_id'])
 
 def preprocess_point_cloud(point_cloud):
     ''' Prepare the numpy point cloud (N,3) for forward pass '''
@@ -59,47 +48,27 @@ def preprocess_point_cloud(point_cloud):
     floor_height = np.percentile(point_cloud[:,2],0.99)
     height = point_cloud[:,2] - floor_height
     point_cloud = np.concatenate([point_cloud, np.expand_dims(height, 1)],1) # (N,4) or (N,7)
-    if point_cloud.shape[0] > FLAGS.num_point:
-        point_cloud = random_sampling(point_cloud, FLAGS.num_point)
+    if point_cloud.shape[0] > 20000:
+        point_cloud = random_sampling(point_cloud, 20000)
     pc = np.expand_dims(point_cloud.astype(np.float32), 0) # (1,20000,4)
     return pc
 
-if __name__=='__main__':
-    
-    # Limit GPU Memory usage, 256MB suffices in jetson nano
-    if FLAGS.gpu_mem_limit:
-        gpus = tf.config.experimental.list_physical_devices('GPU')
-        if gpus:
-            try:
-                tf.config.experimental.set_virtual_device_configuration(gpus[0], 
-                [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=FLAGS.gpu_mem_limit)])
-                logical_gpus = tf.config.experimental.list_logical_devices('GPU')
-                print(len(gpus), "Physical GPUs", len(logical_gpus), "Logical GPUs")
-            except RuntimeError as e:
-                print(e)
+# Assume Edgetpu is available!
+def votenet_inference(queue):
+
+    model_config = json.load(open('configs/inf_211213_sep.json'))
+    DEFAULT_CHECKPOINT_PATH = os.path.join('tf_ckpt', model_config['model_id'])
 
     # Set file paths and dataset config
-    demo_dir = os.path.join(BASE_DIR, 'demo_files') 
-    if FLAGS.dataset == 'sunrgbd':
-        sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
-        from model_util_sunrgbd import SunrgbdDatasetConfig
-        if 'include_person' in model_config and model_config['include_person']:
-            DATASET_CONFIG = SunrgbdDatasetConfig(include_person=True)
-        else:
-            DATASET_CONFIG = SunrgbdDatasetConfig()
-        from sunrgbd_data import sunrgbd_object
-        checkpoint_path = FLAGS.checkpoint_path if FLAGS.checkpoint_path is not None else DEFAULT_CHECKPOINT_PATH          
-        pc_path = os.path.join(demo_dir, 'input_pc_sunrgbd.ply')
-        #pc_path = os.path.join(demo_dir, 'pc_person2.ply')
-    elif FLAGS.dataset == 'scannet':
-        sys.path.append(os.path.join(ROOT_DIR, 'scannet'))
-        from scannet_detection_dataset import DC # dataset config
-        checkpoint_path = os.path.join(demo_dir, 'pretrained_votenet_on_scannet.tar')
-        pc_path = os.path.join(demo_dir, 'input_pc_scannet.ply')
+    demo_dir = os.path.join(BASE_DIR, 'demo_files')     
+    sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
+    from model_util_sunrgbd import SunrgbdDatasetConfig
+    if 'include_person' in model_config and model_config['include_person']:
+        DATASET_CONFIG = SunrgbdDatasetConfig(include_person=True)
     else:
-        print('Unkown dataset. Exiting.')
-        exit(-1)
-
+        DATASET_CONFIG = SunrgbdDatasetConfig()
+    from sunrgbd_data import sunrgbd_object
+    
     eval_config_dict = {'remove_empty_box': True, 'use_3d_nms': True, 'nms_iou': 0.25,
         'use_old_type_nms': False, 'cls_nms': False, 'per_class_proposal': False,
         'conf_thresh': 0.5, 'dataset_config': DATASET_CONFIG}
@@ -116,36 +85,11 @@ if __name__=='__main__':
     
     # Load checkpoint
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)    
-
-    if model_config['use_tflite']:          
-        restore_list = []  
-        #restore_list.append(tf.train.Checkpoint(pnet=net.pnet))
-        #restore_list.append(tf.train.Checkpoint(vgen=net.vgen))
-        
-        for layer in restore_list:
-            new_root = tf.train.Checkpoint(net=layer)
-            new_root.restore(tf.train.latest_checkpoint(checkpoint_path)).expect_partial()
-
-    else:    
-        ckpt = tf.train.Checkpoint(epoch=tf.Variable(1), optimizer=optimizer, net=net)
-        manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=3)
-        ckpt.restore(manager.latest_checkpoint)
-        epoch = ckpt.epoch.numpy()
-
-        print("Loaded checkpoint %s (epoch: %d)"%(checkpoint_path, epoch))  
    
-    # Load and preprocess input point cloud     
-    #point_cloud = read_ply(pc_path)
-    #pc = preprocess_point_cloud(point_cloud)
-    #print('Loaded point cloud data: %s'%(pc_path))
-    ## TODO: NEED TO BE REPLACED
-    data_idx = 5051
-    dataset = sunrgbd_object(os.path.join(DATA_DIR,'sunrgbd_trainval'), 'training', use_v1=True)
-    point_cloud = dataset.get_depth(data_idx)        
-    
+    point_cloud = queue.get()        
     
     time_record = [('Start: ', time.time())]
-    point_cloud_sampled = random_sampling(point_cloud[:,0:3], FLAGS.num_point)
+    point_cloud_sampled = random_sampling(point_cloud[:,0:3], 20000)
     pc = preprocess_point_cloud(point_cloud_sampled)    
         
     time_record.append(('Votenet data preprocessing time:', time.time()))
@@ -153,11 +97,13 @@ if __name__=='__main__':
     inputs = {'point_clouds': tf.convert_to_tensor(pc)}
    
     # Model inference    
-    if model_config['use_painted']:
-        ## TODO: NEED TO BE REPLACED
-        img = dataset.get_image2(data_idx)
-        calib = dataset.get_calibration(data_idx)                
-        
+    if model_config['use_painted']:        
+        img = queue.get() 
+
+        import sunrgbd_utils  
+        Rtilt, K = queue.get()        
+        calib = sunrgbd_utils.SUNRGBD_Calib_FromArr(Rtilt, K)        
+                      
         if model_config['use_multiThr']:
             end_points = net(inputs['point_clouds'], training=False, img=img, calib=calib)        
         else:
@@ -194,28 +140,14 @@ if __name__=='__main__':
     time_record += end_points['time_record']    
     time_record = time_record + [('Voting and Proposal time:', time.time())]
 
-    if FLAGS.inf_time_file:
-        inf_time_log = open(FLAGS.inf_time_file, 'a+')
-
-        for idx, (desc, t) in enumerate(time_record):
-            if idx == 0:                 
-                inf_time_log.write(desc + str(t) + '\n')
-                prev_time = t
-                continue
-            inf_time_log.write(desc + str(t - prev_time) + '\n')
+    for idx, (desc, t) in enumerate(time_record):
+        if idx == 0:                                 
+            print(desc, t)
             prev_time = t
-        
-        inf_time_log.write('Total inference time: %f \n'%(time_record[-1][1] - time_record[0][1]))
-        inf_time_log.close()
-    else:
-        for idx, (desc, t) in enumerate(time_record):
-            if idx == 0:                                 
-                print(desc, t)
-                prev_time = t
-                continue
-            print(desc, t - prev_time)            
-            prev_time = t
-        print('Total inference time: %f \n'%(time_record[-1][1] - time_record[0][1]))
+            continue
+        print(desc, t - prev_time)            
+        prev_time = t
+    print('Total inference time: %f \n'%(time_record[-1][1] - time_record[0][1]))
     
 
     end_points['point_clouds'] = inputs['point_clouds']
@@ -232,9 +164,9 @@ if __name__=='__main__':
         #print('coords', pred[1])
 
     print('Finished detection. %d object detected.'%(len(pred_map_cls[0][0])))
-  
-    dump_dir = os.path.join(demo_dir, '%s_results'%(FLAGS.dataset))
+    """
+    dump_dir = os.path.join(demo_dir, 'sunrgbd_results')
     if not os.path.exists(dump_dir): os.mkdir(dump_dir) 
     dump_results(end_points, dump_dir, DATASET_CONFIG, True)
     print('Dumped detection results to folder %s'%(dump_dir))
-
+    """

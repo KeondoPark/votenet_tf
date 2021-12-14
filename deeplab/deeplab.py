@@ -121,6 +121,7 @@ def run_semantic_seg_tflite(img, save_result=False):
 
     interpreter.invoke()
     result = segment.get_output(interpreter)        
+    result = result/255 # Output is int8, not dequantized output
     
     new_width, new_height = resized_img.size
     pred_prob = result[:new_height, :new_width, :]    

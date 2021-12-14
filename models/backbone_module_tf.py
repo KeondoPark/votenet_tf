@@ -574,12 +574,12 @@ class Pointnet2Backbone_tflite(layers.Layer):
             
             pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)] # (npoint, num_class + 1 + 1 )
             projected_class = np.argmax(pred_prob, axis=-1) # (npoint, 1) 
-            isPainted = np.where((projected_class > 0) & (projected_class < 11), 1, 0) # Point belongs to background?                    
+            isPainted = np.where((projected_class > 0) & (projected_class < self.num_class+1), 1, 0) # Point belongs to background?                    
             #isPainted = np.expand_dims(isPainted, axis=-1)
 
             # 0 is background class, deeplab is trained with "person" included, (height, width, num_class)
             pred_prob = pred_prob[:,:(self.num_class+1)] # (npoint, num_class+1)
-            features = np.concatenate([pointcloud[0,:,3:], pred_prob], axis=-1)
+            features = np.concatenate([pred_prob, pointcloud[0,:,3:]], axis=-1)
             features = np.expand_dims(features, axis=0)
             xyz = np.expand_dims(xyz, axis=0)
             isPainted = np.expand_dims(isPainted, axis=0)
