@@ -89,8 +89,8 @@ class Pointnet2Backbone(layers.Layer):
             self.fp1 = PointnetFPModule(mlp=[256+256,256,256], m=512, model_config=model_config, layer_name='fp1')
             self.fp2 = PointnetFPModule(mlp=[256+256,256,256], m=1024, model_config=model_config, layer_name='fp2')
         else:
-            self.fp1 = PointnetFPModule(mlp=None, m=512)
-            self.fp2 = PointnetFPModule(mlp=None, m=1024)
+            self.fp1 = PointnetFPModule(mlp=None, m=512, model_config=model_config)
+            self.fp2 = PointnetFPModule(mlp=None, m=1024, model_config=model_config)
 
     def _break_up_pc(self, pc):
         #xyz = pc[..., 0:3]

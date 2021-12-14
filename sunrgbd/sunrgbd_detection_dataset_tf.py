@@ -334,9 +334,10 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         y_coords = tf.sort(y_coords, direction='DESCENDING', axis=-1)
         floor_height = y_coords[:, int(0.99*N_POINT), None]         
         height = point_cloud[:,:,2] - tf.tile(floor_height, [1,N_POINT])
-        if self.use_painted:
+        if self.use_painted or self.use_color:
             point_cloud = tf.concat([point_cloud, tf.expand_dims(height, axis=-1)], axis=-1) # (N, C+1)
-        elif not self.augment and not self.use_color:
+        #elif not self.augment:
+        else:
             point_cloud = tf.concat([point_cloud[:,:,:3], tf.expand_dims(height, axis=-1)], axis=-1) # (N,4)
         return point_cloud, bboxes, votes, n_valid_box
     

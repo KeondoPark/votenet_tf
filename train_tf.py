@@ -166,14 +166,6 @@ with mirrored_strategy.scope():
                 sampling=FLAGS.cluster_sampling,
                 model_config=model_config)
 
-#if torch.cuda.device_count() > 1:
-#  log_string("Let's use %d GPUs!" % (torch.cuda.device_count()))
-#  # dim = 0 [30, xxx] -> [10, ...], [10, ...], [10, ...] on 3 GPUs
-#  net = nn.DataParallel(net)
-#net.to(device)
-
-
-#criterion = votenet_tf.get_loss
 import loss_helper_tf
 with mirrored_strategy.scope():
     criterion = loss_helper_tf.get_loss
@@ -255,11 +247,13 @@ def train_one_epoch(batch_data):
     #inputs = {'point_clouds':tf.expand_dims(inputs, axis=0)}
     #output = net(inputs, training=True)
     #loss, end_points = criterion(output, DATASET_CONFIG)        \    
-     
+
+    # For type match 
     config = tf.constant(DATASET_CONFIG.num_heading_bin, dtype=tf.int32), \
         tf.constant(DATASET_CONFIG.num_size_cluster, dtype=tf.int32), \
         tf.constant(DATASET_CONFIG.num_class, dtype=tf.int32), \
         tf.constant(DATASET_CONFIG.mean_size_arr, dtype=tf.float32)
+    
     # Forward pass
     with tf.GradientTape() as tape:
 
@@ -293,14 +287,14 @@ def train_one_epoch(batch_data):
 def evaluate_one_epoch(batch_data):     
     
     # Forward pass
-    point_cloud = batch_data[0]
-    isPainted = batch_data[1]
+    point_cloud = batch_data[0]    
     end_points = net(point_cloud, training=False)
 
     for i, label in label_dict.items():
         if label_dict[i] not in end_points:
             end_points[label_dict[i]] = batch_data[i] 
     
+    # For type match
     config = tf.constant(DATASET_CONFIG.num_heading_bin, dtype=tf.int32), \
         tf.constant(DATASET_CONFIG.num_size_cluster, dtype=tf.int32), \
         tf.constant(DATASET_CONFIG.num_class, dtype=tf.int32), \
@@ -382,7 +376,7 @@ def train(start_epoch):
         log_string("Saved checkpoint for step {}: {}".format(int(ckpt.epoch), save_path))
         
         #if EPOCH_CNT == 0 or EPOCH_CNT % 10 == 9: # Eval every 10 epochs
-        if EPOCH_CNT % 20 == 19 or EPOCH_CNT==20: # Eval every 20 epochs        
+        if EPOCH_CNT % 20 == 19: # Eval every 20 epochs        
             stat_dict = defaultdict(int) # collect statistics            
             ap_calculator = APCalculator(ap_iou_thresh=FLAGS.ap_iou_thresh,
                 class2type_map=DATASET_CONFIG.class2type)     
