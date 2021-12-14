@@ -197,8 +197,7 @@ class ProposalModule(layers.Layer):
                 net = self.interpreter.get_tensor(self.output_details[1]['index']) 
 
                 offset = tf.convert_to_tensor(offset)
-                center = xyz + offset
-                #center = offset
+                center = xyz + offset                
                 net = tf.convert_to_tensor(net)                  
             else:
                 net = self.interpreter.get_tensor(self.output_details[0]['index']) 

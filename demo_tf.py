@@ -161,7 +161,7 @@ if __name__=='__main__':
             end_points = net(inputs['point_clouds'], training=False, img=img, calib=calib)        
         else:
             xyz = pc[0,:,:3]
-            if model_config['use_tflite']:
+            if model_config['use_edgetpu']:
                 pred_prob = run_semantic_seg_tflite(img, save_result=False)                
             else:                
                 pred_prob, pred_class = run_semantic_seg(img, save_result=False)  

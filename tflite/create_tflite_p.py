@@ -262,7 +262,7 @@ if __name__=='__main__':
             return new_features
 
     class nnInVotingModule(tf.keras.Model):
-        def __init__(self, vote_factor, seed_feature_dim, sep_coords=True):            
+        def __init__(self, vote_factor, seed_feature_dim, sep_coords=sep_coords):            
             super().__init__()
             
             self.vote_factor = vote_factor
@@ -311,7 +311,7 @@ if __name__=='__main__':
                 return [offset, vote_features]
 
     class vaModule(tf.keras.Model):
-        def __init__(self, mlp_spec, input_shape, nsample=0, sep_coords=True):
+        def __init__(self, mlp_spec, input_shape, nsample=0, sep_coords=sep_coords):
             super().__init__()
             self.sharedMLP = tf_utils.SharedMLP(mlp_spec, bn=True, input_shape=input_shape)
             self.npoint = 256

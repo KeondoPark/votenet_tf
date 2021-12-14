@@ -103,7 +103,7 @@ class VotingModule(layers.Layer):
             if self.sep_coords:
                 offset = self.interpreter.get_tensor(self.output_details[0]['index'])
                 vote_features = self.interpreter.get_tensor(self.output_details[1]['index'])
-                #vote_xyz = offset
+                
                 vote_xyz = seed_xyz + offset
 
             else:

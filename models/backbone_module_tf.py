@@ -477,10 +477,10 @@ class Pointnet2Backbone_tflite(layers.Layer):
         self.fp1 = PointnetFPModule(mlp=None, m=512, model_config=model_config, layer_name='fp1')
         self.fp2 = PointnetFPModule(mlp=None, m=1024, model_config=model_config, layer_name='fp2')                        
         
-
+        tflite_folder = model_config['tflite_folder']
+        
         if self.use_edgetpu:
-            from pycoral.utils.edgetpu import make_interpreter            
-            tflite_folder = model_config['tflite_folder']
+            from pycoral.utils.edgetpu import make_interpreter                        
             self.sa1_interpreter = make_interpreter(os.path.join(ROOT_DIR, tflite_folder, 'sa1_quant_edgetpu.tflite'))
             self.sa2_interpreter = make_interpreter(os.path.join(ROOT_DIR, tflite_folder, 'sa2_quant_edgetpu.tflite'))
             self.sa3_interpreter = make_interpreter(os.path.join(ROOT_DIR, tflite_folder, 'sa3_quant_edgetpu.tflite'))
