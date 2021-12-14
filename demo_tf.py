@@ -82,7 +82,11 @@ if __name__=='__main__':
     demo_dir = os.path.join(BASE_DIR, 'demo_files') 
     if FLAGS.dataset == 'sunrgbd':
         sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
-        from sunrgbd_detection_dataset_tf import DC # dataset config
+        from model_util_sunrgbd import SunrgbdDatasetConfig
+        if 'include_person' in model_config and model_config['include_person']:
+            DATASET_CONFIG = SunrgbdDatasetConfig(include_person=True)
+        else:
+            DATASET_CONFIG = SunrgbdDatasetConfig()
         from sunrgbd_data import sunrgbd_object
         checkpoint_path = FLAGS.checkpoint_path if FLAGS.checkpoint_path is not None else DEFAULT_CHECKPOINT_PATH          
         pc_path = os.path.join(demo_dir, 'input_pc_sunrgbd.ply')
@@ -98,15 +102,15 @@ if __name__=='__main__':
 
     eval_config_dict = {'remove_empty_box': True, 'use_3d_nms': True, 'nms_iou': 0.25,
         'use_old_type_nms': False, 'cls_nms': False, 'per_class_proposal': False,
-        'conf_thresh': 0.5, 'dataset_config': DC}
+        'conf_thresh': 0.5, 'dataset_config': DATASET_CONFIG}
 
     # Init the model and optimzier    
     net = votenet_tf.VoteNet(num_proposal=256, input_feature_dim=1, vote_factor=1,
         #sampling='seed_fps', num_class=DC.num_class,
-        sampling='vote_fps', num_class=DC.num_class,
-        num_heading_bin=DC.num_heading_bin,
-        num_size_cluster=DC.num_size_cluster,
-        mean_size_arr=DC.mean_size_arr,
+        sampling='vote_fps', num_class=DATASET_CONFIG.num_class,
+        num_heading_bin=DATASET_CONFIG.num_heading_bin,
+        num_size_cluster=DATASET_CONFIG.num_size_cluster,
+        mean_size_arr=DATASET_CONFIG.mean_size_arr,
         model_config=model_config)
     print('Constructed model.')
     
@@ -172,7 +176,7 @@ if __name__=='__main__':
             isPainted = np.expand_dims(isPainted, axis=-1)
 
             # 0 is background class, deeplab is trained with "person" included, (height, width, num_class)
-            pred_prob = pred_prob[:,1:(DC.num_class+1)] #(npoint, num_class)
+            pred_prob = pred_prob[:,:(DATASET_CONFIG.num_class+1)] #(npoint, num_class)
             pointcloud = np.concatenate([xyz, isPainted, pred_prob, pc[0,:,3:]], axis=-1)
             time_record.append(('Pointpainting time:', time.time()))
 

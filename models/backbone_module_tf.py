@@ -435,7 +435,7 @@ class Pointnet2Backbone_tflite(layers.Layer):
             Number of input channels in the feature descriptor for each point.
             e.g. 3 for RGB.
     """
-    def __init__(self, input_feature_dim=0, model_config=None):
+    def __init__(self, input_feature_dim=0, model_config=None, num_class=10):
         super().__init__()
 
         self.sa1 = SamplingAndGrouping(
@@ -578,7 +578,7 @@ class Pointnet2Backbone_tflite(layers.Layer):
             #isPainted = np.expand_dims(isPainted, axis=-1)
 
             # 0 is background class, deeplab is trained with "person" included, (height, width, num_class)
-            pred_prob = pred_prob[:,1:(self.num_class+1)] # (npoint, num_class)
+            pred_prob = pred_prob[:,:(self.num_class+1)] # (npoint, num_class+1)
             features = np.concatenate([pointcloud[0,:,3:], pred_prob], axis=-1)
             features = np.expand_dims(features, axis=0)
             xyz = np.expand_dims(xyz, axis=0)
