@@ -153,7 +153,7 @@ num_input_channel = int(FLAGS.use_color)*3 + int(not FLAGS.no_height)*1
 ### Point Paiting : Sementation score is appended at the end of point cloud
 if use_painted:
     # Probabilties that each point belongs to each class + is the point belong to background(Boolean)
-    num_input_channel += DATASET_CONFIG.num_class + 1 + 1
+    num_input_channel += DATASET_CONFIG.num_class + 1 #+ 1
 
 
 

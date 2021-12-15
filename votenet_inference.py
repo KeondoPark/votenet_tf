@@ -56,7 +56,7 @@ def preprocess_point_cloud(point_cloud):
 # Assume Edgetpu is available!
 def votenet_inference(queue):
 
-    model_config = json.load(open('configs/inf_211213_sep.json'))
+    model_config = json.load(open(os.path.join(ROOT_DIR,'configs','inf_211213_sep.json')))
     DEFAULT_CHECKPOINT_PATH = os.path.join('tf_ckpt', model_config['model_id'])
 
     # Set file paths and dataset config

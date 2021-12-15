@@ -248,7 +248,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         self.num_class = DC.num_class
 
         if self.use_painted:
-            self.dim_features = 3 + (self.num_class + 1) + 1 # xyz + num_class + 1(background) + 1(isPainted)
+            self.dim_features = 3 + (self.num_class) + 1 # xyz + num_class + 1(background) + 1(isPainted)
 
         if DC.include_person:
             self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf_person'%(split_set))
