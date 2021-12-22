@@ -555,7 +555,7 @@ class Pointnet2Backbone_tflite(layers.Layer):
         sa1_ball_inds1 = None
 
         # Run image segmentation result and get result
-        if img and self.use_multiThr:
+        if img is not None and self.use_multiThr:
             xyz = pointcloud[:,:,:3]             
             #if self.use_multiThr:                    
             future0 = self._executor.submit(run_semantic_seg_tflite, img, False)  

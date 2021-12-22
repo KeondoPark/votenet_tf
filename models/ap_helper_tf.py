@@ -125,6 +125,7 @@ def parse_predictions(end_points, config_dict):
     # assume upright_camera coord.
     bsize = tf.shape(pred_center)[0]
     pred_corners_3d_upright_camera = np.zeros((bsize, num_proposal, 8, 3))
+    pred_heading_angle = np.zeros((bsize, num_proposal))
     pred_center_upright_camera = flip_axis_to_camera(pred_center.numpy())
     for i in range(bsize):
         for j in range(num_proposal):
@@ -134,6 +135,7 @@ def parse_predictions(end_points, config_dict):
                 int(pred_size_class[i,j].numpy()), pred_size_residual[i,j].numpy())
             corners_3d_upright_camera = get_3d_box(box_size, heading_angle, pred_center_upright_camera[i,j,:])
             pred_corners_3d_upright_camera[i,j] = corners_3d_upright_camera
+            pred_heading_angle[i,j] = heading_angle
 
     K = tf.shape(pred_center)[1] # K==num_proposal
     nonempty_box_mask = np.ones((bsize, K))
@@ -234,7 +236,7 @@ def parse_predictions(end_points, config_dict):
                     for j in range(pred_center.shape[1]) if pred_mask[i,j]==1 and obj_prob[i,j]>config_dict['conf_thresh']]
             batch_pred_map_cls.append(cur_list)
         else:
-            batch_pred_map_cls.append([(pred_sem_cls[i,j], pred_corners_3d_upright_camera[i,j], obj_prob[i,j]) \
+            batch_pred_map_cls.append([(pred_sem_cls[i,j].numpy(), pred_corners_3d_upright_camera[i,j], obj_prob[i,j], pred_heading_angle[i,j]) \
                 for j in range(pred_center.shape[1]) if pred_mask[i,j]==1 and obj_prob[i,j]>config_dict['conf_thresh']])
     end_points['batch_pred_map_cls'] = batch_pred_map_cls
 

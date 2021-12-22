@@ -116,8 +116,8 @@ def run_semantic_seg_tflite(img, save_result=False):
     
     orig_w, orig_h = img.size      
 
-    resized_img, (scale, scale) = common.set_resized_input(
-        interpreter, img.size, lambda size: img.resize(size, Image.ANTIALIAS))
+    resized_img, (scale1, scale2) = common.set_resized_input(
+        interpreter, img.size, lambda size: img.resize(size, Image.ANTIALIAS))    
 
     interpreter.invoke()
     result = segment.get_output(interpreter)        
@@ -127,8 +127,8 @@ def run_semantic_seg_tflite(img, save_result=False):
     pred_prob = result[:new_height, :new_width, :]    
     
     # Return to original image size
-    x = (np.array(range(orig_h)) * scale).astype(np.int)
-    y = (np.array(range(orig_w)) * scale).astype(np.int)
+    x = (np.array(range(orig_h)) * scale1).astype(np.int)
+    y = (np.array(range(orig_w)) * scale2).astype(np.int)
     xv, yv = np.meshgrid(x, y, indexing='ij')
 
     pred_prob = pred_prob[xv, yv] # height, width
@@ -136,6 +136,7 @@ def run_semantic_seg_tflite(img, save_result=False):
 
     # Save semantic segmentation result as image file(Original vs Semantic result)
     if save_result:
+        print("Saving deeplab results...")
         pred_class = np.argmax(pred_prob, axis=-1) 
         save_semantic_result(img, pred_class)
 

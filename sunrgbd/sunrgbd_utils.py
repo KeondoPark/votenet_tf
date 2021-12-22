@@ -138,6 +138,8 @@ class SUNRGBD_Calibration(object):
 class SUNRGBD_Calib_FromArr(SUNRGBD_Calibration):
 
     def __init__(self, Rtilt, K):
+        Rtilt = np.array(Rtilt)
+        K = np.array(K)
         self.Rtilt = np.reshape(Rtilt, (3,3), order='F')
         self.K = np.reshape(K, (3,3), order='F')
         self.f_u = self.K[0,0]
