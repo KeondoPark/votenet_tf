@@ -507,7 +507,7 @@ class Pointnet2Backbone_tflite(layers.Layer):
         self.sa4_output_details = self.sa4_interpreter.get_output_details()
 
         self._executor = ThreadPoolExecutor(2)
-        self.loop = asyncio.get_event_loop()
+        #self.loop = asyncio.get_event_loop()
         self.num_class = num_class
 
     def _break_up_pc(self, pc):
