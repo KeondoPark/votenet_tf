@@ -12,7 +12,7 @@ import sys
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'pointnet2'))
-from pointnet2_modules_tf import PointnetSAModuleVotes, SamplingAndGrouping
+from pointnet2_modules_tf import PointnetSAModuleVotes
 import pointnet2_utils_tf
 from tf_ops.sampling import tf_sampling
 import tf_utils
@@ -89,7 +89,7 @@ class ProposalModule(layers.Layer):
         self.num_proposal = num_proposal
         self.sampling = sampling
         self.seed_feat_dim = seed_feat_dim
-        """
+        
         # Vote clustering        
         self.vote_aggregation = PointnetSAModuleVotes( 
                 npoint=self.num_proposal,
@@ -97,20 +97,21 @@ class ProposalModule(layers.Layer):
                 nsample=16,
                 mlp=[self.seed_feat_dim, 128, 128, 128],
                 use_xyz=True,
-                normalize_xyz=True
-                #use_tflite=use_tflite,
-                #tflite_name='va_quant_b8.tflite'
+                normalize_xyz=True,
+                model_config=model_config,
+                layer_name='va'
             )
-        """
+        """        
         self.npoint = self.num_proposal
         self.nsample = 16
-        self.vote_aggregation = SamplingAndGrouping( 
+        self.vote_aggregation = PointnetSAModuleVotes( 
                 npoint=self.num_proposal,
                 radius=0.3,
                 nsample=self.nsample,                
                 use_xyz=True,
                 normalize_xyz=True
             )
+        """
         self.use_tflite = model_config['use_tflite']
         self.sep_coords = model_config['sep_coords']
         
@@ -133,15 +134,15 @@ class ProposalModule(layers.Layer):
             self.input_details = self.interpreter.get_input_details()
             self.output_details = self.interpreter.get_output_details()
         else:
-            self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=True, input_shape=[self.npoint, self.nsample, 3+mlp_spec[0]])        
-            self.max_pool = layers.MaxPooling2D(pool_size=(1, self.nsample), strides=1, data_format="channels_last")
+            #self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=True, input_shape=[self.npoint, self.nsample, 3+mlp_spec[0]])        
+            #self.max_pool = layers.MaxPooling2D(pool_size=(1, self.nsample), strides=1, data_format="channels_last")
             
             # Object proposal/detection
             # Objectness scores (2), center residual (3),
             # heading class+residual (num_heading_bin*2), size class+residual(num_size_cluster*4)            
             #### Changed to Conv2D to be compatible with EdgeTPU compiler
-            self.conv1 = layers.Conv2D(filters=128, kernel_size=1)
-            self.conv2 = layers.Conv2D(filters=128, kernel_size=1)
+            self.conv1 = layers.Conv1D(filters=128, kernel_size=1)
+            self.conv2 = layers.Conv1D(filters=128, kernel_size=1)
             
             # 2: objectness_scores, 3: offset(From vote to center), score/residuals for num_heading_bin(12),
             # score/(H,W,C) for size, Class score
@@ -149,12 +150,12 @@ class ProposalModule(layers.Layer):
             #    self.conv3_1 = layers.Conv2D(filters=3, kernel_size=1)
             #    self.conv3_2 = layers.Conv2D(filters=2+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
             #else:
-            self.conv3 = layers.Conv2D(filters=2+3+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
+            self.conv3 = layers.Conv1D(filters=2+3+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
             
             self.bn1 = layers.BatchNormalization(axis=-1, momentum=0.9)
             self.bn2 = layers.BatchNormalization(axis=-1, momentum=0.9)
-            self.relu1 = layers.ReLU(6)
-            self.relu2 = layers.ReLU(6)
+            self.relu1 = layers.ReLU()
+            self.relu2 = layers.ReLU()
 
     def call(self, xyz, features, end_points):
         """
@@ -168,8 +169,8 @@ class ProposalModule(layers.Layer):
         if self.sampling == 'vote_fps':
             # Farthest point sampling (FPS) on votes
             #xyz, features, fps_inds, _, grouped_features = self.vote_aggregation(xyz, features, sample_type='fps')
-            xyz, fps_inds, va_grouped_features, _ = self.vote_aggregation(xyz, isPainted=None, features=features) #NoMLP version            
-            end_points['va_grouped_features'] = va_grouped_features            
+            xyz, features, fps_inds, va_grouped_features = self.vote_aggregation(xyz, features=features) #NoMLP version            
+            #end_points['va_grouped_features'] = va_grouped_features            
             sample_inds = fps_inds
         elif self.sampling == 'seed_fps': 
             # FPS on seed and choose the votes corresponding to the seeds
@@ -209,8 +210,8 @@ class ProposalModule(layers.Layer):
                 net = layers.Reshape((self.npoint, net.shape[-1]))(net)
 
         else:
-            new_features = self.mlp_module(va_grouped_features)
-            features = self.max_pool(new_features)
+            #new_features = self.mlp_module(va_grouped_features)
+            #features = self.max_pool(new_features)
             #features = layers.Reshape((self.npoint, 1, features.shape[-1]))(features) # Expand to use Conv2D
             
             # --------- PROPOSAL GENERATION ---------
@@ -221,12 +222,12 @@ class ProposalModule(layers.Layer):
             #    net = self.conv3_2(net)                
             #else:
             net = self.conv3(net)
-            offset = net[:,:,:,0:3]            
-            net = net[:,:,:,3:]    
+            offset = net[:,:,0:3]            
+            net = net[:,:,3:]    
             
-            offset = layers.Reshape((self.npoint, 3))(offset)                
+            #offset = layers.Reshape((self.npoint, 3))(offset)                
             center = xyz + offset            
-            net = layers.Reshape((self.npoint, net.shape[-1]))(net)            
+            #net = layers.Reshape((self.npoint, net.shape[-1]))(net)            
             
 
         # Return from expanded shape

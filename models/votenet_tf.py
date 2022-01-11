@@ -58,17 +58,8 @@ class VoteNet(tf.keras.Model):
         self.sampling=sampling
         self.use_tflite = model_config['use_tflite']
         self.use_multiThr = model_config['use_multiThr']
-        two_way = model_config['two_way']
-
-        if two_way:
-            if self.use_tflite:
-                # inference only
-                self.backbone_net = Pointnet2Backbone_tflite(input_feature_dim=self.input_feature_dim, model_config=model_config, num_class=num_class)
-            else:
-                # Backbone point feature learning
-                self.backbone_net = Pointnet2Backbone_p(input_feature_dim=self.input_feature_dim, model_config=model_config)
-        else:
-            self.backbone_net = Pointnet2Backbone(input_feature_dim=self.input_feature_dim, model_config=model_config)
+        
+        self.backbone_net = Pointnet2Backbone(input_feature_dim=self.input_feature_dim, model_config=model_config)
             
         # Hough voting
         self.vgen = VotingModule(self.vote_factor, seed_feature_dim=256, \
@@ -95,10 +86,7 @@ class VoteNet(tf.keras.Model):
         Returns:
             end_points: list
         """
-        if self.use_tflite and self.use_multiThr:
-            end_points = self.backbone_net(point_cloud, img=img, calib=calib)
-        else:
-            end_points = self.backbone_net(point_cloud)
+        end_points = self.backbone_net(point_cloud)
         # --------- HOUGH VOTING ---------
         end_points['seed_inds'] = end_points['fp2_inds']
         end_points['seed_xyz'] = end_points['fp2_xyz']
