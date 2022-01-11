@@ -72,9 +72,9 @@ class VotingModule(layers.Layer):
             #else:
             self.conv3 = layers.Conv2D(filters=(self.out_dim+3) * self.vote_factor, kernel_size=1)
             
-            self.bn0 = layers.BatchNormalization(axis=-1)
-            self.bn1 = layers.BatchNormalization(axis=-1)
-            self.bn2 = layers.BatchNormalization(axis=-1)
+            self.bn0 = layers.BatchNormalization(axis=-1, momentum=0.9)
+            self.bn1 = layers.BatchNormalization(axis=-1, momentum=0.9)
+            self.bn2 = layers.BatchNormalization(axis=-1, momentum=0.9)
             self.relu0 = layers.ReLU(6)
             self.relu1 = layers.ReLU(6)
             self.relu2 = layers.ReLU(6)

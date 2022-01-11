@@ -151,8 +151,8 @@ class ProposalModule(layers.Layer):
             #else:
             self.conv3 = layers.Conv2D(filters=2+3+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
             
-            self.bn1 = layers.BatchNormalization(axis=-1)
-            self.bn2 = layers.BatchNormalization(axis=-1)
+            self.bn1 = layers.BatchNormalization(axis=-1, momentum=0.9)
+            self.bn2 = layers.BatchNormalization(axis=-1, momentum=0.9)
             self.relu1 = layers.ReLU(6)
             self.relu2 = layers.ReLU(6)
 
