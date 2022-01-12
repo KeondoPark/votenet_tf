@@ -169,7 +169,7 @@ class ProposalModule(layers.Layer):
         if self.sampling == 'vote_fps':
             # Farthest point sampling (FPS) on votes
             #xyz, features, fps_inds, _, grouped_features = self.vote_aggregation(xyz, features, sample_type='fps')
-            xyz, features, fps_inds, va_grouped_features = self.vote_aggregation(xyz, features=features) #NoMLP version            
+            xyz, features, fps_inds, va_grouped_features = self.vote_aggregation(xyz, features=features, time_record=[]) #NoMLP version            
             #end_points['va_grouped_features'] = va_grouped_features            
             sample_inds = fps_inds
         elif self.sampling == 'seed_fps': 

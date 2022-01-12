@@ -17,7 +17,7 @@ sys.path.append(ROOT_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 sys.path.append(os.path.join(ROOT_DIR, 'pointnet2'))
 
-from pointnet2_modules_tf import PointnetSAModuleVotes, PointnetFPModule, SamplingAndGrouping, PointnetMLP, SamplingAndAttention
+from pointnet2_modules_tf import PointnetSAModuleVotes, PointnetFPModule
 from deeplab.deeplab import run_semantic_seg, run_semantic_seg_tflite
 from tf_ops.sampling import tf_sampling
 from tf_ops.grouping import tf_grouping

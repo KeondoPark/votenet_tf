@@ -16,7 +16,7 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
 sys.path.append(BASE_DIR)
-from backbone_module_tf import Pointnet2Backbone, Pointnet2Backbone_p, Pointnet2Backbone_tflite
+from backbone_module_tf import Pointnet2Backbone
 from voting_module_tf import VotingModule
 from proposal_module_tf import ProposalModule
 from dump_helper_tf import dump_results
