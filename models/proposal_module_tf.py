@@ -140,16 +140,15 @@ class ProposalModule(layers.Layer):
             # Objectness scores (2), center residual (3),
             # heading class+residual (num_heading_bin*2), size class+residual(num_size_cluster*4)            
             #### Changed to Conv2D to be compatible with EdgeTPU compiler
-            self.conv1 = layers.Conv2D(filters=128, kernel_size=1)
-            self.conv2 = layers.Conv2D(filters=128, kernel_size=1)
+            #self.conv1 = layers.Conv2D(filters=128, kernel_size=1)
+            #self.conv2 = layers.Conv2D(filters=128, kernel_size=1)
+            self.conv1 = layers.Dense(128)
+            self.conv2 = layers.Dense(128)
             
             # 2: objectness_scores, 3: offset(From vote to center), score/residuals for num_heading_bin(12),
-            # score/(H,W,C) for size, Class score
-            #if self.sep_coords:
-            #    self.conv3_1 = layers.Conv2D(filters=3, kernel_size=1)
-            #    self.conv3_2 = layers.Conv2D(filters=2+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
-            #else:
-            self.conv3 = layers.Conv2D(filters=2+3+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
+            # score/(H,W,C) for size, Class score            
+            #self.conv3 = layers.Conv2D(filters=2+3+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
+            self.conv3 = layers.Dense(2+3+num_heading_bin*2+num_size_cluster*4+self.num_class)
             
             self.bn1 = layers.BatchNormalization(axis=-1, momentum=0.9)
             self.bn2 = layers.BatchNormalization(axis=-1, momentum=0.9)
@@ -202,28 +201,28 @@ class ProposalModule(layers.Layer):
             else:
                 net = self.interpreter.get_tensor(self.output_details[0]['index']) 
                 net = tf.convert_to_tensor(net)
-                offset = net[:,:,:,0:3]
-                net = net[:,:,:,3:]
-                offset = layers.Reshape((self.npoint, 3))(offset)                
+                offset = net[:,:,0:3]
+                net = net[:,:,3:]
+                #offset = layers.Reshape((self.npoint, 3))(offset)                
                 center = xyz + offset            
-                net = layers.Reshape((self.npoint, net.shape[-1]))(net)
+                #net = layers.Reshape((self.npoint, net.shape[-1]))(net)
 
         else:
             new_features = self.mlp_module(va_grouped_features)
             features = self.max_pool(new_features)
-            #features = layers.Reshape((self.npoint, 1, features.shape[-1]))(features) # Expand to use Conv2D
+            
+            features = layers.Reshape((self.npoint, features.shape[-1]))(features) 
             
             # --------- PROPOSAL GENERATION ---------
             net = self.relu1(self.bn1(self.conv1(features)))
             net = self.relu2(self.bn2(self.conv2(net)))
-            #if self.sep_coords:
-            #    offset = self.conv3_1(net) # (batch_size, num_proposal, 3+2+num_heading_bin*2+num_size_cluster*4)                
-            #    net = self.conv3_2(net)                
-            #else:
             net = self.conv3(net)
-            offset = net[:,:,:,0:3]            
-            net = net[:,:,:,3:]    
+            #offset = net[:,:,:,0:3]            
+            #net = net[:,:,:,3:]    
             
+            offset = net[:,:,0:3]            
+            net = net[:,:,3:]    
+
             offset = layers.Reshape((self.npoint, 3))(offset)                
             center = xyz + offset            
             net = layers.Reshape((self.npoint, net.shape[-1]))(net)            

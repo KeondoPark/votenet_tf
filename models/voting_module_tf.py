@@ -62,15 +62,15 @@ class VotingModule(layers.Layer):
             self.input_details = self.interpreter.get_input_details()
             self.output_details = self.interpreter.get_output_details()
         else:
-            self.conv0 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
-            self.conv1 = layers.Conv2D(filters=self.in_dim, kernel_size=1)        
-            self.conv2 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
+            #self.conv0 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
+            #self.conv1 = layers.Conv2D(filters=self.in_dim, kernel_size=1)        
+            #self.conv2 = layers.Conv2D(filters=self.in_dim, kernel_size=1)            
+            #self.conv3 = layers.Conv2D(filters=(self.out_dim+3) * self.vote_factor, kernel_size=1)
 
-            #if self.sep_coords:
-            #    self.conv3_1 = layers.Conv2D(filters=(3) * self.vote_factor, kernel_size=1) 
-            #    self.conv3_2 = layers.Conv2D(filters=(self.out_dim) * self.vote_factor, kernel_size=1) 
-            #else:
-            self.conv3 = layers.Conv2D(filters=(self.out_dim+3) * self.vote_factor, kernel_size=1)
+            self.conv0 = layers.Dense(self.in_dim)
+            self.conv1 = layers.Dense(self.in_dim)        
+            self.conv2 = layers.Dense(self.in_dim)            
+            self.conv3 = layers.Dense((self.out_dim+3) * self.vote_factor)
             
             self.bn0 = layers.BatchNormalization(axis=-1, momentum=0.9)
             self.bn1 = layers.BatchNormalization(axis=-1, momentum=0.9)
@@ -92,8 +92,8 @@ class VotingModule(layers.Layer):
         num_seed = seed_xyz.shape[1]
         num_vote = num_seed*self.vote_factor
 
-        seed_xyz = layers.Reshape((num_seed, 1, 3))(seed_xyz)
-        seed_features = layers.Reshape((num_seed, 1, seed_features.shape[-1]))(seed_features) # Expand to use Conv2D               
+        #seed_xyz = layers.Reshape((num_seed, 1, 3))(seed_xyz)
+        #seed_features = layers.Reshape((num_seed, 1, seed_features.shape[-1]))(seed_features) # Expand to use Conv2D               
 
         if self.use_tflite:
             self.interpreter.set_tensor(self.input_details[0]['index'], seed_features)
@@ -115,15 +115,12 @@ class VotingModule(layers.Layer):
             net0 = self.relu0(self.bn0(self.conv0(seed_features))) #(B, num_seed, 1, in_dim)
             net = self.relu1(self.bn1(self.conv1(net0))) 
             net = self.relu2(self.bn2(self.conv2(net))) 
-            #if self.sep_coords:
-            #    offset = self.conv3_1(net) # (batch_size, num_seed, 1, 3*vote_factor)            
-            #    net = self.conv3_2(net)
-            #    residual_features = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net)
-            #else:
             net = self.conv3(net)
 
-            offset = net[:,:,:,0:3]
-            residual_features = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net[:,:,:,3:]) # (batch_size, num_seed, vote_factor, out_dim)        
+            #offset = net[:,:,:,0:3]
+            offset = net[:,:,0:3]
+            #residual_features = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net[:,:,:,3:]) # (batch_size, num_seed, vote_factor, out_dim)        
+            residual_features = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net[:,:,3:]) # (batch_size, num_seed, vote_factor, out_dim)        
             
             net0 = layers.Reshape((num_seed, self.vote_factor, net0.shape[-1]))(net0)
             vote_features = net0 + residual_features 
@@ -131,7 +128,7 @@ class VotingModule(layers.Layer):
 
             vote_xyz = seed_xyz + offset 
         
-        vote_xyz = layers.Reshape((num_vote, 3))(vote_xyz)
+        #vote_xyz = layers.Reshape((num_vote, 3))(vote_xyz)
         vote_features = layers.Reshape((num_vote, self.out_dim))(vote_features)
 
         return vote_xyz, vote_features
