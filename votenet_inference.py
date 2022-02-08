@@ -45,7 +45,8 @@ from multiprocessing import Queue
 class VoteNetInf:
     def __init__(self):        
         s = time.time()
-        self.model_config = json.load(open(os.path.join(ROOT_DIR,'configs','inf_211213_sep.json')))    
+        #self.model_config = json.load(open(os.path.join(ROOT_DIR,'configs','inf_2way_nofp_sep_dense.json')))    
+        self.model_config = json.load(open(os.path.join(ROOT_DIR,'configs','inf_211213.json')))    
 
         # Set file paths and dataset config                
         from model_util_sunrgbd import SunrgbdDatasetConfig
@@ -70,8 +71,7 @@ class VoteNetInf:
         print('Constructed model.', time.time() - s)
 
     # Assume Edgetpu is available!
-    def inference(self, conn):
-        
+    def inference(self, conn):        
         
         pc_path = conn.recv()
         time_record = [('Start: ', time.time())]    

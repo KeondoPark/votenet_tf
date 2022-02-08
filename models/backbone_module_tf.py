@@ -556,8 +556,7 @@ class Pointnet2Backbone_tflite(layers.Layer):
 
         # Run image segmentation result and get result
         if img is not None and self.use_multiThr:
-            xyz = pointcloud[:,:,:3]             
-            #if self.use_multiThr:                    
+            xyz = pointcloud[:,:,:3]                        
             future0 = self._executor.submit(run_semantic_seg_tflite, img, False)  
             sa1_inds1 = tf_sampling.farthest_point_sample(1024, xyz) # First sampling is not biased FPS, i.e. weight = 1
             sa1_new_xyz1 = tf_sampling.gather_point(xyz, sa1_inds1)
@@ -623,7 +622,7 @@ class Pointnet2Backbone_tflite(layers.Layer):
         
         time_record.append(("SA1 MLP:", time.time()))
         
-        sa1_xyz2, sa1_inds2, sa1_grouped_features2, sa1_painted2 = self.sa1(xyz, isPainted, features, bg1=True, wght1=25)        
+        sa1_xyz2, sa1_inds2, sa1_grouped_features2, sa1_painted2 = self.sa1(xyz, isPainted, features, bg1=True, wght1=4)        
         time_record.append(("SA1 sampling and grouping:", time.time()))
         
 

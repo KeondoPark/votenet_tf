@@ -379,11 +379,13 @@ if __name__=='__main__':
             sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[2048,64,1+3])
             dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,2048,64,1+3])) # (B, npoint, nsample, C+3)
         elif model_config['two_way']:
-            sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[1024,64,3+1+DATASET_CONFIG.num_class])
-            dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,64,3+1+DATASET_CONFIG.num_class])) # (B, npoint, nsample, C+3)
+            input_shape=[1024,64,3+1+DATASET_CONFIG.num_class+1] # xyz + height + (num_class + background)
+            sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=input_shape)
+            dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE] + input_shape)) # (B, npoint, nsample, C+3)
         else:
-            sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[2048,64,3+1+DATASET_CONFIG.num_class+1+1])
-            dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,2048,64,1+10+3+1])) # (B, npoint, nsample, C+3)
+            input_shape=[2048,64,3+1+DATASET_CONFIG.num_class+1+1] # xyz + height + (num_class + background) + isPainted
+            sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=input_shape)
+            dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE] + input_shape)) # (B, npoint, nsample, C+3)
         dummy_out = sa1_mlp(dummy_in_sa1)
         # Copy weights from the base model    
         layer = sa1_mlp.sharedMLP

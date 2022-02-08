@@ -90,11 +90,14 @@ if FLAGS.dataset == 'sunrgbd':
     sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
     from sunrgbd_detection_dataset_tf import SunrgbdDetectionVotesDataset_tfrecord
     from model_util_sunrgbd import SunrgbdDatasetConfig
-    DATASET_CONFIG = SunrgbdDatasetConfig()
+    if 'include_person' in model_config and model_config['include_person']:
+        DATASET_CONFIG = SunrgbdDatasetConfig(include_person=True)
+    else:
+        DATASET_CONFIG = SunrgbdDatasetConfig()
     TEST_DATASET = SunrgbdDetectionVotesDataset_tfrecord('val', num_points=NUM_POINT,
         augment=False,  shuffle=FLAGS.shuffle_dataset, batch_size=BATCH_SIZE,
         use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
-        use_painted=model_config['use_painted'])
+        use_painted=model_config['use_painted'], DC=DATASET_CONFIG)
 else:
     print('Unknown dataset %s. Exiting...'%(FLAGS.dataset))
     exit(-1)
@@ -161,7 +164,7 @@ def evaluate_one_epoch():
     start = time.time()
     start2 = time.time()
     for batch_idx, batch_data in enumerate(test_ds):        
-        #if batch_idx*BATCH_SIZE >= 100: break
+        #if batch_idx*BATCH_SIZE >= 400: break
         if batch_idx % 10 == 0:
             end = time.time()
             log_string('---------- Eval batch: %d ----------'%(batch_idx) + str(end - start))

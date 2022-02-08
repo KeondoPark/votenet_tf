@@ -92,8 +92,8 @@ class VotingModule(layers.Layer):
         num_seed = seed_xyz.shape[1]
         num_vote = num_seed*self.vote_factor
 
-        #seed_xyz = layers.Reshape((num_seed, 1, 3))(seed_xyz)
-        #seed_features = layers.Reshape((num_seed, 1, seed_features.shape[-1]))(seed_features) # Expand to use Conv2D               
+        seed_xyz = layers.Reshape((num_seed, 1, 3))(seed_xyz)
+        seed_features = layers.Reshape((num_seed, 1, seed_features.shape[-1]))(seed_features) # Expand to use Conv2D               
 
         if self.use_tflite:
             self.interpreter.set_tensor(self.input_details[0]['index'], seed_features)
@@ -128,7 +128,7 @@ class VotingModule(layers.Layer):
 
             vote_xyz = seed_xyz + offset 
         
-        #vote_xyz = layers.Reshape((num_vote, 3))(vote_xyz)
+        vote_xyz = layers.Reshape((num_vote, 3))(vote_xyz)
         vote_features = layers.Reshape((num_vote, self.out_dim))(vote_features)
 
         return vote_xyz, vote_features
