@@ -161,17 +161,17 @@ def evaluate_one_epoch():
     stat_dict = defaultdict(int) # collect statistics            
     ap_calculator_list = [APCalculator(iou_thresh, DATASET_CONFIG.class2type) \
         for iou_thresh in AP_IOU_THRESHOLDS]
-    start = time.time()
-    start2 = time.time()
+    
+    start = time.time()    
+    total_start = start
     for batch_idx, batch_data in enumerate(test_ds):        
         #if batch_idx*BATCH_SIZE >= 400: break
         if batch_idx % 10 == 0:
             end = time.time()
             log_string('---------- Eval batch: %d ----------'%(batch_idx) + str(end - start))
-            start = time.time()
-        start2 = time.time()
-        # Forward pass
+            start = time.time()        
         
+        # Forward pass        
         point_cloud = batch_data[0]
         end_points = net(point_cloud, training=False)
         for i, label in label_dict.items():
@@ -194,8 +194,7 @@ def evaluate_one_epoch():
         stat_dict['obj_acc'] += end_points['obj_acc']
         stat_dict['pos_ratio'] += end_points['pos_ratio']
         stat_dict['neg_ratio'] += end_points['neg_ratio']
-        end2 = time.time()
-        log_string('inference time: ' +  str(end2 - start2))        
+        
 
         batch_pred_map_cls, pred_mask = parse_predictions(end_points, CONFIG_DICT)        
         batch_gt_map_cls = parse_groundtruths(end_points, CONFIG_DICT) 
@@ -220,6 +219,7 @@ def evaluate_one_epoch():
             log_string('eval %s: %f'%(key, metrics_dict[key]))
 
     mean_loss = stat_dict['loss']/float(batch_idx+1)
+    log_string('total eval time: '+ str(time.time() - total_start))
     return mean_loss
 def eval():
     log_string(str(datetime.now()))

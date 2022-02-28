@@ -172,7 +172,7 @@ def tflite_convert(keyword, model, base_model, out_dir, mlp=True):
     converter.inference_output_type = tf.float32
     tflite_model = converter.convert()
 
-    with open(os.path.join(out_dir, keyword + '_quant.tflite'), 'wb') as f:
+    with open(os.path.join(out_dir, keyword + '_quant_test.tflite'), 'wb') as f:
         f.write(tflite_model)
 
 if __name__=='__main__':
@@ -270,20 +270,20 @@ if __name__=='__main__':
             self.in_dim = seed_feature_dim            
             self.out_dim = self.in_dim # due to residual feature, in_dim has to be == out_dim
             self.sep_coords = sep_coords
-            #self.conv0 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
-            #self.conv1 = layers.Conv2D(filters=self.in_dim, kernel_size=1)        
-            #self.conv2 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
-            self.conv0 = layers.Dense(self.in_dim)
-            self.conv1 = layers.Dense(self.in_dim)
-            self.conv2 = layers.Dense(self.in_dim)
+            self.conv0 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
+            self.conv1 = layers.Conv2D(filters=self.in_dim, kernel_size=1)        
+            self.conv2 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
+            #self.conv0 = layers.Dense(self.in_dim)
+            #self.conv1 = layers.Dense(self.in_dim)
+            #self.conv2 = layers.Dense(self.in_dim)
             if self.sep_coords:
-                #self.conv3_1 = layers.Conv2D(filters=(3) * self.vote_factor, kernel_size=1) 
-                #self.conv3_2 = layers.Conv2D(filters=(self.out_dim) * self.vote_factor, kernel_size=1) 
-                self.conv3_1 = layers.Dense(3 * self.vote_factor)
-                self.conv3_2 = layers.Dense(self.out_dim * self.vote_factor)
+                self.conv3_1 = layers.Conv2D(filters=(3) * self.vote_factor, kernel_size=1) 
+                self.conv3_2 = layers.Conv2D(filters=(self.out_dim) * self.vote_factor, kernel_size=1) 
+                #self.conv3_1 = layers.Dense(3 * self.vote_factor)
+                #self.conv3_2 = layers.Dense(self.out_dim * self.vote_factor)
             else:
-                #self.conv3 = layers.Conv2D(filters=(self.out_dim+3) * self.vote_factor, kernel_size=1)
-                self.conv3 = layers.Dense((self.out_dim+3) * self.vote_factor)
+                self.conv3 = layers.Conv2D(filters=(self.out_dim+3) * self.vote_factor, kernel_size=1)
+                #self.conv3 = layers.Dense((self.out_dim+3) * self.vote_factor)
             self.bn0 = layers.BatchNormalization(axis=-1)
             self.bn1 = layers.BatchNormalization(axis=-1)
             self.bn2 = layers.BatchNormalization(axis=-1)
@@ -311,11 +311,11 @@ if __name__=='__main__':
                 return [offset, vote_features]
             else:
                 net = self.conv3(net)
-                #offset = net[:,:,:,0:3]
-                #net = net[:,:,:,3:]
-                print(net.shape)
-                offset = net[:,:,0:3]
-                net = net[:,:,3:]
+                offset = net[:,:,:,0:3]
+                net = net[:,:,:,3:]
+                
+                #offset = net[:,:,0:3]
+                #net = net[:,:,3:]
                 residual_features = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net)                
                 vote_features = net0 + residual_features 
                 return [offset, vote_features]
@@ -329,18 +329,22 @@ if __name__=='__main__':
             self.sep_coords = sep_coords
             self.max_pool = layers.MaxPooling2D(pool_size=(1, 16), strides=(1,16), data_format="channels_last")            
 
-            #self.conv1 = layers.Conv2D(filters=128, kernel_size=1)        
-            #self.conv2 = layers.Conv2D(filters=128, kernel_size=1)
-            self.conv1 = layers.Dense(128)
-            self.conv2 = layers.Dense(128)
+            self.conv1 = layers.Conv2D(filters=128, kernel_size=1)        
+            self.conv2 = layers.Conv2D(filters=128, kernel_size=1)
+            #self.conv1 = layers.Dense(128)
+            #self.conv2 = layers.Dense(128)
             if self.sep_coords:
-                #self.conv3_1 = layers.Conv2D(filters=3, kernel_size=1) 
+                self.conv3_1 = layers.Conv2D(filters=3, kernel_size=1) 
+                self.conv3_2 = layers.Conv2D(filters=2, kernel_size=1) 
+                self.conv3_3 = layers.Conv2D(filters=DATASET_CONFIG.num_heading_bin*2, kernel_size=1)
+                self.conv3_4 = layers.Conv2D(filters=DATASET_CONFIG.num_size_cluster*4, kernel_size=1)
+                self.conv3_5 = layers.Conv2D(filters=DATASET_CONFIG.num_class, kernel_size=1)
                 #self.conv3_2 = layers.Conv2D(filters=2+DATASET_CONFIG.num_heading_bin*2+DATASET_CONFIG.num_size_cluster*4+DATASET_CONFIG.num_class, kernel_size=1) 
-                self.conv3_1 = layers.Dense(3)
-                self.conv3_2 = layers.Dense(2 + DATASET_CONFIG.num_heading_bin*2 + DATASET_CONFIG.num_size_cluster*4 + DATASET_CONFIG.num_class)
+                #self.conv3_1 = layers.Dense(3)
+                #self.conv3_2 = layers.Dense(2 + DATASET_CONFIG.num_heading_bin*2 + DATASET_CONFIG.num_size_cluster*4 + DATASET_CONFIG.num_class)
             else:
-                #self.conv3 = layers.Conv2D(filters=2+3+DATASET_CONFIG.num_heading_bin*2+DATASET_CONFIG.num_size_cluster*4+DATASET_CONFIG.num_class, kernel_size=1)
-                self.conv3 = layers.Dense(3 + 2 + DATASET_CONFIG.num_heading_bin*2 + DATASET_CONFIG.num_size_cluster*4 + DATASET_CONFIG.num_class)
+                self.conv3 = layers.Conv2D(filters=2+3+DATASET_CONFIG.num_heading_bin*2+DATASET_CONFIG.num_size_cluster*4+DATASET_CONFIG.num_class, kernel_size=1)
+                #self.conv3 = layers.Dense(3 + 2 + DATASET_CONFIG.num_heading_bin*2 + DATASET_CONFIG.num_size_cluster*4 + DATASET_CONFIG.num_class)
             self.bn1 = layers.BatchNormalization(axis=-1)
             self.bn2 = layers.BatchNormalization(axis=-1)
             self.relu1 = layers.ReLU(6)
@@ -354,19 +358,30 @@ if __name__=='__main__':
             new_features = self.max_pool(self.sharedMLP(grouped_features))     
             
             #For Dense Layer
-            new_features = layers.Reshape((self.npoint, new_features.shape[-1]))(new_features)
+            #new_features = layers.Reshape((self.npoint, new_features.shape[-1]))(new_features)
 
             # --------- PROPOSAL GENERATION ---------
             net = self.relu1(self.bn1(self.conv1(new_features)))
             net = self.relu2(self.bn2(self.conv2(net))) 
             if self.sep_coords:
                 offset = self.conv3_1(net)                                
-                net = self.conv3_2(net) # (batch_size, num_proposal, 2+3+num_heading_bin*2+num_size_cluster*4)
                 offset = layers.Reshape((self.npoint,3))(offset)
+                '''
+                net = self.conv3_2(net) # (batch_size, num_proposal, 2+3+num_heading_bin*2+num_size_cluster*4)                
                 #center = xyz + offset
                 net = layers.Reshape((self.npoint, net.shape[-1]))(net)   
+                '''
+                net2 = self.conv3_2(net)
+                net3 = self.conv3_3(net)
+                net4 = self.conv3_4(net)
+                net5 = self.conv3_5(net)
 
-                return [offset, net]            
+                net2 = layers.Reshape((self.npoint, net2.shape[-1]))(net2)
+                net3 = layers.Reshape((self.npoint, net3.shape[-1]))(net3)
+                net4 = layers.Reshape((self.npoint, net4.shape[-1]))(net4)
+                net5 = layers.Reshape((self.npoint, net5.shape[-1]))(net5)
+
+                return [offset, net2, net3, net4, net5]            
             else:
                 net = self.conv3(net)
                 net = layers.Reshape((self.npoint, net.shape[-1]))(net)
@@ -466,13 +481,13 @@ if __name__=='__main__':
     if 'voting' in converting_layers:
         voting = nnInVotingModule(vote_factor=1, seed_feature_dim=256, sep_coords=sep_coords)        
         if model_config['use_fp_mlp']:
-            #dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,256])) # (B, num_seed, 1, 256*3)
-            dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,256]))
+            dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,256])) # (B, num_seed, 1, 256*3)
+            #dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,256]))
         else: 
-            #dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,256*3])) # (B, num_seed, 1, 256*3)
-            dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,256*3]))
-        #dummy_in_voting_xyz =  tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,3])) # (B, num_seed, 1, 3)        
-        dummy_in_voting_xyz =  tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,3])) # (B, num_seed, 1, 3)        
+            dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,256*3])) # (B, num_seed, 1, 256*3)
+            #dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,256*3]))
+        dummy_in_voting_xyz =  tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,3])) # (B, num_seed, 1, 3)        
+        #dummy_in_voting_xyz =  tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,3])) # (B, num_seed, 1, 3)        
         dummy_in_voting = [dummy_in_voting_features, dummy_in_voting_xyz]        
         dummy_out = voting(dummy_in_voting)
         layer = voting
@@ -481,10 +496,8 @@ if __name__=='__main__':
         layer.conv2.set_weights(net.vgen.conv2.get_weights())
         if sep_coords:
             w, b = net.vgen.conv3.get_weights()
-            #layer.conv3_1.set_weights([w[:,:,:,:3], b[:3]])
-            #layer.conv3_2.set_weights([w[:,:,:,3:], b[3:]])                       
-            layer.conv3_1.set_weights([w[:,:3], b[:3]])
-            layer.conv3_2.set_weights([w[:,3:], b[3:]])
+            layer.conv3_1.set_weights([w[:,:,:,:3], b[:3]])
+            layer.conv3_2.set_weights([w[:,:,:,3:], b[3:]])            
 
         else:
             layer.conv3.set_weights(net.vgen.conv3.get_weights())
@@ -498,7 +511,7 @@ if __name__=='__main__':
 
     if 'va' in converting_layers:
         va_mlp = vaModule(mlp_spec=[128, 128, 128, 128], nsample=16, input_shape=[256,16,256+3], sep_coords=sep_coords)
-        #dummy_in_va = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,3 + (16*(128+3))]), dtype=tf.float32) # (B, npoint, nsample, C+3)                
+        #dummy_in_va = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,3 + (16*(128+3))]), dtype=tf.float32) # (B, npoint, nsample, C+3)
         dummy_va_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,(256+3)]), dtype=tf.float32) # (B, npoint, 3 + nsample*(C+3)) 
         dummy_va_xyz = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,3]), dtype=tf.float32) # (B, npoint, 3 + nsample*(C+3)) 
         dummy_in_va = [dummy_va_features, dummy_va_xyz]
@@ -511,10 +524,19 @@ if __name__=='__main__':
         layer.conv2.set_weights(net.pnet.conv2.get_weights())
         if sep_coords:
             w, b = net.pnet.conv3.get_weights()
-            #layer.conv3_1.set_weights([w[:,:,:,:3], b[:3]])
+            layer.conv3_1.set_weights([w[:,:,:,:3], b[:3]])
             #layer.conv3_2.set_weights([w[:,:,:,3:], b[3:]])
-            layer.conv3_1.set_weights([w[:,:3], b[:3]])
-            layer.conv3_2.set_weights([w[:,3:], b[3:]])
+            layer.conv3_2.set_weights([w[:,:,:,3:3+2], b[3:3+2]])
+            layer.conv3_3.set_weights([w[:,:,:,3+2:3+2+DATASET_CONFIG.num_heading_bin*2], b[3+2:3+2+DATASET_CONFIG.num_heading_bin*2]])
+            
+            layer.conv3_4.set_weights([w[:,:,:,3+2+DATASET_CONFIG.num_heading_bin*2:3+2+DATASET_CONFIG.num_heading_bin*2+DATASET_CONFIG.num_size_cluster*4],\
+            b[3+2+DATASET_CONFIG.num_heading_bin*2:3+2+DATASET_CONFIG.num_heading_bin*2+DATASET_CONFIG.num_size_cluster*4]])
+            
+            layer.conv3_5.set_weights([w[:,:,:,3+2+DATASET_CONFIG.num_heading_bin*2+DATASET_CONFIG.num_size_cluster*4:],\
+            b[3+2+DATASET_CONFIG.num_heading_bin*2+DATASET_CONFIG.num_size_cluster*4:]])
+            
+            #layer.conv3_1.set_weights([w[:,:3], b[:3]])
+            #layer.conv3_2.set_weights([w[:,3:], b[3:]])
 
         
         else:

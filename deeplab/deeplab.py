@@ -79,9 +79,6 @@ def run_semantic_segmentation_graph(image, sess, input_size):
     seg_prob = resized_seg_prob[xv, yv]
     seg_class = resized_seg_class[xv, yv]
 
-    print(width, height)
-    print(seg_prob.shape)
-
     return seg_prob, seg_class
 
 def run_semantic_seg(img, save_result=False):

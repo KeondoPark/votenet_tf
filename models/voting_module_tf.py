@@ -62,15 +62,15 @@ class VotingModule(layers.Layer):
             self.input_details = self.interpreter.get_input_details()
             self.output_details = self.interpreter.get_output_details()
         else:
-            #self.conv0 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
-            #self.conv1 = layers.Conv2D(filters=self.in_dim, kernel_size=1)        
-            #self.conv2 = layers.Conv2D(filters=self.in_dim, kernel_size=1)            
-            #self.conv3 = layers.Conv2D(filters=(self.out_dim+3) * self.vote_factor, kernel_size=1)
+            self.conv0 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
+            self.conv1 = layers.Conv2D(filters=self.in_dim, kernel_size=1)        
+            self.conv2 = layers.Conv2D(filters=self.in_dim, kernel_size=1)            
+            self.conv3 = layers.Conv2D(filters=(self.out_dim+3) * self.vote_factor, kernel_size=1)
 
-            self.conv0 = layers.Dense(self.in_dim)
-            self.conv1 = layers.Dense(self.in_dim)        
-            self.conv2 = layers.Dense(self.in_dim)            
-            self.conv3 = layers.Dense((self.out_dim+3) * self.vote_factor)
+            #self.conv0 = layers.Dense(self.in_dim)
+            #self.conv1 = layers.Dense(self.in_dim)        
+            #self.conv2 = layers.Dense(self.in_dim)            
+            #self.conv3 = layers.Dense((self.out_dim+3) * self.vote_factor)
             
             self.bn0 = layers.BatchNormalization(axis=-1, momentum=0.9)
             self.bn1 = layers.BatchNormalization(axis=-1, momentum=0.9)
@@ -117,10 +117,10 @@ class VotingModule(layers.Layer):
             net = self.relu2(self.bn2(self.conv2(net))) 
             net = self.conv3(net)
 
-            #offset = net[:,:,:,0:3]
-            offset = net[:,:,0:3]
-            #residual_features = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net[:,:,:,3:]) # (batch_size, num_seed, vote_factor, out_dim)        
-            residual_features = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net[:,:,3:]) # (batch_size, num_seed, vote_factor, out_dim)        
+            offset = net[:,:,:,0:3]
+            #offset = net[:,:,0:3]
+            residual_features = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net[:,:,:,3:]) # (batch_size, num_seed, vote_factor, out_dim)        
+            #residual_features = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net[:,:,3:]) # (batch_size, num_seed, vote_factor, out_dim)        
             
             net0 = layers.Reshape((num_seed, self.vote_factor, net0.shape[-1]))(net0)
             vote_features = net0 + residual_features 

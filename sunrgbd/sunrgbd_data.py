@@ -344,8 +344,8 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
 
     if include_person:
         type_whitelist += ['person']
-        num_sunrgbd_class = len(type_whitelist)
-        print(type_whitelist)
+    num_sunrgbd_class = len(type_whitelist)
+    print(type_whitelist)
 
     # Load semantic segmentation model(Written and trained in TF1.15)
     if pointpainting:
@@ -377,7 +377,7 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
             for data_idx in data_idx_shard_list:                 
                 if data_idx == 2983: continue   #Errorneous data
                 #if data_idx < 20000: continue
-                print('------------- ', data_idx)
+                #print('------------- ', data_idx)
                 objects = dataset.get_label_objects(data_idx)
 
                 # Skip scenes with 0 object
@@ -511,6 +511,238 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                 
     f.close()
 
+
+def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
+    type_whitelist=DEFAULT_TYPE_WHITELIST, use_v1=False, skip_empty_scene=True, pointpainting=False, use_gt=False, include_person=False):
+    """ Same as extract_sunrgbd_data EXCEPT
+
+    Args:
+        save_votes is removed and assumed to be always True
+
+    Dumps:
+        TFRecords containing point_cloud, bboxes, point_votes
+
+        point cloud: (N,6) where N is for number of subsampled points and 6 is
+            for XYZ and RGB (in 0~1) in upright depth coord
+        bboxes: (K,8) where K is the number of objects, 8 is for
+            centroids (cx,cy,cz), dimension (l,w,h), heanding_angle and semantic_class
+        point_votes: (N,10) with 0/1 indicating whether the point belongs to an object,
+            then three sets of GT votes for up to three objects. If the point is only in one
+            object's OBB, then the three GT votes are the same.
+    """
+    
+    dataset = sunrgbd_object(os.path.join(DATA_DIR,'sunrgbd_trainval'), split, use_v1=use_v1)
+    data_idx_list = [int(line.rstrip()) for line in open(idx_filename)]
+
+    MAX_NUM_OBJ = 64
+
+    if include_person:
+        type_whitelist += ['person']
+
+    num_sunrgbd_class = len(type_whitelist)
+    print(type_whitelist)
+
+    # Load semantic segmentation model(Written and trained in TF1.15)    
+    if use_gt: 
+        from scipy import io
+        sunrgbd_mat = io.loadmat(os.path.join(DATA_DIR,'OFFICIAL_SUNRGBD','SUNRGBDMeta3DBB_v2.mat')) 
+        metadata = sunrgbd_mat['SUNRGBDMeta'][0] 
+    else:
+        INPUT_SIZE = 513
+        with tf.compat.v1.gfile.GFile('../deeplab/saved_model/sunrgbd_ade20k_12.pb', "rb") as f:
+            graph_def = tf.compat.v1.GraphDef()
+            graph_def.ParseFromString(f.read())
+        
+        myGraph = tf.compat.v1.Graph()
+        with myGraph.as_default():
+            tf.compat.v1.import_graph_def(graph_def, name='')
+
+        sess = tf.compat.v1.Session(graph=myGraph)
+
+    pred_error_arr = []
+    pred_cnt_per_class = np.zeros((num_sunrgbd_class,))
+    data_cnt = 0
+    
+    for data_idx in data_idx_list:
+        data_cnt += 1                
+        if data_idx == 2983: continue   #Errorneous data
+        #if data_idx < 20000: continue
+        #if data_cnt >= 10: break
+        print('------------- ', data_idx)
+        objects = dataset.get_label_objects(data_idx)
+
+        # Skip scenes with 0 object
+        if skip_empty_scene and (len(objects)==0 or \
+            len([obj for obj in objects if obj.classname in type_whitelist])==0):
+                continue
+
+        assert len(objects) <= MAX_NUM_OBJ
+        
+            
+        pc_upright_depth = dataset.get_depth(data_idx)
+        pc_upright_depth_subsampled = pc_util.random_sampling(pc_upright_depth, num_point)          
+
+    
+        ########## Add 2D segmentation result to point cloud(Point Painting) ##########
+        # Project points to image
+        calib = dataset.get_calibration(data_idx)
+        uv,d = calib.project_upright_depth_to_image(pc_upright_depth_subsampled[:,0:3]) #uv: (N, 2)
+
+        # Run image segmentation result and get result
+        img = dataset.get_image2(data_idx)            
+        
+        # Round to the nearest integer; since uv starts from 1. subtract 1.
+        uv[:,0] = np.rint(uv[:,0] - 1)
+        uv[:,1] = np.rint(uv[:,1] - 1)
+
+        w, h = img.size
+
+        uv[:,0] = np.minimum(uv[:,0], w-1)
+        uv[:,1] = np.minimum(uv[:,1], h-1)
+
+        if use_gt: 
+            img_path = metadata[data_idx-1][4][0][12:] # indexing starts from 1
+            img_path = os.path.join('/home','aiot',img_path)
+            seg_path = os.path.join('/'.join(img_path.split('/')[:-2]),'seg.mat')
+
+            mat = io.loadmat(seg_path)
+            mask, names= mat['seglabel'], mat['names']
+            pred_class = np.zeros_like(mask)
+
+            if len(names) !=1:
+                names=names.swapaxes(0,1)[0]
+            else:
+                names=names[0]
+
+            label = {'bed':1, 'table':2, 'sofa':3, 'chair':4, 'toilet':5, 'desk':6, 'dresser':7, 'night_stand':8, 'bookshelf':9, 'bathtub':10, 'person':11}
+            for idx, name in enumerate(names):            
+                name = name[0]            
+                if name in label:
+                    label_idx = label[name]                
+                    cur_seg = np.where(mask == idx+1, (label_idx), 0).astype(np.uint8)
+                    pred_class += cur_seg
+            projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
+            pred_prob = np.eye(num_sunrgbd_class+1)[projected_class]                        
+            pred_prob = pred_prob[:,:(num_sunrgbd_class+1)]
+            print(data_idx, mask.shape, max(uv[:,0]), max(uv[:,1]), pred_class.shape)
+            print(projected_class.shape, pred_prob.shape)
+
+            #pred_prob = np.eye(num_sunrgbd_class+1)[pred_class]
+            #pred_prob = pred_prob[:,:,1:]
+        else:
+            pred_prob, pred_class = run_semantic_segmentation_graph(img, sess, INPUT_SIZE) # (w, h, num_class)     
+            pred_prob = pred_prob[:,:,:(num_sunrgbd_class+1)] # 0 is background class              
+            projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
+            pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
+        
+        def find_centroids(pc, thr):
+            # point_cloud: (n, 3)
+            # Find the centroids of input point cloud
+            # Clusters are first found that all points are closer than threshold
+            # Then the centroid of each cluster are calculated
+            n = pc.shape[0]
+            x = np.tile(np.expand_dims(pc,1), [1,n,1])
+            y = np.empty((n,n,3))
+            y[:] = np.tile(np.expand_dims(pc,0), [n,1,1])
+            dist = np.sum((x - y) ** 2, axis=2) ** 0.5 # n by n matrix
+
+            instances_list = []                
+            for i in range(n):    
+                included = False
+                for inst_set in instances_list:
+                    if i in inst_set:
+                        included = True
+                        break
+                if not included:
+                    close_pts = set()   
+                    #close_pts.add(i)
+                    q = [i]
+                    while q:
+                        j = q.pop()     
+                        if j in close_pts: continue
+                        new_pts = set(np.where(dist[j,:] < thr)[0])
+                        add_pts = new_pts - close_pts
+                        q += list(add_pts)
+                        close_pts = close_pts.union(add_pts)
+                    
+                    instances_list.append(close_pts)
+            centroids = []
+            for s in instances_list:
+                if len(s) < 50: continue
+                cent = np.mean(pc[list(s),:], axis=0)
+                centroids.append(cent)
+            return np.array(centroids)
+
+        type_mean_size = {'bathtub': np.array([0.765840,1.398258,0.472728]),
+                        'bed': np.array([2.114256,1.620300,0.927272]),
+                        'bookshelf': np.array([0.404671,1.071108,1.688889]),
+                        'chair': np.array([0.591958,0.552978,0.827272]),
+                        'desk': np.array([0.695190,1.346299,0.736364]),
+                        'dresser': np.array([0.528526,1.002642,1.172878]),
+                        'night_stand': np.array([0.500618,0.632163,0.683424]),
+                        'sofa': np.array([0.923508,1.867419,0.845495]),
+                        'table': np.array([0.791118,1.279516,0.718182]),
+                        'toilet': np.array([0.699104,0.454178,0.756250]),
+                        'person': np.array([0.551934,0.630834,1.218182])}
+        
+        obbs = - np.ones((MAX_NUM_OBJ,8))
+        cnt = 0
+        for i, obj in enumerate(objects):
+            if obj.classname not in type_whitelist: continue
+            obbs[cnt, 0:3] = obj.centroid
+            # Note that compared with that in data_viz, we do not time 2 to l,w.h
+            # neither do we flip the heading angle
+            obbs[cnt, 3:6] = np.array([obj.l,obj.w,obj.h])
+            obbs[cnt, 6] = obj.heading_angle
+            obbs[cnt, 7] = sunrgbd_utils.type2class[obj.classname]
+            cnt+=1
+
+        pred_error = np.zeros((MAX_NUM_OBJ,4)) # Valid box, Class, predicted under threshold, pred error
+        cnt = 0
+
+
+        for c in range(num_sunrgbd_class):
+            centroids_gt = obbs[obbs[:,7] == c, 0:3] #Ground truth centroids
+            n_valid_box = centroids_gt.shape[0] # # of valid box            
+            pred_error[cnt:cnt+n_valid_box, 0] = 1.0
+            pred_error[cnt:cnt+n_valid_box, 1] = c                
+
+            pc_per_class = pc_upright_depth_subsampled[projected_class == c+1,:3] # Points that are predicted as (c+1) th class
+            if len(pc_per_class) == 0: 
+                print("c, n_valid_box, pred_box", c, n_valid_box, 0) # True negative
+                continue
+            sz = type_mean_size[sunrgbd_utils.class2type[c]]
+            thr = np.sum((sz) ** 2) ** 0.5
+            centroids_pred = find_centroids(pc_per_class, thr)            
+            # This is to calculate false positives
+            pred_cnt_per_class[c] += centroids_pred.shape[0]
+            
+            for cent in centroids_gt:
+                closest_dist = np.min(np.sum((centroids_pred - cent) ** 2, axis=1)) ** 0.5
+                pred_error[cnt, 3] = closest_dist
+                if closest_dist < thr:
+                    pred_error[cnt, 2] = 1.0
+                cnt += 1   
+            print("class, n_valid_box, pred_box, true positive pred", c, n_valid_box, centroids_pred.shape[0], np.sum(pred_error[pred_error[:,1]==c,2]))
+        
+        np.savetxt(os.path.join("pred_error",str(data_idx) + ".csv"), pred_error, delimiter=",")
+        pred_error_arr.append(pred_error)                    
+
+    pred_error_arr = np.array(pred_error_arr)
+    #print(pred_error_arr)
+    
+    for c in range(num_sunrgbd_class):
+        valid_box_per_class = np.sum((pred_error_arr[:,:,0] == 1) * (pred_error_arr[:,:,1] == c))        
+        pred_under_thr = pred_error_arr[(pred_error_arr[:,:,1] == c) * (pred_error_arr[:,:,2] == 1)]
+        pred_error = np.mean(pred_under_thr[:,3])
+        print("Class: %d, valid_box_per_class: %d, pred_under_thr: %d, false positive pred: %d, pred_error: %.6f"%(c, valid_box_per_class, np.sum(pred_under_thr[:,2]), pred_cnt_per_class[c], pred_error))
+
+
+    
+
+        
+
+
 def get_box3d_dim_statistics(idx_filename,
     type_whitelist=DEFAULT_TYPE_WHITELIST,
     save_path=None):
@@ -563,6 +795,7 @@ if __name__=='__main__':
     parser.add_argument('--painted', action='store_true', help='Generate point painted TFRecord dataset.')
     parser.add_argument('--use_gt', action='store_true', help='When pointpainting, use ground truth segmentation.')
     parser.add_argument('--include_person', action='store_true', help='Include person in the detection class list')
+    parser.add_argument('--pred_from_seg', action='store_true', help='Get simplified prediction from segmentation results')
     args = parser.parse_args()
 
     if args.viz:
@@ -608,17 +841,30 @@ if __name__=='__main__':
         if args.include_person:
             train_data_idx_file = 'train_data_idx_person.txt'
             val_data_idx_file = 'val_data_idx_person.txt'
+            output_folder_train = 'sunrgbd_pc_train_painted_tf_person'
+            output_folder_val = 'sunrgbd_pc_val_painted_tf_person'
         else:
             train_data_idx_file = 'train_data_idx.txt'
             val_data_idx_file = 'val_data_idx.txt'
+            output_folder_train = 'sunrgbd_pc_train_painted_tf4'
+            output_folder_val = 'sunrgbd_pc_val_painted_tf4'
 
         extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval', train_data_idx_file),
             split = 'training',
-            output_folder = os.path.join(DATA_DIR, 'sunrgbd_pc_train_painted_tf_person'),
+            output_folder = os.path.join(DATA_DIR, output_folder_train),
             num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True, use_gt=args.use_gt,
             include_person=args.include_person)
         extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval', val_data_idx_file),
             split = 'training',
-            output_folder = os.path.join(DATA_DIR, 'sunrgbd_pc_val_painted_tf_person'),
+            output_folder = os.path.join(DATA_DIR, output_folder_val),
             num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True, use_gt=args.use_gt,
             include_person=args.include_person)
+
+
+    if args.pred_from_seg:
+        train_data_idx_file = 'train_data_idx_person.txt'
+        val_data_idx_file = 'val_data_idx_person.txt'
+        get_simple_prediction_from_seg(os.path.join(DATA_DIR, 'sunrgbd_trainval', val_data_idx_file),
+            split = 'training',            
+            num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True, use_gt=args.use_gt,
+            include_person=True)

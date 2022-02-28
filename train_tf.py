@@ -90,7 +90,8 @@ if FLAGS.log_dir is None:
     LOG_DIR = os.path.join('logs', model_config['model_id'])
 else:
     LOG_DIR = FLAGS.log_dir
-DEFAULT_DUMP_DIR = os.path.join(BASE_DIR, os.path.basename(LOG_DIR))
+#DEFAULT_DUMP_DIR = os.path.join(BASE_DIR, os.path.basename(LOG_DIR))
+DEFAULT_DUMP_DIR = LOG_DIR
 DUMP_DIR = FLAGS.dump_dir if FLAGS.dump_dir is not None else DEFAULT_DUMP_DIR
 DEFAULT_CHECKPOINT_PATH = os.path.join('tf_ckpt', model_config['model_id'])
 CHECKPOINT_PATH = FLAGS.checkpoint_path if FLAGS.checkpoint_path is not None \
@@ -378,8 +379,7 @@ def train(start_epoch):
         save_path = manager.save()
         log_string("Saved checkpoint for step {}: {}".format(int(ckpt.epoch), save_path))
         
-        #if EPOCH_CNT == 0 or EPOCH_CNT % 10 == 9: # Eval every 10 epochs
-        if EPOCH_CNT % 20 == 19: # Eval every 20 epochs        
+        if EPOCH_CNT % 10 == 9: # Eval every 10 epochs        
             stat_dict = defaultdict(int) # collect statistics            
             ap_calculator = APCalculator(ap_iou_thresh=FLAGS.ap_iou_thresh,
                 class2type_map=DATASET_CONFIG.class2type)     
@@ -414,6 +414,8 @@ def train(start_epoch):
             metrics_dict = ap_calculator.compute_metrics()
             for key in metrics_dict:
                 log_string('eval %s: %f'%(key, metrics_dict[key]))
+            save_path = manager.save()
+            log_string("Saved checkpoint for step {}: {}".format(int(ckpt.epoch), save_path))
 
             #mean_loss = stat_dict['loss']/float(batch_idx+1)            
                
