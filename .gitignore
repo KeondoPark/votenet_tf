@@ -7,3 +7,5 @@ votenet_tf/
 tf_ckpt/
 logs/
 configs/environ*
+sunrgbd/pred_error
+sunrgbd/pred_error.csv

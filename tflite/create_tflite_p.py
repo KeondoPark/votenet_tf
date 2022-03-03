@@ -333,17 +333,18 @@ if __name__=='__main__':
             self.conv2 = layers.Conv2D(filters=128, kernel_size=1)
             #self.conv1 = layers.Dense(128)
             #self.conv2 = layers.Dense(128)
+            NH = DATASET_CONFIG.num_heading_bin
+            NC = DATASET_CONFIG.num_size_cluster
+            num_class = DATASET_CONFIG.num_class
             if self.sep_coords:
                 self.conv3_1 = layers.Conv2D(filters=3, kernel_size=1) 
-                self.conv3_2 = layers.Conv2D(filters=2, kernel_size=1) 
-                self.conv3_3 = layers.Conv2D(filters=DATASET_CONFIG.num_heading_bin*2, kernel_size=1)
-                self.conv3_4 = layers.Conv2D(filters=DATASET_CONFIG.num_size_cluster*4, kernel_size=1)
-                self.conv3_5 = layers.Conv2D(filters=DATASET_CONFIG.num_class, kernel_size=1)
+                self.conv3_2 = layers.Conv2D(filters=2 + NH + NC  + num_class, kernel_size=1) 
+                self.conv3_3 = layers.Conv2D(filters=NH + NC * 3, kernel_size=1)                
                 #self.conv3_2 = layers.Conv2D(filters=2+DATASET_CONFIG.num_heading_bin*2+DATASET_CONFIG.num_size_cluster*4+DATASET_CONFIG.num_class, kernel_size=1) 
                 #self.conv3_1 = layers.Dense(3)
                 #self.conv3_2 = layers.Dense(2 + DATASET_CONFIG.num_heading_bin*2 + DATASET_CONFIG.num_size_cluster*4 + DATASET_CONFIG.num_class)
             else:
-                self.conv3 = layers.Conv2D(filters=2+3+DATASET_CONFIG.num_heading_bin*2+DATASET_CONFIG.num_size_cluster*4+DATASET_CONFIG.num_class, kernel_size=1)
+                self.conv3 = layers.Conv2D(filters=2+3+NH*2+NC*4+num_class, kernel_size=1)
                 #self.conv3 = layers.Dense(3 + 2 + DATASET_CONFIG.num_heading_bin*2 + DATASET_CONFIG.num_size_cluster*4 + DATASET_CONFIG.num_class)
             self.bn1 = layers.BatchNormalization(axis=-1)
             self.bn2 = layers.BatchNormalization(axis=-1)
@@ -373,15 +374,11 @@ if __name__=='__main__':
                 '''
                 net2 = self.conv3_2(net)
                 net3 = self.conv3_3(net)
-                net4 = self.conv3_4(net)
-                net5 = self.conv3_5(net)
 
                 net2 = layers.Reshape((self.npoint, net2.shape[-1]))(net2)
-                net3 = layers.Reshape((self.npoint, net3.shape[-1]))(net3)
-                net4 = layers.Reshape((self.npoint, net4.shape[-1]))(net4)
-                net5 = layers.Reshape((self.npoint, net5.shape[-1]))(net5)
+                net3 = layers.Reshape((self.npoint, net3.shape[-1]))(net3)                
 
-                return [offset, net2, net3, net4, net5]            
+                return [offset, net2, net3]            
             else:
                 net = self.conv3(net)
                 net = layers.Reshape((self.npoint, net.shape[-1]))(net)
@@ -522,18 +519,21 @@ if __name__=='__main__':
         layer = va_mlp
         layer.conv1.set_weights(net.pnet.conv1.get_weights())
         layer.conv2.set_weights(net.pnet.conv2.get_weights())
+        
+        NH = DATASET_CONFIG.num_heading_bin
+        NC = DATASET_CONFIG.num_size_cluster
+        num_class = DATASET_CONFIG.num_class
+
         if sep_coords:
             w, b = net.pnet.conv3.get_weights()
             layer.conv3_1.set_weights([w[:,:,:,:3], b[:3]])
             #layer.conv3_2.set_weights([w[:,:,:,3:], b[3:]])
-            layer.conv3_2.set_weights([w[:,:,:,3:3+2], b[3:3+2]])
-            layer.conv3_3.set_weights([w[:,:,:,3+2:3+2+DATASET_CONFIG.num_heading_bin*2], b[3+2:3+2+DATASET_CONFIG.num_heading_bin*2]])
-            
-            layer.conv3_4.set_weights([w[:,:,:,3+2+DATASET_CONFIG.num_heading_bin*2:3+2+DATASET_CONFIG.num_heading_bin*2+DATASET_CONFIG.num_size_cluster*4],\
-            b[3+2+DATASET_CONFIG.num_heading_bin*2:3+2+DATASET_CONFIG.num_heading_bin*2+DATASET_CONFIG.num_size_cluster*4]])
-            
-            layer.conv3_5.set_weights([w[:,:,:,3+2+DATASET_CONFIG.num_heading_bin*2+DATASET_CONFIG.num_size_cluster*4:],\
-            b[3+2+DATASET_CONFIG.num_heading_bin*2+DATASET_CONFIG.num_size_cluster*4:]])
+            w_2 = np.concatenate([w[:,:,:,3:3+2+NH], w[:,:,:,3+2+NH*2:3+2+NH*2+NC], w[:,:,:,3+2+NH*2+NC*4:]], axis=-1)
+            b_2 = np.concatenate([b[3:3+2+NH], b[3+2+NH*2:3+2+NH*2+NC], b[3+2+NH*2+NC*4:]], axis=-1)
+            layer.conv3_2.set_weights([w_2, b_2])
+            w_3 = np.concatenate([w[:,:,:,3+2+NH:3+2+NH*2], w[:,:,:,3+2+NH*2+NC:3+2+NH*2+NC*4]], axis=-1)
+            b_3 = np.concatenate([b[3+2+NH:3+2+NH*2], b[3+2+NH*2+NC:3+2+NH*2+NC*4]], axis=-1)
+            layer.conv3_3.set_weights([w_3, b_3])
             
             #layer.conv3_1.set_weights([w[:,:3], b[:3]])
             #layer.conv3_2.set_weights([w[:,3:], b[3:]])

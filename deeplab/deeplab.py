@@ -4,7 +4,7 @@ import os
 import tensorflow as tf
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT_DIR = BASE_DIR
+ROOT_DIR = os.path.dirname(BASE_DIR)
 
 def create_pascal_label_colormap():
   """Creates a label colormap used in PASCAL VOC segmentation benchmark.
@@ -83,7 +83,8 @@ def run_semantic_segmentation_graph(image, sess, input_size):
 
 def run_semantic_seg(img, save_result=False):
     INPUT_SIZE = 513
-    with tf.compat.v1.gfile.GFile(os.path.join(ROOT_DIR,'saved_model','sunrgbd_ade20k_12.pb'), "rb") as f:
+    #with tf.compat.v1.gfile.GFile(os.path.join(BASE_DIR,'saved_model','sunrgbd_ade20k_12.pb'), "rb") as f:
+    with tf.compat.v1.gfile.GFile(os.path.join(BASE_DIR,'saved_model','sunrgbd_COCO_4.pb'), "rb") as f:
         graph_def = tf.compat.v1.GraphDef()
         graph_def.ParseFromString(f.read())
     
@@ -107,7 +108,7 @@ def run_semantic_seg_tflite(img, save_result=False):
     from pycoral.adapters import common
     from pycoral.adapters import segment
     
-    interpreter = make_interpreter(os.path.join(ROOT_DIR, os.path.join('sunrgbd_ade20k_12_quant_edgetpu.tflite')))
+    interpreter = make_interpreter(os.path.join(BASE_DIR, os.path.join('sunrgbd_ade20k_12_quant_edgetpu.tflite')))
     interpreter.allocate_tensors()
     width, height = common.input_size(interpreter)         
     
@@ -138,3 +139,27 @@ def run_semantic_seg_tflite(img, save_result=False):
         save_semantic_result(img, pred_class)
 
     return pred_prob
+
+if __name__ == '__main__':
+  import os, sys
+  sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
+  from sunrgbd_data import sunrgbd_object
+  
+  import json
+  environ_file = os.path.join(ROOT_DIR,'configs','environ.json')
+  environ = json.load(open(environ_file))['environ']
+
+  if environ == 'server':    
+      DATA_DIR = '/home/aiot/data'
+  elif environ == 'jetson':
+      DATA_DIR= 'sunrgbd'
+  elif environ == 'server2':    
+      DATA_DIR = '/data'
+
+  data_idx = 107
+  dataset = sunrgbd_object(os.path.join(DATA_DIR,'sunrgbd_trainval'), 'training', use_v1=True)
+  img = dataset.get_image2(data_idx)
+  pred_prob, pred_class = run_semantic_seg(img, save_result=True)  
+  print(np.unique(pred_class))
+
+

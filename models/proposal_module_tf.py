@@ -200,13 +200,20 @@ class ProposalModule(layers.Layer):
                 net = tf.convert_to_tensor(net)                  
                 '''
                 net2 = self.interpreter.get_tensor(self.output_details[1]['index']) 
-                net3 = self.interpreter.get_tensor(self.output_details[2]['index']) 
-                net4 = self.interpreter.get_tensor(self.output_details[3]['index']) 
-                net5 = self.interpreter.get_tensor(self.output_details[4]['index']) 
+                net3 = self.interpreter.get_tensor(self.output_details[2]['index'])                 
 
-                net = np.concatenate([net2, net3, net4, net5], aixs=-1)
+                obj_score = net2[:,:,:,:2]
+                head_score = net2[:,:,:,2:2+self.num_heading_bin]
+                cluster_score = net2[:,:,:,2+self.num_heading_bin:2+self.num_heading_bin+self.num_size_cluster]
+                class_score = net2[:,:,:,2+self.num_heading_bin+self.num_size_cluster:]
+
+                head_residual = net3[:,:,:,:self.num_heading_bin]
+                cluster_residual = net3[:,:,:,self.num_heading_bin:]
+
+                net = np.concatenate([obj_score, head_score, head_residual, cluster_score, cluster_residual, class_score], axis=-1)
+
+                #net = np.concatenate([net2, net3], aixs=-1)
                 net = tf.convert_to_tensor(net)                  
-
 
             else:
                 net = self.interpreter.get_tensor(self.output_details[0]['index']) 
