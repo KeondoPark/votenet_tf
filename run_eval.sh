@@ -12,6 +12,6 @@ conda activate votenet_tf # Activate your conda environment
 srun python eval_tf.py  \
 --use_3d_nms --use_cls_nms --per_class_proposal \
 --faster_eval --batch_size 1 --ap_iou_thresholds 0.25 \
---dump_dir evals/config_2way_nofp_nosep --config_path configs/config_2way_nofp_nosep.json
+--dump_dir evals/2way_nofp_sep --config_path configs/inf_211204_3_sep.json
 
 

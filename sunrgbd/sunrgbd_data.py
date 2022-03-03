@@ -535,8 +535,8 @@ def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
     data_idx_list = [int(line.rstrip()) for line in open(idx_filename)]
 
     MAX_NUM_OBJ = 64
-    num_sunrgbd_class = 17 # Deeplab is trained to have 18 classes
-    num_small_class = 6 # The number of small class 
+    num_sunrgbd_class = 16 # Deeplab is trained to have 16 classes
+    num_small_class = 5 # The number of small class 
     class_dict = {'garbage_bin':'garbage_bin', 'garbagebin:':'garbage_bin', 'recycle_bin':'garbage_bin',
                         'laptop':'laptop',
                         'cup':'cup', 'cups':'cup', 'coffee_cup':'cup', 'paper_cup':'cup','plasticcup':'cup', 'glass':'cup',
@@ -544,8 +544,8 @@ def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
                         'bottled_water':'bottle', 'mineral_bottle':'bottle', 'shampoo_bottle':'bottle', 'spray_bottle':'bottle',
                         'back_pack':'back_pack'}
     type_whitelist = class_dict.keys()
-    type2class_small = {'garbage_bin':1,'laptop':2,'cup':3,'back_pack':4,'cell_phone':5,'bottle':6}
-    class2type_small = {1:'garbage_bin',2:'laptop',3:'cup',4:'back_pack',5:'cell_phone', 6:'bottle'}
+    type2class_small = {'garbage_bin':1,'laptop':2,'cup':3,'back_pack':4,'bottle':5}
+    class2type_small = {1:'garbage_bin',2:'laptop',3:'cup',4:'back_pack',5:'bottle'}
 
 
     # Load semantic segmentation model(Written and trained in TF1.15)    
@@ -589,11 +589,7 @@ def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
 
     # Calculate the threshold for centroid cluster
     cent_thr_list = [0] # Dummy value for class=0(Actual class starts from 1)
-    for c in range(1, num_small_class+1):
-        # skip cell phone
-        if c == 5: 
-            cent_thr_list.append(0)
-            continue
+    for c in range(1, num_small_class+1):        
         sz = type_mean_size[class2type_small[c]]        
         cent_thr_list.append(np.sum((sz) ** 2) ** 0.5)
     
@@ -704,10 +700,6 @@ def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
 
 
         for c in range(1, num_small_class+1):
-
-            ### Temp: skip c==5(Cell phone)
-            if c == 5: continue
-
 
             centroids_gt = obbs[obbs[:,7] == c, 0:3] #Ground truth centroids
             centroids_sz = obbs[obbs[:,7] == c, 3:6]

@@ -37,7 +37,7 @@ environ = json.load(open(environ_file))['environ']
 if environ == 'server':    
     DATA_DIR = '/home/aiot/data'
 elif environ == 'jetson':
-    DATA_DIR='/media/jetson/PHILIPS UFD'
+    DATA_DIR='/media'
 elif environ == 'server2':    
     DATA_DIR = '/data'
 sys.path.append(BASE_DIR)

@@ -121,7 +121,7 @@ class ProposalModule(layers.Layer):
             self.use_edgetpu = model_config['use_edgetpu']
             tflite_folder = model_config['tflite_folder']            
             if self.use_edgetpu: 
-                tflite_file = 'va_quant_edgetpu.tflite'           
+                tflite_file = 'va_quant_test_edgetpu.tflite'           
                 from pycoral.utils.edgetpu import make_interpreter            
                 self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join(tflite_folder, tflite_file)))
             else:
@@ -202,13 +202,13 @@ class ProposalModule(layers.Layer):
                 net2 = self.interpreter.get_tensor(self.output_details[1]['index']) 
                 net3 = self.interpreter.get_tensor(self.output_details[2]['index'])                 
 
-                obj_score = net2[:,:,:,:2]
-                head_score = net2[:,:,:,2:2+self.num_heading_bin]
-                cluster_score = net2[:,:,:,2+self.num_heading_bin:2+self.num_heading_bin+self.num_size_cluster]
-                class_score = net2[:,:,:,2+self.num_heading_bin+self.num_size_cluster:]
+                obj_score = net2[:,:,:2]
+                head_score = net2[:,:,2:2+self.num_heading_bin]
+                cluster_score = net2[:,:,2+self.num_heading_bin:2+self.num_heading_bin+self.num_size_cluster]
+                class_score = net2[:,:,2+self.num_heading_bin+self.num_size_cluster:]
 
-                head_residual = net3[:,:,:,:self.num_heading_bin]
-                cluster_residual = net3[:,:,:,self.num_heading_bin:]
+                head_residual = net3[:,:,:self.num_heading_bin]
+                cluster_residual = net3[:,:,self.num_heading_bin:]
 
                 net = np.concatenate([obj_score, head_score, head_residual, cluster_score, cluster_residual, class_score], axis=-1)
 
