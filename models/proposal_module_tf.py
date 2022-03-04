@@ -31,16 +31,28 @@ def decode_scores(net, end_points, num_class, num_heading_bin, num_size_cluster,
     """
 
 
-    #net_transposed = tf.transpose(net, perm=[0,2,1]) # (batch_size, 1024, ..)            
-
     objectness_scores = net[:,:,0:2]
     end_points['objectness_scores'] = objectness_scores    
-    
-    #base_xyz = end_points['aggregated_vote_xyz'] # (batch_size, num_proposal, 3)    
-    #center = base_xyz + net[:,:,2:5] # (batch_size, num_proposal, 3)
-    #end_points['center'] = center
-    
 
+    NH = num_heading_bin
+    NC = num_size_cluster
+    
+    heading_scores = net[:,:, 2:2+NH]
+    size_scores = net[:,:, 2 + NH:2 + NH + NC]
+
+    heading_residuals_normalized = net[:,:,2 + NH + NC:2 + NH + NC + NH]
+    pi = tf.constant(3.14159265359, dtype=tf.float32)
+    end_points['heading_scores'] = heading_scores # B x num_proposal x num_heading_bin
+    end_points['heading_residuals_normalized'] = heading_residuals_normalized # Bxnum_proposalxnum_heading_bin (should be -1 to 1)
+    end_points['heading_residuals'] = heading_residuals_normalized * (pi/tf.cast(NH,tf.float32)) # B x num_proposal x num_heading_bin
+
+    size_residuals = net[:,:,2 + NH*2 + NC:2 + NH*2 + NC*4]
+    size_residuals_normalized = layers.Reshape((num_proposal, NC, 3))(size_residuals) # B x num_proposal x num_size_cluster x 3    
+    end_points['size_scores'] = size_scores
+    end_points['size_residuals_normalized'] = size_residuals_normalized
+    end_points['size_residuals'] = size_residuals_normalized * tf.expand_dims(tf.expand_dims(tf.cast(mean_size_arr,dtype=tf.float32), axis=0), axis=0)
+
+    """
     heading_scores = net[:,:,2:2+num_heading_bin]
     heading_residuals_normalized = net[:,:,2+num_heading_bin:2+num_heading_bin*2]
     pi = tf.constant(3.14159265359, dtype=tf.float32)
@@ -56,7 +68,7 @@ def decode_scores(net, end_points, num_class, num_heading_bin, num_size_cluster,
     end_points['size_scores'] = size_scores
     end_points['size_residuals_normalized'] = size_residuals_normalized
     end_points['size_residuals'] = size_residuals_normalized * tf.expand_dims(tf.expand_dims(tf.cast(mean_size_arr,dtype=tf.float32), axis=0), axis=0)
-    
+    """
 
     sem_cls_scores = net[:,:,2+num_heading_bin*2+num_size_cluster*4:] # B x num_proposal x 10
     end_points['sem_cls_scores'] = sem_cls_scores    

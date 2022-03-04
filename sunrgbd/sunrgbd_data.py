@@ -26,12 +26,13 @@ sys.path.append(BASE_DIR)
 print(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, '../utils/'))
 sys.path.append(os.path.join(BASE_DIR, '..'))
+sys.path.append(os.path.join(BASE_DIR, '../deeplab'))
 import pc_util
 import sunrgbd_utils
 from tqdm import tqdm
 import tensorflow as tf
 import time
-from deeplab.deeplab import run_semantic_segmentation_graph
+from deeplab import run_semantic_segmentation_graph
 
 import json
 ROOT_DIR = os.path.dirname(BASE_DIR)
@@ -675,7 +676,7 @@ def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
                         instances_list[j] = set()            
             centroids = []
             for s in instances_list:
-                if len(s) < 10: continue
+                if len(s) < 50: continue
                 cent = np.mean(pc[list(s),:], axis=0)
                 centroids.append(cent)
             return np.array(centroids)
@@ -710,7 +711,8 @@ def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
             pc_per_class = pc_upright_depth_subsampled[projected_class == c,:3] # Points that are predicted as (c+1) th class
             #print(c, pc_per_class.shape)
             if len(pc_per_class) == 0: 
-                print("c, n_valid_box, pred_box", c, n_valid_box, 0) # True negative
+                if n_valid_box > 0:
+                    print("c, n_valid_box, pred_box", c, n_valid_box, 0) # True negative
                 cnt += n_valid_box
                 continue            
             cent_thr = cent_thr_list[c]            
@@ -718,7 +720,8 @@ def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
             # This is to calculate false positives
             pred_cnt_per_class[c] += centroids_pred.shape[0]
             if centroids_pred.shape[0] == 0:
-                print("c, n_valid_box, pred_box", c, n_valid_box, 0) # True negative
+                if n_valid_box > 0:
+                    print("c, n_valid_box, pred_box", c, n_valid_box, 0) # True negative
                 cnt += n_valid_box
                 continue
             #print(centroids_pred)
@@ -748,7 +751,8 @@ def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
                         pred_error[cnt, 2] = 1.0
                 cnt += 1 
             
-            print("class, n_valid_box, pred_box, true positive pred", c, n_valid_box, centroids_pred.shape[0], np.sum(pred_error[pred_error[:,1]==c,2]))
+            if n_valid_box > 0:
+                print("class, n_valid_box, pred_box, true positive pred", c, n_valid_box, centroids_pred.shape[0], np.sum(pred_error[pred_error[:,1]==c,2]))
         
         np.savetxt(os.path.join("pred_error",str(data_idx) + ".csv"), pred_error, delimiter=",")
         np.savetxt(os.path.join("pred_error","pred_cnt_per_class.csv"), pred_cnt_per_class, delimiter=",")

@@ -84,7 +84,7 @@ def run_semantic_segmentation_graph(image, sess, input_size):
 def run_semantic_seg(img, save_result=False):
     INPUT_SIZE = 513
     #with tf.compat.v1.gfile.GFile(os.path.join(BASE_DIR,'saved_model','sunrgbd_ade20k_12.pb'), "rb") as f:
-    with tf.compat.v1.gfile.GFile(os.path.join(BASE_DIR,'saved_model','sunrgbd_COCO_4.pb'), "rb") as f:
+    with tf.compat.v1.gfile.GFile(os.path.join(BASE_DIR,'saved_model','sunrgbd_COCO_5.pb'), "rb") as f:
         graph_def = tf.compat.v1.GraphDef()
         graph_def.ParseFromString(f.read())
     
@@ -156,7 +156,7 @@ if __name__ == '__main__':
   elif environ == 'server2':    
       DATA_DIR = '/data'
 
-  data_idx = 107
+  data_idx = 319
   dataset = sunrgbd_object(os.path.join(DATA_DIR,'sunrgbd_trainval'), 'training', use_v1=True)
   img = dataset.get_image2(data_idx)
   pred_prob, pred_class = run_semantic_seg(img, save_result=True)  
