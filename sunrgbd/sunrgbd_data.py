@@ -104,7 +104,7 @@ def data_viz(data_dir, dump_dir=os.path.join(BASE_DIR, 'data_viz_dump')):
     np.random.seed(0)
     np.random.shuffle(idxs)
     for idx in range(len(sunrgbd)):
-        data_idx = idxs[idx]
+        data_idx = 4449#data_idx = idxs[idx]
         print('-'*10, 'data index: ', data_idx)
         pc = sunrgbd.get_depth(data_idx)
         print('Point cloud shape:', pc.shape)
@@ -288,7 +288,8 @@ def extract_sunrgbd_data(idx_filename, split, output_folder, num_point=20000,
                 point_votes = point_votes)
 
 def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=20000,
-    type_whitelist=DEFAULT_TYPE_WHITELIST, use_v1=False, skip_empty_scene=True, pointpainting=False, use_gt=False, include_person=False):
+    type_whitelist=DEFAULT_TYPE_WHITELIST, use_v1=False, skip_empty_scene=True, pointpainting=False, use_gt=False,
+    include_person=False, include_small=False):
     """ Same as extract_sunrgbd_data EXCEPT
 
     Args:
@@ -345,8 +346,30 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
 
     if include_person:
         type_whitelist += ['person']
+
+    if include_small:
+        type_whitelist += ['garbage_bin','laptop','cup','back_pack','bottle']
     num_sunrgbd_class = len(type_whitelist)
     print(type_whitelist)
+
+    class_map = {'bed':'bed', 'table':'table', 
+                    'sofa':'sofa','sofa_chair':'sofa',
+                    'chair':'chair','toilet':'toilet','desk':'desk','dresser':'dresser',
+                    'night_stand':'night_stand', 'nightstand':'night_stand',
+                    'bookshelf':'bookshelf','bathtub':'bathtub',
+                    'person':'person',
+                    'garbage_bin':'garbage_bin', 'garbagebin:':'garbage_bin', 'recycle_bin':'garbage_bin',
+                    'laptop':'laptop',
+                    'cup':'cup', 'cups':'cup', 'coffee_cup':'cup', 'paper_cup':'cup','plasticcup':'cup', 'glass':'cup',
+                    'bottle':'bottle', 'bottles':'bottle', 'water_bottle':'bottle', 'wine_bottle':'bottle', 'plastic_bottle':'bottle',
+                    'bottled_water':'bottle', 'mineral_bottle':'bottle', 'shampoo_bottle':'bottle', 'spray_bottle':'bottle',
+                    'back_pack':'back_pack'}
+
+    class_dict = {}
+    for k, v in class_map.items():
+        if v in type_whitelist:
+            class_dict[k] = v
+
 
     # Load semantic segmentation model(Written and trained in TF1.15)
     if pointpainting:
@@ -355,8 +378,8 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
             sunrgbd_mat = io.loadmat(os.path.join(DATA_DIR,'OFFICIAL_SUNRGBD','SUNRGBDMeta3DBB_v2.mat')) 
             metadata = sunrgbd_mat['SUNRGBDMeta'][0] 
         else:
-            INPUT_SIZE = 513
-            with tf.compat.v1.gfile.GFile('../deeplab/saved_model/sunrgbd_COCO_5.pb', "rb") as f:
+            INPUT_SIZE = (513, 513)
+            with tf.compat.v1.gfile.GFile('../deeplab/saved_model/sunrgbd_COCO_15.pb', "rb") as f:
                 graph_def = tf.compat.v1.GraphDef()
                 graph_def.ParseFromString(f.read())
             
@@ -383,7 +406,7 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
 
                 # Skip scenes with 0 object
                 if skip_empty_scene and (len(objects)==0 or \
-                    len([obj for obj in objects if obj.classname in type_whitelist])==0):
+                    len([obj for obj in objects if obj.classname in class_dict])==0):
                         continue
 
                 assert len(objects) <= MAX_NUM_OBJ
@@ -391,13 +414,13 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                 obbs = np.zeros((MAX_NUM_OBJ,8))
                 cnt = 0
                 for i, obj in enumerate(objects):
-                    if obj.classname not in type_whitelist: continue
+                    if obj.classname not in class_dict: continue
                     obbs[cnt, 0:3] = obj.centroid
                     # Note that compared with that in data_viz, we do not time 2 to l,w.h
                     # neither do we flip the heading angle
                     obbs[cnt, 3:6] = np.array([obj.l,obj.w,obj.h])
                     obbs[cnt, 6] = obj.heading_angle
-                    obbs[cnt, 7] = sunrgbd_utils.type2class[obj.classname]
+                    obbs[cnt, 7] = sunrgbd_utils.type2class[class_dict[obj.classname]]
                     cnt+=1
 
                 n_valid_box = cnt
@@ -437,7 +460,8 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                         else:
                             names=names[0]
 
-                        label = {'bed':1, 'table':2, 'sofa':3, 'chair':4, 'toilet':5, 'desk':6, 'dresser':7, 'night_stand':8, 'bookshelf':9, 'bathtub':10, 'person':11}
+                        #label = {'bed':1, 'table':2, 'sofa':3, 'chair':4, 'toilet':5, 'desk':6, 'dresser':7, 'night_stand':8, 'bookshelf':9, 'bathtub':10, 'person':11}
+                        label = sunrgbd_utils.type2class
                         for idx, name in enumerate(names):            
                             name = name[0]            
                             if name in label:
@@ -540,13 +564,17 @@ def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
     num_small_class = 5 # The number of small class 
     class_dict = {'garbage_bin':'garbage_bin', 'garbagebin:':'garbage_bin', 'recycle_bin':'garbage_bin',
                         'laptop':'laptop',
+                        #'cup':'bottle', 'cups':'bottle', 'coffee_cup':'bottle', 'paper_cup':'bottle','plasticcup':'bottle', 'glass':'bottle',
                         'cup':'cup', 'cups':'cup', 'coffee_cup':'cup', 'paper_cup':'cup','plasticcup':'cup', 'glass':'cup',
                         'bottle':'bottle', 'bottles':'bottle', 'water_bottle':'bottle', 'wine_bottle':'bottle', 'plastic_bottle':'bottle',
                         'bottled_water':'bottle', 'mineral_bottle':'bottle', 'shampoo_bottle':'bottle', 'spray_bottle':'bottle',
                         'back_pack':'back_pack'}
     type_whitelist = class_dict.keys()
+    #type2class_small = {'garbage_bin':1,'laptop':2,'bottle':3,'back_pack':4}
+    #class2type_small = {1:'garbage_bin',2:'laptop',3:'bottle',4:'back_pack'}
     type2class_small = {'garbage_bin':1,'laptop':2,'cup':3,'back_pack':4,'bottle':5}
     class2type_small = {1:'garbage_bin',2:'laptop',3:'cup',4:'back_pack',5:'bottle'}
+
 
 
     # Load semantic segmentation model(Written and trained in TF1.15)    
@@ -555,9 +583,10 @@ def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
         sunrgbd_mat = io.loadmat(os.path.join(DATA_DIR,'OFFICIAL_SUNRGBD','SUNRGBDMeta3DBB_v2.mat')) 
         metadata = sunrgbd_mat['SUNRGBDMeta'][0] 
     else:
-        INPUT_SIZE = 513
+        #INPUT_SIZE = 737
+        INPUT_SIZE = (513, 513)
         #with tf.compat.v1.gfile.GFile('../deeplab/saved_model/sunrgbd_ade20k_12.pb', "rb") as f:
-        with tf.compat.v1.gfile.GFile('../deeplab/saved_model/sunrgbd_COCO_5.pb', "rb") as f:
+        with tf.compat.v1.gfile.GFile('../deeplab/saved_model/sunrgbd_COCO_12.pb', "rb") as f:
             graph_def = tf.compat.v1.GraphDef()
             graph_def.ParseFromString(f.read())
         
@@ -590,6 +619,7 @@ def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
 
     # Calculate the threshold for centroid cluster
     cent_thr_list = [0] # Dummy value for class=0(Actual class starts from 1)
+    i_thr_list = [0] + [110, 20, 2, 218, 4] # Threhsold to determine isolation point
     for c in range(1, num_small_class+1):        
         sz = type_mean_size[class2type_small[c]]        
         cent_thr_list.append(np.sum((sz) ** 2) ** 0.5)
@@ -597,9 +627,9 @@ def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
     for data_idx in data_idx_list:
         data_cnt += 1                
         if data_idx == 2983: continue   #Errorneous data
-        #if data_idx < 20000: continue
+        #if data_idx < 4479: continue
         #if data_idx != 104: continue
-        print('------------- ', data_idx)
+        #print('------------- ', data_idx)
         objects = dataset.get_label_objects(data_idx)
 
         # Skip scenes with 0 object
@@ -625,6 +655,7 @@ def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
         uv[:,1] = np.rint(uv[:,1] - 1)
 
         w, h = img.size
+        print("Data idx: %d, img size: %d, %d"%(data_idx, w, h))
 
         uv[:,0] = np.minimum(uv[:,0], w-1)
         uv[:,1] = np.minimum(uv[:,1], h-1)
@@ -635,10 +666,12 @@ def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
         projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]        
         projected_class = np.where(projected_class > num_sunrgbd_class - num_small_class, 1, 0) * (projected_class - (num_sunrgbd_class - num_small_class))
 
+        # Combine bottle and cup 
+        #projected_class = np.where(projected_class == 5, 3, projected_class)
 
         #pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
         
-        def find_centroids(pc, thr):
+        def find_centroids(pc, thr, mean_size, i_thr):
             # point_cloud: (n, 3)
             # Find the centroids of input point cloud
             # Clusters are first found that all points are closer than threshold
@@ -647,11 +680,6 @@ def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
             if n >= 20000:
                 pc = pc_util.random_sampling(pc, 20000)
                 n = 20000
-            #x = np.tile(np.expand_dims(pc,1), [1,n,1])
-            #y = np.empty((n,n,3))
-            #y[:] = np.tile(np.expand_dims(pc,0), [n,1,1])
-            #dist = np.sum((x - y) ** 2, axis=2) ** 0.5 # n by n matrix            
-            #close_pts_arr = np.where(dist < thr, True, False)
                         
             instances_list = []
             for i in range(n):
@@ -662,6 +690,11 @@ def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
                         break            
                 if not included:
                     x = pc[i]
+
+                    #box3d_pts_3d = sunrgbd_utils.my_compute_box_3d(x, mean_size, 0)
+                    #_, close_pts = sunrgbd_utils.extract_pc_in_box3d(pc, box3d_pts_3d)
+                    #close_pts = np.where(close_pts)[0]
+
                     close_pts = np.where(np.sum((x - pc) ** 2, axis=1) ** 0.5 < thr)[0]
                     instances_list.append(set(close_pts))
                     #instances_list.append(set(np.where(close_pts_arr[i])[0]))
@@ -677,6 +710,7 @@ def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
             centroids = []
             for s in instances_list:
                 if len(s) < 50: continue
+                #if len(s) < i_thr: continue
                 cent = np.mean(pc[list(s),:], axis=0)
                 centroids.append(cent)
             return np.array(centroids)
@@ -704,30 +738,31 @@ def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
 
             centroids_gt = obbs[obbs[:,7] == c, 0:3] #Ground truth centroids
             centroids_sz = obbs[obbs[:,7] == c, 3:6]
-            n_valid_box = centroids_gt.shape[0] # # of valid box            
+            n_valid_box = centroids_gt.shape[0] # # of valid box
             pred_error[cnt:cnt+n_valid_box, 0] = 1.0
-            pred_error[cnt:cnt+n_valid_box, 1] = c                
+            pred_error[cnt:cnt+n_valid_box, 1] = c 
 
             pc_per_class = pc_upright_depth_subsampled[projected_class == c,:3] # Points that are predicted as (c+1) th class
             #print(c, pc_per_class.shape)
             if len(pc_per_class) == 0: 
                 if n_valid_box > 0:
-                    print("c, n_valid_box, pred_box", c, n_valid_box, 0) # True negative
+                    print("==TN== DATA_IDX: %d, class: %d, n_valid_box: %d"%(data_idx, c, n_valid_box)) # True negative
                 cnt += n_valid_box
                 continue            
-            cent_thr = cent_thr_list[c]            
-            centroids_pred = find_centroids(pc_per_class, cent_thr)            
+            cent_thr = cent_thr_list[c]    
+            mean_size = type_mean_size[class2type_small[c]]        
+            centroids_pred = find_centroids(pc_per_class, cent_thr, 2*mean_size, i_thr_list[c])            
             # This is to calculate false positives
             pred_cnt_per_class[c] += centroids_pred.shape[0]
             if centroids_pred.shape[0] == 0:
                 if n_valid_box > 0:
-                    print("c, n_valid_box, pred_box", c, n_valid_box, 0) # True negative
+                    print("==TN== DATA_IDX: %d, class: %d, n_valid_box: %d"%(data_idx, c, n_valid_box)) # True negative
                 cnt += n_valid_box
                 continue
             #print(centroids_pred)
 
-            detection_thr = cent_thr * 2 
-            #detection_thr = 0.5
+            #detection_thr = cent_thr * 2 
+            detection_thr = 0.5
             list_of_idx = []         
             for cent, gt_sz in zip(centroids_gt, centroids_sz):
                 if centroids_pred.shape[0] > 0:
@@ -752,7 +787,8 @@ def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
                 cnt += 1 
             
             if n_valid_box > 0:
-                print("class, n_valid_box, pred_box, true positive pred", c, n_valid_box, centroids_pred.shape[0], np.sum(pred_error[pred_error[:,1]==c,2]))
+                print("==Pos== DATA_IDX: %d, class: %d, n_valid_box: %d, pred_box: %d, TP: %d"%(data_idx, c, n_valid_box, centroids_pred.shape[0], np.sum(pred_error[pred_error[:,1]==c,2])))
+                #print("class, n_valid_box, pred_box, true positive pred", c, n_valid_box, centroids_pred.shape[0], np.sum(pred_error[pred_error[:,1]==c,2]))
         
         np.savetxt(os.path.join("pred_error",str(data_idx) + ".csv"), pred_error, delimiter=",")
         np.savetxt(os.path.join("pred_error","pred_cnt_per_class.csv"), pred_cnt_per_class, delimiter=",")
@@ -783,6 +819,7 @@ def get_box3d_dim_statistics(idx_filename,
     dimension_list = []
     type_list = []
     ry_list = []
+    pts_cnt_in_box = []
     data_idx_list = [int(line.rstrip()) for line in open(idx_filename)]
 
     # Number of objects per class
@@ -798,8 +835,11 @@ def get_box3d_dim_statistics(idx_filename,
                         'back_pack':'back_pack'}
     for data_idx in data_idx_list:
         print('------------- ', data_idx)
+        if data_idx == 2983: continue   #Errorneous data
         calib = dataset.get_calibration(data_idx) # 3 by 4 matrix
         objects = dataset.get_label_objects(data_idx)
+        pc_upright_depth = dataset.get_depth(data_idx)
+        pc_upright_depth_subsampled = pc_util.random_sampling(pc_upright_depth, 50000)
         for obj_idx in range(len(objects)):
             obj = objects[obj_idx]
             obj_stats[obj.classname] += 1
@@ -808,6 +848,18 @@ def get_box3d_dim_statistics(idx_filename,
             dimension_list.append(np.array([obj.l,obj.w,obj.h])) 
             type_list.append(class_type_dict[obj.classname]) 
             ry_list.append(heading_angle)
+
+            try:
+                # Find all points in this object's OBB
+                box3d_pts_3d = sunrgbd_utils.my_compute_box_3d(obj.centroid,
+                    np.array([obj.l,obj.w,obj.h]), obj.heading_angle)
+                pc_in_box3d,inds = sunrgbd_utils.extract_pc_in_box3d(\
+                    pc_upright_depth_subsampled, box3d_pts_3d)
+                pts_cnt_in_box.append(np.sum(inds))
+            except:
+                print("-- ERROR IN POINT COUNT, replacing it to 0 -- ")
+                print(obj.classname)
+                pts_cnt_in_box.append(0)
 
     '''
     import cPickle as pickle
@@ -830,18 +882,27 @@ def get_box3d_dim_statistics(idx_filename,
     for class_type in sorted(set(type_list)):
         cnt = 0
         box3d_list = []
+        pts_cnt_class = []
         for i in range(len(dimension_list)):
             if type_list[i]==class_type:
                 cnt += 1
                 box3d_list.append(dimension_list[i])
+                pts_cnt_class.append(pts_cnt_in_box[i])
         median_box3d = np.median(box3d_list,0)
         mean_box3d = np.mean(box3d_list,0)
+        pts_cnt_class = np.array(pts_cnt_class)
+        mean_pts = np.mean(pts_cnt_class,0)
+        min_pts = np.min(pts_cnt_class[pts_cnt_class>0],0)
+        percent10 = np.percentile(pts_cnt_class, 10)
 
         print("Median size: \'%s\': np.array([%f,%f,%f])," % \
             (class_type, median_box3d[0]*2, median_box3d[1]*2, median_box3d[2]*2))
 
         print("Mean size: \'%s\': np.array([%f,%f,%f])," % \
             (class_type, mean_box3d[0], mean_box3d[1], mean_box3d[2]))
+        print("Mean points count: %f" % (mean_pts))
+        print("Minimum points count: %f" % (min_pts))
+        print("10 percentile points count: %f" % (percent10))
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
@@ -854,10 +915,11 @@ if __name__=='__main__':
     parser.add_argument('--use_gt', action='store_true', help='When pointpainting, use ground truth segmentation.')
     parser.add_argument('--include_person', action='store_true', help='Include person in the detection class list')
     parser.add_argument('--pred_from_seg', action='store_true', help='Get simplified prediction from segmentation results')
+    parser.add_argument('--include_small', action='store_true', help='Include small objects when generating data')
     args = parser.parse_args()
 
     if args.viz:
-        data_viz(os.path.join(BASE_DIR, 'sunrgbd_trainval'))
+        data_viz(os.path.join(DATA_DIR, 'sunrgbd_trainval'))
         exit()
 
     if args.compute_median_size:
@@ -898,25 +960,30 @@ if __name__=='__main__':
         assert args.tfrecord, "Need to set tfrecord flag as True"
         if args.include_person:
             train_data_idx_file = 'train_data_idx_person.txt'
-            val_data_idx_file = 'val_data_idx_person.txt'
+            val_data_idx_file = 'val_data_idx_person.txt'            
             output_folder_train = 'sunrgbd_pc_train_painted_tf_person2'
             output_folder_val = 'sunrgbd_pc_val_painted_tf_person2'
+        
         else:
             train_data_idx_file = 'train_data_idx.txt'
             val_data_idx_file = 'val_data_idx.txt'
             output_folder_train = 'sunrgbd_pc_train_painted_tf4'
             output_folder_val = 'sunrgbd_pc_val_painted_tf4'
 
+        if args.include_small:
+            output_folder_train += '_sm'
+            output_folder_val += '_sm'
+
         extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval', train_data_idx_file),
             split = 'training',
             output_folder = os.path.join(DATA_DIR, output_folder_train),
             num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True, use_gt=args.use_gt,
-            include_person=args.include_person)
+            include_person=args.include_person, include_small = args.include_small)
         extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval', val_data_idx_file),
             split = 'training',
             output_folder = os.path.join(DATA_DIR, output_folder_val),
             num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True, use_gt=args.use_gt,
-            include_person=args.include_person)
+            include_person=args.include_person, include_small = args.include_small)
 
 
     if args.pred_from_seg:

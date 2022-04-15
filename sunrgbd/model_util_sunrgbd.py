@@ -12,7 +12,7 @@ ROOT_DIR = os.path.dirname(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 
 class SunrgbdDatasetConfig(object):
-    def __init__(self, include_person=False):
+    def __init__(self, include_person=False, include_small=False):
         
         self.num_class = 10        
         self.num_heading_bin = 12
@@ -33,6 +33,7 @@ class SunrgbdDatasetConfig(object):
                           'toilet': np.array([0.699104,0.454178,0.756250])}
 
         self.include_person = include_person
+        self.include_small = include_small
         if include_person:
             self.num_class += 1
             self.num_size_cluster += 1
@@ -41,6 +42,25 @@ class SunrgbdDatasetConfig(object):
             self.type2onehotclass['person'] = self.num_class - 1
             self.type_mean_size['person'] = np.array([0.551934,0.630834,1.218182])
 
+        if include_small:
+            self.num_class += 5
+            self.num_size_cluster += 5
+            self.type2class['garbage_bin'] = self.num_class - 5
+            self.type2class['laptop'] = self.num_class - 4
+            self.type2class['cup'] = self.num_class - 3
+            self.type2class['back_pack'] = self.num_class - 2
+            self.type2class['bottle'] = self.num_class - 1
+            self.class2type = {self.type2class[t]:t for t in self.type2class}
+            self.type2onehotclass['garbage_bin'] = self.num_class - 5
+            self.type2onehotclass['laptop'] = self.num_class - 4
+            self.type2onehotclass['cup'] = self.num_class - 3
+            self.type2onehotclass['back_pack'] = self.num_class - 2
+            self.type2onehotclass['bottle'] = self.num_class - 1            
+            self.type_mean_size['back_pack'] = np.array([0.193597,0.200148,0.211292])
+            self.type_mean_size['bottle'] = np.array([0.067828,0.065420,0.131046])
+            self.type_mean_size['cup'] =  np.array([0.065202,0.065145,0.084671])
+            self.type_mean_size['laptop'] = np.array([0.181641,0.205176,0.124686])
+            self.type_mean_size['garbage_bin'] = np.array([0.185903,0.199985,0.289459])
 
         self.mean_size_arr = np.zeros((self.num_size_cluster, 3))
         for i in range(self.num_size_cluster):

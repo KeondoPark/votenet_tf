@@ -248,14 +248,17 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         self.num_class = DC.num_class
 
         if self.use_painted:
-            self.dim_features = 3 + (self.num_class) + 1 # xyz + num_class + 1(background) + 1(isPainted)
+            self.dim_features = 3 + (self.num_class) + 1 + 1 # xyz + num_class + 1(background) + 1(isPainted)
 
         if DC.include_person:
             self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf_person2'%(split_set))
         elif self.use_painted:
-            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf3'%(split_set))
+            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf4'%(split_set))
         else:
             self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_tf'%(split_set))
+
+        if DC.include_small:
+            self.data_path += '_sm'
 
         print(self.data_path)
 
@@ -283,8 +286,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         
         self.type_mean_size_np = np.zeros((DC.num_class, 3))
         for i in range(self.num_class):
-            self.type_mean_size_np[i,:] = DC.type_mean_size[DC.class2type[i]]
-        
+            self.type_mean_size_np[i,:] = DC.type_mean_size[DC.class2type[i]]       
         
         
     def preprocess(self):
@@ -308,7 +310,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
 
     def _parse_function(self, example_proto):
         feature_description = {    
-            'point_cloud': tf.io.FixedLenFeature([N_POINT*self.dim_features], tf.float32),                
+            'point_cloud': tf.io.FixedLenFeature([N_POINT*(self.dim_features)], tf.float32),                
             'bboxes': tf.io.FixedLenFeature([N_BOX*8],tf.float32),
             'point_votes': tf.io.FixedLenFeature([N_POINT*10], tf.float32),    
             'n_valid_box': tf.io.FixedLenFeature([], tf.int64)

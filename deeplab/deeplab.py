@@ -47,7 +47,7 @@ def label_to_color_image(label):
 
   return colormap[label]
 
-def save_semantic_result(img, pred_class):
+def save_semantic_result(img, pred_class, save_name='semantic_result'):
     orig_w, orig_h = img.size
     mask_img = Image.fromarray(label_to_color_image(pred_class).astype(np.uint8))
 
@@ -55,13 +55,15 @@ def save_semantic_result(img, pred_class):
     output_img = Image.new('RGB', (2 * orig_w, orig_h))
     output_img.paste(img, (0, 0))
     output_img.paste(mask_img, (orig_w, 0))
-    output_img.save('semantic_result.jpg')
+    output_img.save('semantic_results/%s.jpg'%(save_name))
 
 
 def run_semantic_segmentation_graph(image, sess, input_size):        
     width, height = image.size
-    resize_ratio = 1.0 * input_size / max(width, height)
+    #resize_ratio = 1.0 * input_size / max(width, height)
+    resize_ratio = min(input_size[0] / width, input_size[1] / height)
     target_size = (int(resize_ratio * width), int(resize_ratio * height))
+    #target_size = input_size
     resized_image = image.convert('RGB').resize(target_size, Image.ANTIALIAS)
     batch_seg_map = sess.run(
         ['SemanticProbabilities:0',
@@ -71,20 +73,30 @@ def run_semantic_segmentation_graph(image, sess, input_size):
     resized_seg_class = batch_seg_map[1][0] # (height * resize_ratio, width * resize_ratio)
 
     # Map segmentation result to original image size
-    x = (np.array(range(height)) * resize_ratio).astype(np.int)
-    y = (np.array(range(width)) * resize_ratio).astype(np.int)
+    x = (np.array(range(height)) * resize_ratio)
+    y = (np.array(range(width)) * resize_ratio)
 
-    xv, yv = np.meshgrid(x, y, indexing='ij') # xv, yv has shape (height, width)
+    x_int0 = x.astype(np.int)
+    y_int0 = y.astype(np.int)
+    '''
+    x_int1 = np.minimum(x_int + 1, height - 1)
+    y_int1 = np.minimum(y_int + 1, width - 1)
 
-    seg_prob = resized_seg_prob[xv, yv]
-    seg_class = resized_seg_class[xv, yv]
+    x_f = x - x_int0
+    y_f = y - y_int0
+    '''
+    xv0, yv0 = np.meshgrid(x_int0, y_int0, indexing='ij') # xv, yv has shape (height, width)
+    #xv1, yv1 = np.meshgrid(x_int1, y_int1, indexing='ij') # xv, yv has shape (height, width)
+
+    seg_prob = resized_seg_prob[xv0, yv0]
+    seg_class = resized_seg_class[xv0, yv0]
 
     return seg_prob, seg_class
 
-def run_semantic_seg(img, save_result=False):
+def run_semantic_seg(img, save_result=False, save_name='semantic_result'):
     INPUT_SIZE = 513
     #with tf.compat.v1.gfile.GFile(os.path.join(BASE_DIR,'saved_model','sunrgbd_ade20k_12.pb'), "rb") as f:
-    with tf.compat.v1.gfile.GFile(os.path.join(BASE_DIR,'saved_model','sunrgbd_COCO_5.pb'), "rb") as f:
+    with tf.compat.v1.gfile.GFile(os.path.join(BASE_DIR,'saved_model','sunrgbd_COCO_14.pb'), "rb") as f:
         graph_def = tf.compat.v1.GraphDef()
         graph_def.ParseFromString(f.read())
     
@@ -97,7 +109,7 @@ def run_semantic_seg(img, save_result=False):
 
     # Save semantic segmentation result as image file(Original vs Semantic result)
     if save_result:
-        save_semantic_result(img, pred_class)
+        save_semantic_result(img, pred_class, save_name)
     
     return pred_prob, pred_class
 
@@ -156,10 +168,10 @@ if __name__ == '__main__':
   elif environ == 'server2':    
       DATA_DIR = '/data'
 
-  data_idx = 319
+  data_idx = 2950
   dataset = sunrgbd_object(os.path.join(DATA_DIR,'sunrgbd_trainval'), 'training', use_v1=True)
   img = dataset.get_image2(data_idx)
-  pred_prob, pred_class = run_semantic_seg(img, save_result=True)  
+  pred_prob, pred_class = run_semantic_seg(img, save_result=True, save_name=str(data_idx))  
   print(np.unique(pred_class))
 
 

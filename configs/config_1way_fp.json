@@ -1,0 +1,11 @@
+{    
+    "model_id": "1way_fp", 
+    "use_painted": true,   
+    "two_way": false,       
+    "use_fp_mlp": true, 
+    "sep_coords": false,
+    "use_tflite": false,
+    "tflite_folder": "tflite/tflite_models/1way_fp",    
+    "use_edgetpu": false,        
+    "use_multiThr": true
+}

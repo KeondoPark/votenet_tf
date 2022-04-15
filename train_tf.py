@@ -131,10 +131,9 @@ if FLAGS.dataset == 'sunrgbd':
     sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
     from sunrgbd_detection_dataset_tf import SunrgbdDetectionVotesDataset_tfrecord, MAX_NUM_OBJ
     from model_util_sunrgbd import SunrgbdDatasetConfig
-    if 'include_person' in model_config and model_config['include_person']:
-        DATASET_CONFIG = SunrgbdDatasetConfig(include_person=True)
-    else:
-        DATASET_CONFIG = SunrgbdDatasetConfig()
+    include_person = 'include_person' in model_config and model_config['include_person']
+    include_small = 'include_small' in model_config and model_config['include_small']
+    DATASET_CONFIG = SunrgbdDatasetConfig(include_person=include_person, include_small=include_small)
     TRAIN_DATASET = SunrgbdDetectionVotesDataset_tfrecord('train', num_points=NUM_POINT,
         augment=True, shuffle=True, batch_size=BATCH_SIZE,
         use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
@@ -154,7 +153,7 @@ num_input_channel = int(FLAGS.use_color)*3 + int(not FLAGS.no_height)*1
 ### Point Paiting : Sementation score is appended at the end of point cloud
 if use_painted:
     # Probabilties that each point belongs to each class + is the point belong to background(Boolean)
-    num_input_channel += DATASET_CONFIG.num_class + 1 #+ 1
+    num_input_channel += DATASET_CONFIG.num_class + 1 + 1
 
 
 
@@ -180,7 +179,7 @@ with mirrored_strategy.scope():
 # Load checkpoint if there is any
 it = -1 # for the initialize value of `LambdaLR` and `BNMomentumScheduler`
 start_epoch = 0
-ckpt = tf.train.Checkpoint(epoch=tf.Variable(1), optimizer=optimizer, net=net)
+ckpt = tf.train.Checkpoint(epoch=tf.Variable(0), optimizer=optimizer, net=net)
 
 if CHECKPOINT_PATH is None:
     print("Use defualt checkpoint path")
@@ -196,7 +195,7 @@ with mirrored_strategy.scope():
     print("Start epoch:", ckpt.epoch)
     if manager.latest_checkpoint:
         print("Restored from {}".format(manager.latest_checkpoint))
-        start_epoch = ckpt.epoch.numpy()-1
+        start_epoch = ckpt.epoch.numpy()
     else:
         print("Initializing from scratch.")
 
@@ -337,7 +336,9 @@ def train(start_epoch):
     def distributed_eval_step(batch_data):
         per_replica_losses, end_points = mirrored_strategy.run(evaluate_one_epoch, args=(batch_data,))
         return mirrored_strategy.reduce(tf.distribute.ReduceOp.MEAN, per_replica_losses, axis=None), end_points
-
+    
+    best_eval_mAP = 0.0
+    
     for epoch in range(start_epoch, MAX_EPOCH):
         EPOCH_CNT = epoch
         log_string('**** EPOCH %03d ****' % (epoch))
@@ -372,15 +373,13 @@ def train(start_epoch):
                 #    stat_dict[key] = 0
         
         t_epoch = time.time() - start
-        log_string("1 Epoch training time:" + str(t_epoch))
-
-        ckpt.epoch.assign_add(1)
+        log_string("1 Epoch training time:" + str(t_epoch))        
         
-        save_path = manager.save()
-        log_string("Saved checkpoint for step {}: {}".format(int(ckpt.epoch), save_path))
+        #save_path = manager.save()
+        #log_string("Saved checkpoint for step {}: {}".format(int(ckpt.epoch), save_path))
         
-        if EPOCH_CNT % 10 == 9: # Eval every 10 epochs        
-            stat_dict = defaultdict(int) # collect statistics            
+        if EPOCH_CNT % 10 == 9 or EPOCH_CNT == 0: # Eval every 10 epochs        
+            stat_dict = defaultdict(float) # collect statistics            
             ap_calculator = APCalculator(ap_iou_thresh=FLAGS.ap_iou_thresh,
                 class2type_map=DATASET_CONFIG.class2type)     
             for batch_idx, batch_data in enumerate(test_ds):                                           
@@ -414,13 +413,17 @@ def train(start_epoch):
             metrics_dict = ap_calculator.compute_metrics()
             for key in metrics_dict:
                 log_string('eval %s: %f'%(key, metrics_dict[key]))
-            save_path = manager.save()
-            log_string("Saved checkpoint for step {}: {}".format(int(ckpt.epoch), save_path))
+
+            eval_mAP = metrics_dict['mAP']
+            if eval_mAP > best_eval_mAP:
+                save_path = manager.save(checkpoint_number=ckpt.epoch)
+                log_string("Saved checkpoint for step {}: {}".format(int(ckpt.epoch), save_path))
+                best_eval_mAP = eval_mAP
 
             #mean_loss = stat_dict['loss']/float(batch_idx+1)            
                
             #print("loss {:1.2f}".format(loss.numpy()))
-        
+        ckpt.epoch.assign_add(1)
 
 if __name__=='__main__':   
 
