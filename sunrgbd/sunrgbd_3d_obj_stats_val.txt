@@ -1,10 +1,10 @@
 chair 10182
 table 2445
 desk 2033
-pillow 873
+pillow 872
 sofa_chair 722
-box 715
-sofa 639
+box 714
+sofa 638
 monitor 587
 garbage_bin 572
 bed 543
@@ -12,7 +12,7 @@ shelf 509
 cabinet 420
 sink 362
 lamp 333
-endtable 302
+endtable 301
 bookshelf 299
 kitchen_counter 269
 night_stand 254
@@ -36,7 +36,7 @@ paper 137
 printer 127
 cpu 127
 bottle 122
-tv 118
+tv 117
 computer 108
 bench 106
 stool 104
@@ -235,7 +235,6 @@ bookstand 6
 player 6
 papertowel 6
 stroller 6
-pen 6
 unknown 6
 pad 6
 tank 6
@@ -261,6 +260,7 @@ choppingboard 5
 paperbag 5
 mattress 5
 bathmat 5
+pen 5
 radio 5
 lego 5
 microscope 5
