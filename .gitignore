@@ -9,3 +9,6 @@ logs/
 configs/environ*
 sunrgbd/pred_error
 sunrgbd/pred_error.csv
+scannet/scans
+scannet/scannet_train_detection_data
+

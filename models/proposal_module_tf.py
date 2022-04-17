@@ -42,7 +42,8 @@ def decode_scores(net, end_points, num_class, num_heading_bin, num_size_cluster,
 
     heading_residuals_normalized = net[:,:,2 + NH + NC:2 + NH + NC + NH]
     pi = tf.constant(3.14159265359, dtype=tf.float32)
-    end_points['heading_scores'] = heading_scores # B x num_proposal x num_heading_bin
+    end_points['heading_scores'] = heading_scores # B x num_proposal x num_heading_bin    
+
     end_points['heading_residuals_normalized'] = heading_residuals_normalized # Bxnum_proposalxnum_heading_bin (should be -1 to 1)
     end_points['heading_residuals'] = heading_residuals_normalized * (pi/tf.cast(NH,tf.float32)) # B x num_proposal x num_heading_bin
 

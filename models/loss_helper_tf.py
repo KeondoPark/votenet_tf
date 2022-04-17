@@ -239,7 +239,7 @@ def compute_box_and_sem_cls_loss(end_points, config):
     # Compute heading loss
     # Change object_assignment to be compatible with tf.gather_nd
     K = tf.shape(object_assignment)[1]    
-    heading_class_label = tf.gather(end_points['heading_class_label'], axis=1, indices=object_assignment, batch_dims=1) #(B, K2) -> (B, K)
+    heading_class_label = tf.gather(end_points['heading_class_label'], axis=1, indices=object_assignment, batch_dims=1) #(B, K2) -> (B, K)    
     """
     object_assignment_exp = tf.expand_dims(object_assignment, axis = -1) #(B,K,1)
     row_id = tf.expand_dims(tf.expand_dims(np.array(list(range(batch_size))), axis=-1), axis=-1) #(B,1,1)
@@ -248,9 +248,12 @@ def compute_box_and_sem_cls_loss(end_points, config):
     heading_class_label = tf.gather_nd(end_points['heading_class_label'], ind_tf)
     #heading_class_label = torch.gather(end_points['heading_class_label'], 1, object_assignment) # select (B,K) from (B,K2)
     """
-    criterion_heading_class = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE) #SparseCategoricalCrossentropy is used because heading_class_label is NOT one-hot    
-    heading_class_loss = criterion_heading_class(heading_class_label, end_points['heading_scores']) # (B,K)    
-    heading_class_loss = tf.reduce_sum(heading_class_loss * objectness_label) / (tf.reduce_sum(objectness_label)+1e-6)
+    if end_points['heading_scores'].shape[-1] == 1:
+        heading_class_loss = 0
+    else:
+        criterion_heading_class = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE) #SparseCategoricalCrossentropy is used because heading_class_label is NOT one-hot    
+        heading_class_loss = criterion_heading_class(heading_class_label, end_points['heading_scores']) # (B,K)    
+        heading_class_loss = tf.reduce_sum(heading_class_loss * objectness_label) / (tf.reduce_sum(objectness_label)+1e-6)
 
     #heading_residual_label = tf.gather_nd(end_points['heading_residual_label'], ind_tf) # select (B,K) from (B,K2)    
     heading_residual_label = tf.gather(end_points['heading_residual_label'], axis=1, indices=object_assignment, batch_dims=1)
@@ -464,3 +467,4 @@ def get_loss(end_points, config):
     
     #print("loss:", loss)
     return loss, end_points
+
