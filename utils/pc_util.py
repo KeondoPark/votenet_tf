@@ -34,9 +34,8 @@ import matplotlib.pyplot as pyplot
 
 def random_sampling(pc, num_sample, replace=None, return_choices=False):
     """ Input is NxC, output is num_samplexC
-    """
+    """    
     if replace is None: replace = (pc.shape[0]<num_sample)
-    np.random.seed(0)   
     choices = np.random.choice(pc.shape[0], num_sample, replace=replace)
     if return_choices:
         return pc[choices], choices

@@ -106,8 +106,9 @@ class VoteNet(tf.keras.Model):
         
         
         xyz, features = self.vgen(end_points['seed_xyz'], end_points['seed_features'])        
-        features_norm = tf.norm(features, ord=2, axis=1)
-        features = tf.divide(features, tf.expand_dims(features_norm, axis=1))        
+        #features: (B, num_vote, out_dim)
+        features_norm = tf.norm(features, ord=2, axis=2)
+        features = tf.divide(features, tf.expand_dims(features_norm, axis=2))        
         end_points['vote_xyz'] = xyz
         end_points['vote_features'] = features        
                 

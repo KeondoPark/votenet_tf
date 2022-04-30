@@ -249,7 +249,7 @@ def compute_box_and_sem_cls_loss(end_points, config):
     #heading_class_label = torch.gather(end_points['heading_class_label'], 1, object_assignment) # select (B,K) from (B,K2)
     """
     if end_points['heading_scores'].shape[-1] == 1:
-        heading_class_loss = 0
+        heading_class_loss = 0        
     else:
         criterion_heading_class = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE) #SparseCategoricalCrossentropy is used because heading_class_label is NOT one-hot    
         heading_class_loss = criterion_heading_class(heading_class_label, end_points['heading_scores']) # (B,K)    
@@ -442,14 +442,14 @@ def get_loss(end_points, config):
     box_loss = center_loss + 0.1*heading_cls_loss + heading_reg_loss + 0.1*size_cls_loss + size_reg_loss
     end_points['box_loss'] = box_loss
     
-    #print("vote_loss", vote_loss)
-    #print("objectness_loss", objectness_loss)
-    #print("center_loss", center_loss)
-    #print("heading_cls_loss", heading_cls_loss)
-    #print("heading_reg_loss", heading_reg_loss)
-    #print("size_cls_loss", size_cls_loss)
-    #print("size_reg_loss", size_reg_loss)
-    #print("sem_cls_loss", sem_cls_loss)
+    # print("vote_loss", vote_loss)
+    # print("objectness_loss", objectness_loss)
+    # print("center_loss", center_loss)
+    # print("heading_cls_loss", heading_cls_loss)
+    # print("heading_reg_loss", heading_reg_loss)
+    # print("size_cls_loss", size_cls_loss)
+    # print("size_reg_loss", size_reg_loss)
+    # print("sem_cls_loss", sem_cls_loss)
 
     # Final loss function
     loss = vote_loss + 0.5*objectness_loss + box_loss + 0.1*sem_cls_loss

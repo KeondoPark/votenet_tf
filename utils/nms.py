@@ -112,7 +112,7 @@ def nms_3d_faster(boxes, overlap_threshold, old_type=False):
 
     return pick
 
-'''
+
 def nms_3d_faster_samecls(boxes, overlap_threshold, old_type=False):
     x1 = boxes[:,0]
     y1 = boxes[:,1]
@@ -154,8 +154,8 @@ def nms_3d_faster_samecls(boxes, overlap_threshold, old_type=False):
         I = np.delete(I, np.concatenate(([last-1], np.where(o>overlap_threshold)[0])))
 
     return pick
-'''
 
+'''
 def nms_3d_faster_samecls(boxes, overlap_threshold, conf_thr, old_type=False):
     x1 = boxes[:,0]
     y1 = boxes[:,1]
@@ -204,7 +204,7 @@ def nms_3d_faster_samecls(boxes, overlap_threshold, conf_thr, old_type=False):
         I = np.delete(I, np.concatenate(([last-1], np.where(o>overlap_threshold)[0])))
     
     return pick
-
+'''
 
 def nms_crnr_dist(boxes, conf, overlap_threshold):
         

@@ -78,7 +78,7 @@ class ScannetDetectionDataset(Dataset):
         mesh_vertices = np.load(os.path.join(self.data_path, scan_name)+'_vert.npy')
         instance_labels = np.load(os.path.join(self.data_path, scan_name)+'_ins_label.npy')
         semantic_labels = np.load(os.path.join(self.data_path, scan_name)+'_sem_label.npy')
-        instance_bboxes = np.load(os.path.join(self.data_path, scan_name)+'_bbox.npy')
+        instance_bboxes = np.load(os.path.join(self.data_path, scan_name)+'_bbox.npy')        
 
         if not self.use_color:
             point_cloud = mesh_vertices[:,0:3] # do not use color for now

@@ -153,20 +153,20 @@ class ProposalModule(layers.Layer):
             # Objectness scores (2), center residual (3),
             # heading class+residual (num_heading_bin*2), size class+residual(num_size_cluster*4)            
             #### Changed to Conv2D to be compatible with EdgeTPU compiler
-            self.conv1 = layers.Conv2D(filters=128, kernel_size=1)
-            self.conv2 = layers.Conv2D(filters=128, kernel_size=1)
+            self.conv1 = layers.Conv2D(filters=128, kernel_size=1) #, kernel_initializer=tf.keras.initializers.Ones(), bias_initializer=tf.keras.initializers.Zeros())
+            self.conv2 = layers.Conv2D(filters=128, kernel_size=1) #, kernel_initializer=tf.keras.initializers.Ones(), bias_initializer=tf.keras.initializers.Zeros())
             #self.conv1 = layers.Dense(128)
             #self.conv2 = layers.Dense(128)
             
             # 2: objectness_scores, 3: offset(From vote to center), score/residuals for num_heading_bin(12),
             # score/(H,W,C) for size, Class score            
-            self.conv3 = layers.Conv2D(filters=2+3+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
+            self.conv3 = layers.Conv2D(filters=2+3+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1) #, kernel_initializer=tf.keras.initializers.Ones(), bias_initializer=tf.keras.initializers.Zeros())
             #self.conv3 = layers.Dense(2+3+num_heading_bin*2+num_size_cluster*4+self.num_class)
             
-            self.bn1 = layers.BatchNormalization(axis=-1, momentum=0.9)
-            self.bn2 = layers.BatchNormalization(axis=-1, momentum=0.9)
-            self.relu1 = layers.ReLU(6)
-            self.relu2 = layers.ReLU(6)
+            self.bn1 = layers.BatchNormalization(axis=-1)
+            self.bn2 = layers.BatchNormalization(axis=-1)
+            self.relu1 = layers.ReLU()
+            self.relu2 = layers.ReLU()
 
     def call(self, xyz, features, end_points):
         """
@@ -266,6 +266,17 @@ class ProposalModule(layers.Layer):
         end_points['center'] = center # (batch_size, num_proposal, 3)
 
         end_points = decode_scores(net, end_points, self.num_class, self.num_heading_bin, self.num_size_cluster, self.mean_size_arr, self.num_proposal)        
+
+
+        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_proposal_xyz.txt'), xyz[0].numpy())
+        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_proposal_inds.txt'), sample_inds.numpy())
+        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_proposal_center.txt'), end_points['center'][0].numpy())
+        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_proposal_obj_scores.txt'), end_points['objectness_scores'][0].numpy())
+        # np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_proposal_head_scores.txt'), end_points['heading_scores'][0].numpy())
+        # np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_proposal_head_res.txt'), end_points['heading_residuals'][0].numpy())
+        # np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_proposal_size_scores.txt'), end_points['size_scores'][0].numpy())
+        # np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_proposal_size_res.txt'), end_points['size_residuals'][0,0].numpy())
+        # np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_proposal_cls_scores.txt'), end_points['sem_cls_scores'][0].numpy())
 
         return end_points
 
