@@ -137,6 +137,8 @@ class ScannetDetectionDataset(Dataset):
             color_files = os.listdir(os.path.join(exported_scan_dir, 'color'))    
             frame_nums = [int(f[:-4]) for f in color_files]
 
+            frame_nums.sort()    
+
             point_cloud_recon = np.zeros((point_cloud.shape[0], 3 + 1 + DC.num_class + 1))
             point_cloud_recon[:,:3] = point_cloud[:,:3]
 
