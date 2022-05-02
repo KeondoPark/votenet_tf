@@ -12,7 +12,7 @@ import os
 import sys
 import datetime
 import numpy as np
-from load_scannet_data import export, export_with_2dseg
+from load_scannet_data import export, export_with_2dseg, export_2dseg_results
 import pdb
 
 SCANNET_DIR = 'scans'
@@ -22,8 +22,9 @@ LABEL_MAP_FILE = 'meta_data/scannetv2-labels.combined.tsv'
 DONOTCARE_CLASS_IDS = np.array([])
 OBJ_CLASS_IDS = np.array([3,4,5,6,7,8,9,10,11,12,14,16,24,28,33,34,36,39])
 MAX_NUM_POINT = 50000
-#OUTPUT_FOLDER = './scannet_train_detection_data'
-OUTPUT_FOLDER = './scannet_train_detection_data_painted'
+OUTPUT_FOLDER = './scannet_train_detection_data'
+#OUTPUT_FOLDER = './scannet_train_detection_data_painted'
+OUTPUT_2DSEG_FOLDER = './semantic_2d_results'
 
 def export_one_scan(scan_name, output_filename_prefix):    
     mesh_file = os.path.join(SCANNET_DIR, scan_name, scan_name + '_vh_clean_2.ply')
@@ -99,6 +100,8 @@ def batch_export():
     if not os.path.exists(OUTPUT_FOLDER):
         print('Creating new data folder: {}'.format(OUTPUT_FOLDER))                
         os.mkdir(OUTPUT_FOLDER)        
+
+    exported_scan_dir = os.path.join(EXPORTED_2D_DIR, scan_name)
         
     for scan_name in TRAIN_SCAN_NAMES:
         print('-'*20+'begin')
@@ -109,12 +112,32 @@ def batch_export():
             print('File already exists. skipping.')
             print('-'*20+'done')
             continue
-        #try:            
-        export_one_scan_with_2dseg(scan_name, output_filename_prefix)
-        #except:
-        #print('Failed export scan: %s'%(scan_name))                    
+        try:            
+            export_one_scan(scan_name, output_filename_prefix)
+        except:
+            print('Failed export scan: %s'%(scan_name))                    
         print('-'*20+'done')
 
+def save_2dsemantic_results():
+    if not os.path.exists(OUTPUT_2DSEG_FOLDER):
+        print('Creating new data folder: {}'.format(OUTPUT_2DSEG_FOLDER))                
+        os.mkdir(OUTPUT_2DSEG_FOLDER)        
+        
+    for scan_name in TRAIN_SCAN_NAMES:
+        print('-'*20+'begin')
+        print(datetime.datetime.now())
+        print(scan_name)
+        os.makedirs(os.path.join(OUTPUT_2DSEG_FOLDER, scan_name), exist_ok=True)
+        output_filename_prefix = os.path.join(OUTPUT_2DSEG_FOLDER, scan_name) 
+        exported_scan_dir = os.path.join(EXPORTED_2D_DIR, scan_name)
+        
+        try:            
+            export_2dseg_results(exported_scan_dir, output_filename_prefix)
+        except:
+            print('Failed export scan: %s'%(scan_name))                    
+        print('-'*20+'done')        
+
 if __name__=='__main__':    
-    batch_export()
+    #batch_export()
+    save_2dsemantic_results()
 

@@ -24,11 +24,31 @@ DC = ScannetDatasetConfig()
 MAX_NUM_OBJ = 64
 MEAN_COLOR_RGB = np.array([109.8, 97.2, 83.8])
 
+SCANNET_DIR =os.path.join(BASE_DIR,'scans')
+
+def read_matrix(filepath):
+    out_matrix = np.zeros((4,4))
+
+    with open(filepath, 'r') as f:
+        lines = f.readlines()
+        i = 0
+        for line in lines:
+            values = line.strip().split(' ')
+            for j in range(4):
+                out_matrix[i,j] = values[j]
+            i += 1
+    return out_matrix
+
 class ScannetDetectionDataset(Dataset):
        
     def __init__(self, split_set='train', num_points=20000,
-        use_color=False, use_height=False, augment=False):
+        use_color=False, use_height=False, augment=False,
+        use_painted=False):
 
+        self.use_painted = use_painted
+        #if self.use_painted:
+        #    self.data_path = os.path.join(BASE_DIR, 'scannet_train_detection_data_painted')
+        #else:
         self.data_path = os.path.join(BASE_DIR, 'scannet_train_detection_data')
         all_scan_names = list(set([os.path.basename(x)[0:12] \
             for x in os.listdir(self.data_path) if x.startswith('scene')]))
@@ -81,16 +101,109 @@ class ScannetDetectionDataset(Dataset):
         instance_bboxes = np.load(os.path.join(self.data_path, scan_name)+'_bbox.npy')        
 
         if not self.use_color:
-            point_cloud = mesh_vertices[:,0:3] # do not use color for now
-            pcl_color = mesh_vertices[:,3:6]
+            point_cloud = mesh_vertices  #[:,0:3] # do not use color for now
+            #pcl_color = mesh_vertices[:,3:6]
         else:
             point_cloud = mesh_vertices[:,0:6] 
             point_cloud[:,3:] = (point_cloud[:,3:]-MEAN_COLOR_RGB)/256.0
+
+        # ------------------------------- POINT PAINTING ------------------------------        
+        # Load scene axis alignment matrix
+
+        if self.use_painted:
+            meta_file = os.path.join(SCANNET_DIR, scan_name, scan_name + '.txt') # includes axisAlignment info for the train set scans. 
+            lines = open(meta_file).readlines()
+            for line in lines:
+                if 'axisAlignment' in line:
+                    axis_align_matrix = [float(x) \
+                        for x in line.rstrip().strip('axisAlignment = ').split(' ')]
+                if 'colorWidth' in line:
+                    colorW = int(line.strip('colorWidth = ').split(' ')[0])
+                if 'colorHeight' in line:
+                    colorH = int(line.strip('colorHeight = ').split(' ')[0])
+
+            axis_align_matrix = np.array(axis_align_matrix).reshape((4,4))
+            
+
+            alinged_verts = np.ones((point_cloud.shape[0],4))
+            alinged_verts[:,:3] = point_cloud[:,:3]
+            
+            unalign_verts = np.dot(alinged_verts, np.linalg.inv(axis_align_matrix.transpose()))
+
+            exported_scan_dir = os.path.join(BASE_DIR, 'frames_square', scan_name)
+            color_intrinsic_file = os.path.join(exported_scan_dir, 'intrinsic', 'intrinsic_color.txt')   
+            color_intrinsic = read_matrix(color_intrinsic_file)
+
+            color_files = os.listdir(os.path.join(exported_scan_dir, 'color'))    
+            frame_nums = [int(f[:-4]) for f in color_files]
+
+            point_cloud_recon = np.zeros((point_cloud.shape[0], 3 + 1 + DC.num_class + 1))
+            point_cloud_recon[:,:3] = point_cloud[:,:3]
+
+            num_img = 5
+            sliced = len(frame_nums) // num_img
+            frames_selected = []
+            for i in range(num_img):
+               if i == num_img - 1:
+                   frames_selected.append(np.random.choice(frame_nums[sliced*i:], 1, replace=False)[0])
+               else:
+                   frames_selected.append(np.random.choice(frame_nums[sliced*i:sliced*(i+1)], 1, replace=False)[0])
+
+            for frame in frames_selected:
+                pose_file = os.path.join(exported_scan_dir, 'pose', str(frame) + '.txt')
+
+                # read pose matrix(Rotation and translation)
+                pose_matrix = read_matrix(pose_file)   
+
+                sampled_h = np.ones((len(unalign_verts), 4))
+                sampled_h[:,:3] = unalign_verts[:,:3]
+
+                camera_coord = np.matmul(np.linalg.inv(pose_matrix), np.transpose(sampled_h))
+                camera_proj = np.matmul(color_intrinsic, camera_coord)
+
+                # Get valid points for the image
+                x = camera_proj[0,:]
+                y = camera_proj[1,:]
+                z = camera_proj[2,:]
+                filter_idx = np.where((x/z >= 0) & (x/z < colorW) & (y/z >= 0) & (y/z < colorH) & (z > 0))[0]
+
+                # Normalize by 4th coords(Homogeneous -> 3 coords system)
+                camera_proj_normalized = camera_proj / camera_proj[2,:]
+
+                #Get 3d -> 2d mapping
+                projected = camera_proj_normalized[:2, filter_idx]
+
+                #Reduce to 320,240 size
+                camera_proj_sm = np.zeros((5, projected.shape[-1]))
+
+                camera_proj_sm[0,:] = projected[0,:] * 320/colorW
+                camera_proj_sm[1,:] = projected[1,:] * 240/colorH
+
+                # Get pixel index
+                x = camera_proj_sm[0,:].astype(np.uint8)
+                y = camera_proj_sm[1,:].astype(np.uint8)
+
+                pred_class = np.load(os.path.join(BASE_DIR, 'semantic_2d_results', scan_name, 'class_' + str(frame) + '.npy'))
+                pred_prob = np.load(os.path.join(BASE_DIR, 'semantic_2d_results', scan_name, 'prob_' + str(frame) + '.npy'))
+
+                pred_prob = pred_prob[y, x]
+                projected_class = pred_class[y, x]    
+
+                isPainted = np.where((projected_class > 0) & (projected_class < DC.num_class+1), 1, 0) # Point belongs to foreground?        
+                
+                point_cloud_recon[filter_idx, 3] = isPainted
+                point_cloud_recon[filter_idx, 4:] = pred_prob
+
+            point_cloud = point_cloud_recon
+
+        # ------------------------------- USE HEIGHT ------------------------------        
         
         if self.use_height:
             floor_height = np.percentile(point_cloud[:,2],0.99)
             height = point_cloud[:,2] - floor_height
-            point_cloud = np.concatenate([point_cloud, np.expand_dims(height, 1)],1) 
+            point_cloud = np.concatenate([point_cloud, np.expand_dims(height, 1)],1)
+
+        
             
         # ------------------------------- LABELS ------------------------------        
         target_bboxes = np.zeros((MAX_NUM_OBJ, 6))
@@ -105,7 +218,7 @@ class ScannetDetectionDataset(Dataset):
         instance_labels = instance_labels[choices]
         semantic_labels = semantic_labels[choices]
         
-        pcl_color = pcl_color[choices]
+        #pcl_color = pcl_color[choices]
         
         target_bboxes_mask[0:instance_bboxes.shape[0]] = 1
         target_bboxes[0:instance_bboxes.shape[0],:] = instance_bboxes[:,0:6]
@@ -168,7 +281,7 @@ class ScannetDetectionDataset(Dataset):
         ret_dict['vote_label'] = point_votes.astype(np.float32)
         ret_dict['vote_label_mask'] = point_votes_mask.astype(np.int64)
         ret_dict['scan_idx'] = np.array(idx).astype(np.int64)
-        ret_dict['pcl_color'] = pcl_color
+        #ret_dict['pcl_color'] = pcl_color
         return ret_dict
         
 ############# Visualizaion ########

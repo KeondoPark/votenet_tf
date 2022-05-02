@@ -149,6 +149,36 @@ def read_matrix(filepath):
             i += 1
     return out_matrix
 
+def export_2dseg_results(exported_scan_dir=None, output_dir=None):
+    ## Preparation for pointpainting    
+    n_classes = 18
+
+    # deeplabv3+ tf session
+    INPUT_SIZE = (321, 321)    
+    with tf.compat.v1.gfile.GFile('../deeplab/saved_model/scannet_2.pb', "rb") as f:
+        graph_def = tf.compat.v1.GraphDef()
+        graph_def.ParseFromString(f.read())
+    
+    myGraph = tf.compat.v1.Graph()
+    with myGraph.as_default():
+        tf.compat.v1.import_graph_def(graph_def, name='')
+
+    sess = tf.compat.v1.Session(graph=myGraph)
+
+    color_files = os.listdir(os.path.join(exported_scan_dir, 'color'))   
+    frame_nums = [int(f[:-4]) for f in color_files]
+
+    for frame in frame_nums:
+        # Get sementationr esult
+        img_file = os.path.join(exported_scan_dir, 'color', str(frame) + '.jpg')
+        img = Image.open(img_file)
+        pred_prob, pred_class = run_semantic_segmentation_graph(img, sess, INPUT_SIZE)
+        pred_prob = pred_prob[:,:,:(n_classes+1)] # 0 is background class
+        np.save(os.path.join(output_dir, 'prob_' + str(frame) + '.npy'), pred_prob)
+        np.save(os.path.join(output_dir, 'class_' + str(frame) + '.npy'), pred_class)
+
+
+
 def export_with_2dseg(mesh_file, agg_file, seg_file, meta_file, label_map_file, output_file=None, exported_scan_dir=None):
     """ points are XYZ RGB (RGB in 0-255),
     semantic label as nyu40 ids,
@@ -195,27 +225,27 @@ def export_with_2dseg(mesh_file, agg_file, seg_file, meta_file, label_map_file, 
     color_intrinsic = read_matrix(color_intrinsic_file)
 
 
-    pose_files = os.listdir(os.path.join(exported_scan_dir, 'pose'))
-    img_files = os.listdir(os.path.join(exported_scan_dir, 'color'))
+    color_files = os.listdir(os.path.join(exported_scan_dir, 'color'))    
 
-    frame_nums = [int(f[:-4]) for f in pose_files]
+    frame_nums = [int(f[:-4]) for f in color_files]
     
-    frames_selected = []
+    #frames_selected = []
 
-    num_img = 1
-    sliced = len(frame_nums) // num_img
-    for i in range(num_img):
-        if i == num_img - 1:
-            frames_selected = np.random.choice(frame_nums[sliced*i:], 1, replace=False)
-        else:
-            frames_selected = np.random.choice(frame_nums[sliced*i:sliced*(i+1)], 1, replace=False)
+    #num_img = 5
+    #sliced = len(frame_nums) // num_img
+    #for i in range(num_img):
+    #    if i == num_img - 1:
+    #        frames_selected.append(np.random.choice(frame_nums[sliced*i:], 1, replace=False)[0])
+    #    else:
+    #        frames_selected.append(np.random.choice(frame_nums[sliced*i:sliced*(i+1)], 1, replace=False)[0])
+    #frames_selected.append(0)
 
-    vertices_recon = np.zeros((len(mesh_vertices), 3 + (1 + 1 + n_classes))) # number of class + background class + isPainted 
-    vertices_recon[:,:3] = mesh_vertices[:,:3]
+    #vertices_recon = np.zeros((len(mesh_vertices), 3 + (1 + 1 + n_classes))) # number of class + background class + isPainted 
+    #vertices_recon[:,:3] = mesh_vertices[:,:3]
 
-    for frame in frames_selected:
-        pose_file = os.path.join(exported_scan_dir, 'pose', str(frame) + '.txt')
-        img_file = os.path.join(exported_scan_dir, 'color', str(frame) + '.jpg')
+    for frame in frame_nums:
+        '''
+        pose_file = os.path.join(exported_scan_dir, 'pose', str(frame) + '.txt')        
         
         # read pose matrix(Rotation and translation)
         pose_matrix = read_matrix(pose_file)   
@@ -247,22 +277,24 @@ def export_with_2dseg(mesh_file, agg_file, seg_file, meta_file, label_map_file, 
         # Get pixel index
         x = camera_proj_sm[0,:].astype(np.uint8)
         y = camera_proj_sm[1,:].astype(np.uint8)
- 
+        ''' 
+        
         # Get sementationr esult
+        img_file = os.path.join(exported_scan_dir, 'color', str(frame) + '.jpg')
         img = Image.open(img_file)
         pred_prob, pred_class = run_semantic_segmentation_graph(img, sess, INPUT_SIZE)
         pred_prob = pred_prob[:,:,:(n_classes+1)] # 0 is background class
-
-        pred_prob = pred_prob[y, x]
-        projected_class = pred_class[y, x]    
-
-        isPainted = np.where((projected_class > 0) & (projected_class < n_classes+1), 1, 0) # Point belongs to foreground?                    
-        #isPainted = np.expand_dims(isPainted, axis=-1)
         
-        vertices_recon[filter_idx, 3] = isPainted
-        vertices_recon[filter_idx, 4:] = pred_prob
 
-    '''
+        #pred_prob = pred_prob[y, x]
+        #projected_class = pred_class[y, x]    
+
+        #isPainted = np.where((projected_class > 0) & (projected_class < n_classes+1), 1, 0) # Point belongs to foreground?        
+        
+        #vertices_recon[filter_idx, 3] = isPainted
+        #vertices_recon[filter_idx, 4:] = pred_prob
+
+    
     pts = np.ones((mesh_vertices.shape[0], 4))
     pts[:,0:3] = mesh_vertices[:,0:3]
     pts = np.dot(pts, axis_align_matrix.transpose()) # Nx4
@@ -273,6 +305,7 @@ def export_with_2dseg(mesh_file, agg_file, seg_file, meta_file, label_map_file, 
     pts[:,0:3] = vertices_recon[:,0:3]
     pts = np.dot(pts, axis_align_matrix.transpose()) # Nx4
     vertices_recon[:,0:3] = pts[:,0:3]
+    '''
  
 
     # Load semantic and instance labels
@@ -296,7 +329,7 @@ def export_with_2dseg(mesh_file, agg_file, seg_file, meta_file, label_map_file, 
     instance_bboxes = np.zeros((num_instances,7))
     for obj_id in object_id_to_segs:
         label_id = object_id_to_label_id[obj_id]
-        obj_pc = vertices_recon[instance_ids==obj_id, 0:3]
+        obj_pc = mesh_vertices[instance_ids==obj_id, 0:3]
         if len(obj_pc) == 0: continue
         # Compute axis aligned box
         # An axis aligned bounding box is parameterized by
@@ -315,12 +348,12 @@ def export_with_2dseg(mesh_file, agg_file, seg_file, meta_file, label_map_file, 
         instance_bboxes[obj_id-1,:] = bbox 
 
     if output_file is not None:
-        np.save(output_file+'_vert_painted.npy', vertices_recon)
+        np.save(output_file+'_vert.npy', mesh_vertices)
         np.save(output_file+'_sem_label.npy', label_ids)
         np.save(output_file+'_ins_label.npy', instance_ids)
         np.save(output_file+'_bbox.npy', instance_bboxes)
 
-    return vertices_recon, label_ids, instance_ids,\
+    return mesh_vertices, label_ids, instance_ids,\
         instance_bboxes, object_id_to_label_id
 
 def main():

@@ -156,10 +156,12 @@ elif DATASET == 'scannet':
     NUM_POINT = 40000
     TRAIN_DATASET = ScannetDetectionDataset('train', num_points=NUM_POINT,
         augment=True,
-        use_color=FLAGS.use_color, use_height=(not FLAGS.no_height))
+        use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
+        use_painted=use_painted)
     TEST_DATASET = ScannetDetectionDataset('val', num_points=NUM_POINT,
         augment=False,
-        use_color=FLAGS.use_color, use_height=(not FLAGS.no_height))
+        use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
+        use_painted=use_painted)
 
     # Init datasets and dataloaders 
     def my_worker_init_fn(worker_id):
