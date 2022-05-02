@@ -156,19 +156,21 @@ elif DATASET == 'scannet':
     NUM_POINT = 40000
     TRAIN_DATASET = ScannetDetectionDataset('train', num_points=NUM_POINT,
         augment=True,
-        use_color=FLAGS.use_color, use_height=(not FLAGS.no_height))
+        use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
+        use_painted=use_painted)
     TEST_DATASET = ScannetDetectionDataset('val', num_points=NUM_POINT,
         augment=False,
-        use_color=FLAGS.use_color, use_height=(not FLAGS.no_height))
+        use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
+        use_painted=use_painted)
 
     # Init datasets and dataloaders 
     def my_worker_init_fn(worker_id):
         np.random.seed(np.random.get_state()[1][0] + worker_id)
 
     train_ds = DataLoader(TRAIN_DATASET, batch_size=BATCH_SIZE,
-        shuffle=True, num_workers=4, worker_init_fn=my_worker_init_fn)
+        shuffle=True, num_workers=4, worker_init_fn=my_worker_init_fn, drop_last=True)
     test_ds =DataLoader(TEST_DATASET, batch_size=BATCH_SIZE,
-        shuffle=False, num_workers=4, worker_init_fn=my_worker_init_fn)
+        shuffle=True, num_workers=4, worker_init_fn=my_worker_init_fn)
 else:
     print('Unknown dataset %s. Exiting...'%(FLAGS.dataset))
     exit(-1)
@@ -294,7 +296,7 @@ def train_one_epoch(batch_data):
 
     optimizer.apply_gradients(zip(grads, net.trainable_weights))
 
-    return loss   #end_points['loss']
+    return loss
 
 
 def evaluate_one_epoch(batch_data):     
@@ -364,7 +366,8 @@ def train(start_epoch):
         t_epoch = 0
         start = time.time()
         
-        for batch_idx, batch_data in enumerate(train_ds): 
+        for batch_idx, batch_data in enumerate(train_ds):   
+               
             if DATASET == 'scannet':                
                 point_clouds = tf.convert_to_tensor(batch_data['point_clouds'], dtype=tf.float32)
                 center_label = tf.convert_to_tensor(batch_data['center_label'], dtype=tf.float32)
@@ -381,7 +384,8 @@ def train(start_epoch):
                     size_residual_label, sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes                
 
             train_loss += distributed_train_step(batch_data)
-            #train_loss += train_one_epoch(batch_data)
+            #train_loss += train_one_epoch(batch_data)            
+            
             # Accumulate statistics and print out
             #for key in end_points:
             #    if 'loss' in key or 'acc' in key or 'ratio' in key:
@@ -401,7 +405,7 @@ def train(start_epoch):
         t_epoch = time.time() - start
         log_string("1 Epoch training time:" + str(t_epoch))        
                
-        if EPOCH_CNT % 10 == 9 or EPOCH_CNT == 0: # Eval every 10 epochs        
+        if EPOCH_CNT % 10 == 9 or EPOCH_CNT == 0: # Eval every 10 epochs                                
             stat_dict = defaultdict(float) # collect statistics            
             ap_calculator = APCalculator(ap_iou_thresh=FLAGS.ap_iou_thresh,
                 class2type_map=DATASET_CONFIG.class2type)     
@@ -428,6 +432,7 @@ def train(start_epoch):
                 eval_loss += curr_loss
 
                 stat_dict['box_loss'] += end_points['box_loss']
+                stat_dict['heading_reg_loss'] += end_points['heading_reg_loss']
                 stat_dict['vote_loss'] += end_points['vote_loss']
                 stat_dict['objectness_loss'] += end_points['objectness_loss']
                 stat_dict['sem_cls_loss'] += end_points['sem_cls_loss']
@@ -452,6 +457,7 @@ def train(start_epoch):
             for key in metrics_dict:
                 log_string('eval %s: %f'%(key, metrics_dict[key]))
 
+            
             eval_mAP = metrics_dict['mAP']
             if eval_mAP > best_eval_mAP:
                 save_path = manager.save(checkpoint_number=ckpt.epoch)

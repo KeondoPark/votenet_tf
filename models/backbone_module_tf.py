@@ -92,9 +92,6 @@ class Pointnet2Backbone(layers.Layer):
             self.fp2 = PointnetFPModule(mlp=None, m=1024, model_config=model_config)
 
     def _break_up_pc(self, pc):
-        #xyz = pc[..., 0:3]
-        #features = pc[..., 3:] if pc.shape[-1] > 3 else None        
-
         xyz = pc[:,:,0:3]
         features =  pc[:,:,3:]
         
@@ -121,7 +118,9 @@ class Pointnet2Backbone(layers.Layer):
         """        
         if not end_points: end_points = {}
         xyz, features = self._break_up_pc(pointcloud)
-        print(features.shape)
+
+        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_input_xyz.txt'), xyz[0].numpy())
+        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_input_features.txt'), features[0].numpy())
 
         # --------- 4 SET ABSTRACTION LAYERS ---------
         #xyz, features, fps_inds = self.sa1(xyz, features)
@@ -134,6 +133,12 @@ class Pointnet2Backbone(layers.Layer):
         end_points['sa1_inds'] = sa1_inds        
         end_points['sa1_grouped_features'] = sa1_grouped_features
 
+        #print(self.sa1.mlp_module.mlp_layers[0].bn_unit.momentum)
+
+        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_sa1_inds.txt'), sa1_inds[0].numpy())
+        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_sa1_xyz.txt'), sa1_xyz[0].numpy())
+        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_sa1_features.txt'), sa1_features[0].numpy())
+
         #print("========================== SA2 ===============================")
         #xyz, features, fps_inds = self.sa2(xyz, features) # this fps_inds is just 0,1,...,1023
         sa2_xyz, sa2_features, sa2_inds, sa2_grouped_features = self.sa2(sa1_xyz, sa1_features, time_record) # this fps_inds is just 0,1,...,1023        
@@ -141,6 +146,10 @@ class Pointnet2Backbone(layers.Layer):
         end_points['sa2_features'] = sa2_features
         end_points['sa2_inds'] = sa2_inds        
         end_points['sa2_grouped_features'] = sa2_grouped_features
+
+        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_sa2_inds.txt'), sa2_inds[0].numpy())
+        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_sa2_xyz.txt'), sa2_xyz[0].numpy())
+        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_sa2_features.txt'), sa2_features[0].numpy())
 
         #print("========================== SA3 ===============================")
         #xyz, features, fps_inds = self.sa3(xyz, features) # this fps_inds is just 0,1,...,511
@@ -150,6 +159,9 @@ class Pointnet2Backbone(layers.Layer):
         end_points['sa3_inds'] = sa3_inds        
         end_points['sa3_grouped_features'] = sa3_grouped_features
 
+        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_sa3_xyz.txt'), sa3_xyz[0].numpy())
+        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_sa3_features.txt'), sa3_features[0].numpy())
+
 
         #print("========================== SA4 ===============================")
         #xyz, features, fps_inds = self.sa4(xyz, features) # this fps_inds is just 0,1,...,255
@@ -157,7 +169,10 @@ class Pointnet2Backbone(layers.Layer):
         end_points['sa4_xyz'] = sa4_xyz
         end_points['sa4_features'] = sa4_features
         end_points['sa4_inds'] = sa4_inds        
-        end_points['sa4_grouped_features'] = sa4_grouped_features        
+        end_points['sa4_grouped_features'] = sa4_grouped_features
+
+        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_sa4_xyz.txt'), sa4_xyz[0].numpy())
+        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_sa4_features.txt'), sa4_features[0].numpy())        
 
         # --------- 2 FEATURE UPSAMPLING LAYERS --------
         #features = self.fp1(end_points['sa3_xyz'], end_points['sa4_xyz'], end_points['sa3_features'], end_points['sa4_features'])
@@ -166,7 +181,6 @@ class Pointnet2Backbone(layers.Layer):
         features, prop_features = self.fp1(end_points['sa3_xyz'], end_points['sa4_xyz'], end_points['sa3_features'], end_points['sa4_features'])
         #fp1_features, fp1_grouped_features = self.fp1(sa3_xyz, sa4_xyz, sa3_features, sa4_features, sa4_ball_query_idx, sa4_inds)
         end_points['fp1_grouped_features'] = prop_features
-        #end_points.append(prop_features) #20
         
         #print("========================== FP2 ===============================")
         fp2_features, fp2_grouped_features = self.fp2(end_points['sa2_xyz'], end_points['sa3_xyz'], end_points['sa2_features'], features)        
@@ -175,6 +189,8 @@ class Pointnet2Backbone(layers.Layer):
         end_points['fp2_xyz'] = end_points['sa2_xyz']        
         num_seed = sa2_inds.shape[1]
         end_points['fp2_inds'] = end_points['sa1_inds'][:,0:num_seed] # indices among the entire input point clouds  
+
+        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_fp2_features.txt'), fp2_features[0].numpy())
 
         time_record.append(("SA End:", time.time()))
         end_points['time_record'] = time_record 

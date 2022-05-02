@@ -98,7 +98,9 @@ class _ConvBase(layers.Layer):
             padding='valid',
             activation='relu',
             bn=False,
-            init=tf.keras.initializers.he_normal(seed=0),                       
+            init=tf.keras.initializers.he_normal(),
+            #init=tf.keras.initializers.Ones(),
+            bias_init = tf.keras.initializers.Zeros(),
             bias=True,            
             #preact=False,
             name="",
@@ -108,6 +110,7 @@ class _ConvBase(layers.Layer):
         super(_ConvBase, self).__init__()
 
         bias = bias and (not bn)
+        
         if input_shape is not None:
             self.conv_unit = layers.Conv2D(
                 #in_size,
@@ -117,7 +120,7 @@ class _ConvBase(layers.Layer):
                 strides=stride,
                 padding=padding,
                 use_bias=bias if bias else None,
-                bias_initializer=init if bias else None,                
+                bias_initializer=bias_init if bias else None,                
                 data_format=data_format,
                 input_shape =input_shape,
                 #kernel_regularizer=tf.keras.regularizers.l2(),
@@ -132,7 +135,7 @@ class _ConvBase(layers.Layer):
                 strides=stride,
                 padding=padding,
                 use_bias=bias if bias else None,
-                bias_initializer=init if bias else None,                
+                bias_initializer=bias_init if bias else None,                
                 data_format=data_format,
                 #kernel_regularizer=tf.keras.regularizers.l2(),
                 #bias_regularizer=tf.keras.regularizers.l2()
@@ -142,8 +145,7 @@ class _ConvBase(layers.Layer):
         if self.bn:            
             #self.bn_unit = batch_norm(data_format)
             self.bn_unit = layers.BatchNormalization(axis=1 if data_format=="channels_first" else -1, 
-                                name=name + "bn",
-                                momentum=0.9, epsilon=0.001)
+                                name=name + "bn")
 
         if activation == 'relu':
             self.act = layers.ReLU()
@@ -237,7 +239,8 @@ class BNMomentumScheduler(object):
                 reset_momentum(layer.sa3_mlp.mlp_module)
                 reset_momentum(layer.sa4_mlp.mlp_module) 
                 reset_momentum(layer.fp1.mlp)
-                reset_momentum(layer.fp2.mlp)               
+                reset_momentum(layer.fp2.mlp)
+                
 
             if hasattr(layer, 'sa1') and hasattr(layer.sa1, 'mlp_module'):
                 print("Batch norm reschedule, 1way")
@@ -246,7 +249,7 @@ class BNMomentumScheduler(object):
                 reset_momentum(layer.sa3.mlp_module)
                 reset_momentum(layer.sa4.mlp_module)
                 reset_momentum(layer.fp1.mlp)
-                reset_momentum(layer.fp2.mlp)
+                reset_momentum(layer.fp2.mlp)                
 
             if hasattr(layer, 'bn1'):
                 print("Batch norm reschdule!")

@@ -218,7 +218,8 @@ def parse_predictions(end_points, config_dict):
                 boxes_3d_with_prob[j,7] = pred_sem_cls[i,j] # only suppress if the two boxes are of the same class!!
             nonempty_box_inds = np.where(nonempty_box_mask[i,:]==1)[0]
             pick = nms_3d_faster_samecls(boxes_3d_with_prob[nonempty_box_mask[i,:]==1,:],
-                config_dict['nms_iou'], config_dict['conf_thresh'], config_dict['use_old_type_nms'])
+                config_dict['nms_iou'], config_dict['use_old_type_nms'])
+                #config_dict['nms_iou'], config_dict['conf_thresh'], config_dict['use_old_type_nms'])
             assert(len(pick)>0)       
             pred_mask[i, nonempty_box_inds[pick]] = 1     
             #============= Validation =======================

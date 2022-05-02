@@ -10,5 +10,6 @@ configs/environ*
 sunrgbd/pred_error
 sunrgbd/pred_error.csv
 scannet/scans
-scannet/scannet_train_detection_data
-
+scannet/scannet_train_detection_data*
+scannet/frames_square
+scannet/semantic_2d_results
