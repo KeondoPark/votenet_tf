@@ -2,6 +2,7 @@ import numpy as np
 from PIL import Image
 import os
 import tensorflow as tf
+import time
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
@@ -93,10 +94,9 @@ def run_semantic_segmentation_graph(image, sess, input_size):
 
     return seg_prob, seg_class
 
-def run_semantic_seg(img, save_result=False, save_name='semantic_result'):
-    INPUT_SIZE = 513
-    #with tf.compat.v1.gfile.GFile(os.path.join(BASE_DIR,'saved_model','sunrgbd_ade20k_12.pb'), "rb") as f:
-    with tf.compat.v1.gfile.GFile(os.path.join(BASE_DIR,'saved_model','sunrgbd_COCO_14.pb'), "rb") as f:
+def run_semantic_seg(img, save_result=False, save_name='semantic_result', tflite_file='sunrgbd_COCO_15.pb', input_size=513):    
+    
+    with tf.compat.v1.gfile.GFile(os.path.join(BASE_DIR,'saved_model',tflite_file), "rb") as f:
         graph_def = tf.compat.v1.GraphDef()
         graph_def.ParseFromString(f.read())
     
@@ -105,7 +105,7 @@ def run_semantic_seg(img, save_result=False, save_name='semantic_result'):
         tf.compat.v1.import_graph_def(graph_def, name='')
 
     sess = tf.compat.v1.Session(graph=myGraph)    
-    pred_prob, pred_class = run_semantic_segmentation_graph(img, sess, INPUT_SIZE) # (w, h, num_class)       
+    pred_prob, pred_class = run_semantic_segmentation_graph(img, sess, input_size) # (w, h, num_class)       
 
     # Save semantic segmentation result as image file(Original vs Semantic result)
     if save_result:
@@ -114,22 +114,27 @@ def run_semantic_seg(img, save_result=False, save_name='semantic_result'):
     return pred_prob, pred_class
 
 
-def run_semantic_seg_tflite(img, save_result=False):
+def run_semantic_seg_tflite(img, save_result=False, tflite_file='sunrgbd_ade20k_12_quant_edgetpu.tflite'):
     
     from pycoral.utils.edgetpu import make_interpreter
     from pycoral.adapters import common
     from pycoral.adapters import segment
     
-    interpreter = make_interpreter(os.path.join(BASE_DIR, os.path.join('sunrgbd_ade20k_12_quant_edgetpu.tflite')))
+    interpreter = make_interpreter(os.path.join(ROOT_DIR, 'tflite', 'tflite_models','deeplab', tflite_file))
     interpreter.allocate_tensors()
     width, height = common.input_size(interpreter)         
+    print(tflite_file)
+    print(width, height)
     
     orig_w, orig_h = img.size      
 
     resized_img, (scale1, scale2) = common.set_resized_input(
         interpreter, img.size, lambda size: img.resize(size, Image.ANTIALIAS))    
 
+    a = time.time()
     interpreter.invoke()
+    print(time.time() - a)
+
     result = segment.get_output(interpreter)        
     result = result/255 # Output is int8, not dequantized output
     
@@ -156,6 +161,8 @@ if __name__ == '__main__':
   import os, sys
   sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
   from sunrgbd_data import sunrgbd_object
+  sys.path.append(os.path.join(ROOT_DIR, 'scannet'))
+  from model_util_scannet import scannet_object
   
   import json
   environ_file = os.path.join(ROOT_DIR,'configs','environ.json')
@@ -168,10 +175,27 @@ if __name__ == '__main__':
   elif environ == 'server2':    
       DATA_DIR = '/data'
 
-  data_idx = 2950
-  dataset = sunrgbd_object(os.path.join(DATA_DIR,'sunrgbd_trainval'), 'training', use_v1=True)
+  '''
+  data_idx = 5051
+  #dataset = sunrgbd_object(os.path.join(DATA_DIR,'sunrgbd_trainval'), 'training', use_v1=True)
+  dataset = sunrgbd_object(os.path.join(ROOT_DIR,'sunrgbd','sunrgbd_trainval'), 'training', use_v1=True)
   img = dataset.get_image2(data_idx)
-  pred_prob, pred_class = run_semantic_seg(img, save_result=True, save_name=str(data_idx))  
-  print(np.unique(pred_class))
+  start = time.time()  
+  pred_prob = run_semantic_seg_tflite(img, tflite_file='sunrgbd_ade20k_12_quant_edgetpu.tflite')
+  print("Deeplab inference time", time.time() - start)
+  #pred_prob, pred_class = run_semantic_seg(img, save_result=True, save_name=str(data_idx))  
+  #print(np.unique(pred_class))
+  
+  '''
+  dataobj = scannet_object()
+  img, pose = dataobj.get_image_and_pose(0)
+  start = time.time()  
+  pred_prob = run_semantic_seg_tflite(img, tflite_file='scannet_2_quant_edgetpu.tflite')
+  print("Deeplab inference time", time.time() - start)
+  
+
+
+
+
 
 

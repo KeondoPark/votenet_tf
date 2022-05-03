@@ -11,6 +11,7 @@ sys.path.append(BASE_DIR)
 ROOT_DIR = os.path.dirname(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 from box_util import get_3d_box
+from PIL import Image
 
 class ScannetDatasetConfig(object):
     def __init__(self):
@@ -89,3 +90,82 @@ def rotate_aligned_boxes(input_boxes, rot_mat):
     new_lengths = np.stack((new_dx, new_dy, lengths[:,2]), axis=1)
                   
     return np.concatenate([new_centers, new_lengths], axis=1)
+
+
+def read_matrix(filepath):
+    out_matrix = np.zeros((4,4))
+
+    with open(filepath, 'r') as f:
+        lines = f.readlines()
+        i = 0
+        for line in lines:
+            values = line.strip().split(' ')
+            for j in range(4):
+                out_matrix[i,j] = values[j]
+            i += 1
+    return out_matrix
+
+class scannet_object(object):
+    ''' Load and parse object data '''
+    def __init__(self, split_set='train'):
+        self.raw_data_path = os.path.join(BASE_DIR, 'scans')
+        self.data_path = os.path.join(BASE_DIR, 'scannet_train_detection_data')
+        self.exported_scan_dir = os.path.join(BASE_DIR, 'frames_square')
+        all_scan_names = list(set([os.path.basename(x)[0:12] \
+            for x in os.listdir(self.data_path) if x.startswith('scene')]))
+
+        self.split_set = split_set        
+
+        split_filenames = os.path.join(ROOT_DIR, 'scannet/meta_data',
+                'scannetv2_{}.txt'.format(split_set))
+        with open(split_filenames, 'r') as f:
+            self.scan_names = f.read().splitlines()   
+        # remove unavailiable scans
+        self.num_scans = len(self.scan_names)
+        self.scan_names = [sname for sname in self.scan_names \
+            if sname in all_scan_names]
+        print('kept {} scans out of {}'.format(len(self.scan_names), self.num_scans))        
+       
+
+    def __len__(self):
+        return self.num_scans
+
+    def get_image_and_pose(self, idx):
+        # Randomly select image and pose from the frames
+        scan_name = self.scan_names[idx]
+        color_files = os.listdir(os.path.join(self.exported_scan_dir, scan_name, 'color'))
+
+        #Randomly choose color file
+        color_file_idx = np.random.choice(len(color_files),1)[0]
+        color_file = color_files[color_file_idx]
+        pose_file = color_file[:-4] + '.txt' #Same name but different extension
+        
+        img = Image.open(os.path.join(self.exported_scan_dir, scan_name, 'color', color_file))
+        pose_file_path = os.path.join(self.exported_scan_dir, scan_name, 'pose', pose_file)
+        pose_matrix = read_matrix(pose_file_path) 
+        
+        return img, pose_matrix
+
+    def get_pointcloud(self, idx): 
+        scan_name = self.scan_names[idx]
+        pointcloud = np.load(os.path.join(self.data_path, scan_name)+'_vert.npy')
+        return pointcloud
+
+    def get_color_intrinsic(self, idx):
+        # Return Color intrinsic of selected scan
+        scan_name = self.scan_names[idx]
+        color_intrinsic_file = os.path.join(self.exported_scan_dir, scan_name, 'intrinsic', 'intrinsic_color.txt')  
+        color_intrinsic = read_matrix(color_intrinsic_file)
+        return color_intrinsic        
+
+    def get_axisAlignment(self, idx):
+        scan_name = self.scan_names[idx]
+        meta_file = os.path.join(self.raw_data_path, scan_name, scan_name + '.txt') # includes axisAlignment info for the train set scans.
+        lines = open(meta_file).readlines()
+        for line in lines:
+            if 'axisAlignment' in line:
+                axis_align_matrix = [float(x) \
+                    for x in line.rstrip().strip('axisAlignment = ').split(' ')]
+
+        axis_align_matrix = np.array(axis_align_matrix).reshape((4,4))
+        return axis_align_matrix

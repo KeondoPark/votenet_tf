@@ -19,25 +19,14 @@ sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 import pc_util
 from model_util_scannet import rotate_aligned_boxes
 
-from model_util_scannet import ScannetDatasetConfig
+from model_util_scannet import ScannetDatasetConfig, read_matrix
 DC = ScannetDatasetConfig()
 MAX_NUM_OBJ = 64
 MEAN_COLOR_RGB = np.array([109.8, 97.2, 83.8])
 
 SCANNET_DIR =os.path.join(BASE_DIR,'scans')
 
-def read_matrix(filepath):
-    out_matrix = np.zeros((4,4))
 
-    with open(filepath, 'r') as f:
-        lines = f.readlines()
-        i = 0
-        for line in lines:
-            values = line.strip().split(' ')
-            for j in range(4):
-                out_matrix[i,j] = values[j]
-            i += 1
-    return out_matrix
 
 class ScannetDetectionDataset(Dataset):
        
@@ -68,6 +57,11 @@ class ScannetDetectionDataset(Dataset):
         else:
             print('illegal split name')
             return
+
+        if split_set in ['val', 'test']:
+            self.seed == 1111
+        else:
+            self.seed == None
         
         self.num_points = num_points
         self.use_color = use_color        
@@ -93,7 +87,8 @@ class ScannetDetectionDataset(Dataset):
             scan_idx: int scan index in scan_names list
             pcl_color: unused
         """
-        
+        np.random.seed(self.seed)
+
         scan_name = self.scan_names[idx]        
         mesh_vertices = np.load(os.path.join(self.data_path, scan_name)+'_vert.npy')
         instance_labels = np.load(os.path.join(self.data_path, scan_name)+'_ins_label.npy')
@@ -214,7 +209,7 @@ class ScannetDetectionDataset(Dataset):
         size_residuals = np.zeros((MAX_NUM_OBJ, 3))
         
         point_cloud, choices = pc_util.random_sampling(point_cloud,
-            self.num_points, return_choices=True)        
+            self.num_points, return_choices=True, seed=self.seed)        
         instance_labels = instance_labels[choices]
         semantic_labels = semantic_labels[choices]
         

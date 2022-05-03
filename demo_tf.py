@@ -48,6 +48,7 @@ from votenet_tf import dump_results
 from PIL import Image
 from deeplab.deeplab import run_semantic_seg, run_semantic_seg_tflite
 import json
+from torch.utils.data import DataLoader
 
 model_config = json.load(open(FLAGS.config_path))
 DEFAULT_CHECKPOINT_PATH = os.path.join('tf_ckpt', model_config['model_id'])
