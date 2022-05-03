@@ -120,7 +120,7 @@ def run_semantic_seg_tflite(img, save_result=False, tflite_file='sunrgbd_ade20k_
     from pycoral.adapters import common
     from pycoral.adapters import segment
     
-    interpreter = make_interpreter(os.path.join(ROOT_DIR, 'tflite', 'tflite_models','deeplab', tflite_file))
+    interpreter = make_interpreter(os.path.join('saved_model', tflite_file))
     interpreter.allocate_tensors()
     width, height = common.input_size(interpreter)         
     print(tflite_file)
@@ -181,7 +181,7 @@ if __name__ == '__main__':
   dataset = sunrgbd_object(os.path.join(ROOT_DIR,'sunrgbd','sunrgbd_trainval'), 'training', use_v1=True)
   img = dataset.get_image2(data_idx)
   start = time.time()  
-  pred_prob = run_semantic_seg_tflite(img, tflite_file='sunrgbd_ade20k_12_quant_edgetpu.tflite')
+  pred_prob = run_semantic_seg_tflite(img, tflite_file='sunrgbd_COCO_15_quant_edgetpu.tflite')
   print("Deeplab inference time", time.time() - start)
   #pred_prob, pred_class = run_semantic_seg(img, save_result=True, save_name=str(data_idx))  
   #print(np.unique(pred_class))
@@ -190,6 +190,8 @@ if __name__ == '__main__':
   dataobj = scannet_object()
   img, pose = dataobj.get_image_and_pose(0)
   start = time.time()  
+  pred_prob = run_semantic_seg_tflite(img, tflite_file='scannet_2_quant_edgetpu.tflite')
+  pred_prob = run_semantic_seg_tflite(img, tflite_file='scannet_2_quant_edgetpu.tflite')
   pred_prob = run_semantic_seg_tflite(img, tflite_file='scannet_2_quant_edgetpu.tflite')
   print("Deeplab inference time", time.time() - start)
   
