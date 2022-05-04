@@ -11,6 +11,7 @@ sys.path.append(BASE_DIR)
 ROOT_DIR = os.path.dirname(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 from box_util import get_3d_box
+from PIL import Image
 
 class ScannetDatasetConfig(object):
     def __init__(self):
@@ -89,3 +90,136 @@ def rotate_aligned_boxes(input_boxes, rot_mat):
     new_lengths = np.stack((new_dx, new_dy, lengths[:,2]), axis=1)
                   
     return np.concatenate([new_centers, new_lengths], axis=1)
+
+
+def read_matrix(filepath):
+    out_matrix = np.zeros((4,4))
+
+    with open(filepath, 'r') as f:
+        lines = f.readlines()
+        i = 0
+        for line in lines:
+            values = line.strip().split(' ')
+            for j in range(4):
+                out_matrix[i,j] = values[j]
+            i += 1
+    return out_matrix
+
+class scannet_object(object):
+    ''' Load and parse object data '''
+    def __init__(self, split_set='train'):
+        self.raw_data_path = os.path.join(BASE_DIR, 'scans')
+        self.data_path = os.path.join(BASE_DIR, 'scannet_train_detection_data')
+        self.exported_scan_dir = os.path.join(BASE_DIR, 'frames_square')
+        all_scan_names = list(set([os.path.basename(x)[0:12] \
+            for x in os.listdir(self.data_path) if x.startswith('scene')]))
+
+        self.split_set = split_set        
+
+        split_filenames = os.path.join(ROOT_DIR, 'scannet/meta_data',
+                'scannetv2_{}.txt'.format(split_set))
+        with open(split_filenames, 'r') as f:
+            self.scan_names = f.read().splitlines()   
+        # remove unavailiable scans
+        self.num_scans = len(self.scan_names)
+        self.scan_names = [sname for sname in self.scan_names \
+            if sname in all_scan_names]
+        print('kept {} scans out of {}'.format(len(self.scan_names), self.num_scans))        
+       
+
+    def __len__(self):
+        return self.num_scans
+
+    def get_image_and_pose(self, idx, num_img=1):
+        # Randomly select image and pose from the frames
+        scan_name = self.scan_names[idx]
+        color_files = os.listdir(os.path.join(self.exported_scan_dir, scan_name, 'color'))
+
+        #Randomly choose color file
+        color_file_idx = np.random.choice(len(color_files),num_img)
+        color_files_selected = color_files[color_file_idx]
+        pose_files = [f[:-4] + '.txt' for f in color_files_selected] #Same name but different extension
+        
+        imgs, pose_matrices = [], []
+        for i in range(num_img):
+            img = Image.open(os.path.join(self.exported_scan_dir, scan_name, 'color', color_files_selected[i]))
+            pose_file_path = os.path.join(self.exported_scan_dir, scan_name, 'pose', pose_files[i])
+            pose_matrix = read_matrix(pose_file_path) 
+            imgs.append(img)
+            pose_matrices.append(pose_matrix)
+        
+        return imgs, pose_matrices
+
+    def get_pointcloud(self, idx): 
+        scan_name = self.scan_names[idx]
+        pointcloud = np.load(os.path.join(self.data_path, scan_name)+'_vert.npy')
+        return pointcloud
+
+    def get_color_intrinsic(self, idx):
+        # Return Color intrinsic of selected scan
+        scan_name = self.scan_names[idx]
+        color_intrinsic_file = os.path.join(self.exported_scan_dir, scan_name, 'intrinsic', 'intrinsic_color.txt')  
+        color_intrinsic = read_matrix(color_intrinsic_file)
+        return color_intrinsic        
+
+    def get_axisAlignment(self, idx):
+        scan_name = self.scan_names[idx]
+        meta_file = os.path.join(self.raw_data_path, scan_name, scan_name + '.txt') # includes axisAlignment info for the train set scans.
+        lines = open(meta_file).readlines()
+        for line in lines:
+            if 'axisAlignment' in line:
+                axis_align_matrix = [float(x) \
+                    for x in line.rstrip().strip('axisAlignment = ').split(' ')]
+
+        axis_align_matrix = np.array(axis_align_matrix).reshape((4,4))
+        return axis_align_matrix
+
+    def get_calibration(self, idx, pose):
+        K = self.get_color_intrinsic(idx)
+        axis_align_matrix = self.get_axisAlignment(idx)
+        return scannet_calibration(K, axis_align_matrix, pose)
+
+
+class scannet_calibration(object):
+    def __init__(self, K, axis_align_matrix, pose):
+        self.K = K
+        self.axis_align_matrix = axis_align_matrix
+        self.pose = pose
+
+    def project_upright_depth_to_image(self, point_cloud):
+
+        alinged_verts = np.ones((point_cloud.shape[0],4))
+        alinged_verts[:,:3] = point_cloud[:,:3]
+        
+        unalign_verts = np.dot(alinged_verts, np.linalg.inv(axis_align_matrix.transpose()))
+
+        sampled_h = np.ones((len(unalign_verts), 4))
+        sampled_h[:,:3] = unalign_verts[:,:3]
+
+        camera_coord = np.matmul(np.linalg.inv(self.pose), np.transpose(sampled_h))
+        camera_proj = np.matmul(K, camera_coord)
+
+        # Get valid points for the image
+        x = camera_proj[0,:]
+        y = camera_proj[1,:]
+        z = camera_proj[2,:]
+        filter_idx = np.where((x/z >= 0) & (x/z < colorW) & (y/z >= 0) & (y/z < colorH) & (z > 0))[0]
+
+        # Normalize by 4th coords(Homogeneous -> 3 coords system)
+        camera_proj_normalized = camera_proj / camera_proj[2,:]
+
+        #Get 3d -> 2d mapping
+        projected = camera_proj_normalized[:2, filter_idx]
+
+        #Reduce to 320,240 size
+        camera_proj_sm = np.zeros((5, projected.shape[-1]))
+
+        camera_proj_sm[0,:] = projected[0,:] * 320/colorW
+        camera_proj_sm[1,:] = projected[1,:] * 240/colorH
+
+        return camera_proj_sm[0:2].transpose(), camera_proj[2,:], filter_idx
+
+
+
+
+

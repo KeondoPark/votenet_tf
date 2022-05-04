@@ -31,6 +31,9 @@ from ap_helper_tf import APCalculator, parse_predictions, parse_groundtruths
 import votenet_tf
 from votenet_tf import dump_results
 from collections import defaultdict
+from torch.utils.data import DataLoader
+
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='sunrgbd', help='Dataset name. sunrgbd or scannet. [default: sunrgbd]')
@@ -84,6 +87,7 @@ def log_string(out_str):
     DUMP_FOUT.flush()
     print(out_str)
 
+use_painted = model_config['use_painted']
 
 # Create Dataset and Dataloader
 if FLAGS.dataset == 'sunrgbd':
@@ -97,7 +101,27 @@ if FLAGS.dataset == 'sunrgbd':
     TEST_DATASET = SunrgbdDetectionVotesDataset_tfrecord('val', num_points=NUM_POINT,
         augment=False,  shuffle=FLAGS.shuffle_dataset, batch_size=BATCH_SIZE,
         use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
-        use_painted=model_config['use_painted'], DC=DATASET_CONFIG)
+        use_painted=use_painted, DC=DATASET_CONFIG)
+
+elif DATASET == 'scannet':
+    sys.path.append(os.path.join(ROOT_DIR, 'scannet'))
+    from scannet_detection_dataset import ScannetDetectionDataset, MAX_NUM_OBJ
+    from model_util_scannet import ScannetDatasetConfig
+    DATASET_CONFIG = ScannetDatasetConfig()
+    NUM_POINT = 40000
+
+    TEST_DATASET = ScannetDetectionDataset('val', num_points=NUM_POINT,
+        augment=False,
+        use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
+        use_painted=use_painted)
+
+    # Init datasets and dataloaders 
+    def my_worker_init_fn(worker_id):
+        np.random.seed(np.random.get_state()[1][0] + worker_id)
+    
+    test_ds =DataLoader(TEST_DATASET, batch_size=BATCH_SIZE,
+        shuffle=True, num_workers=4, worker_init_fn=my_worker_init_fn)
+
 else:
     print('Unknown dataset %s. Exiting...'%(FLAGS.dataset))
     exit(-1)
@@ -108,7 +132,7 @@ num_input_channel = int(FLAGS.use_color)*3 + int(not FLAGS.no_height)*1
 
 ### Point Paiting : Sementation score is appended at the end of point cloud
 if model_config['use_painted']:
-    num_input_channel += DATASET_CONFIG.num_class
+    num_input_channel += DATASET_CONFIG.num_class + 1 + 1
 
 
 net = votenet_tf.VoteNet(num_class=DATASET_CONFIG.num_class,
@@ -130,7 +154,7 @@ optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
 # Load checkpoint if there is any
 it = -1 # for the initialize value of `LambdaLR` and `BNMomentumScheduler`
 start_epoch = 0
-ckpt = tf.train.Checkpoint(epoch=tf.Variable(1), optimizer=optimizer, net=net)
+ckpt = tf.train.Checkpoint(epoch=tf.Variable(0), optimizer=optimizer, net=net)
 
 if not model_config['use_tflite']:
     manager = tf.train.CheckpointManager(ckpt, CHECKPOINT_PATH, max_to_keep=3)
@@ -143,8 +167,9 @@ if not model_config['use_tflite']:
         print("Failed to restore.")
         exit(-1)
 
-test_ds = TEST_DATASET.preprocess()
-test_ds = test_ds.prefetch(BATCH_SIZE)
+if DATASET == 'sunrgbd':
+    test_ds = TEST_DATASET.preprocess()
+    test_ds = test_ds.prefetch(BATCH_SIZE)
 
 # Used for AP calculation
 CONFIG_DICT = {'remove_empty_box': (not FLAGS.faster_eval), 'use_3d_nms':FLAGS.use_3d_nms,
@@ -166,6 +191,21 @@ def evaluate_one_epoch():
     total_start = start
     for batch_idx, batch_data in enumerate(test_ds):        
         #if batch_idx*BATCH_SIZE >= 400: break
+        if DATASET == 'scannet':                
+            point_clouds = tf.convert_to_tensor(batch_data['point_clouds'], dtype=tf.float32)
+            center_label = tf.convert_to_tensor(batch_data['center_label'], dtype=tf.float32)
+            heading_class_label = tf.convert_to_tensor(batch_data['heading_class_label'], dtype=tf.int64)
+            heading_residual_label = tf.convert_to_tensor(batch_data['heading_residual_label'],dtype=tf.float32)
+            size_class_label = tf.convert_to_tensor(batch_data['size_class_label'], dtype=tf.int64)
+            size_residual_label = tf.convert_to_tensor(batch_data['size_residual_label'], dtype=tf.float32)
+            sem_cls_label = tf.convert_to_tensor(batch_data['sem_cls_label'], dtype=tf.int64)
+            box_label_mask = tf.convert_to_tensor(batch_data['box_label_mask'], dtype=tf.float32)
+            vote_label = tf.convert_to_tensor(batch_data['vote_label'], tf.float32)
+            vote_label_mask = tf.convert_to_tensor(batch_data['vote_label_mask'], tf.int64)
+            max_gt_bboxes = tf.convert_to_tensor(np.zeros((BATCH_SIZE, 64, 8)), dtype=tf.float32) 
+            batch_data = point_clouds, center_label, heading_class_label, heading_residual_label, size_class_label, \
+                size_residual_label, sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes
+
         if batch_idx % 10 == 0:
             end = time.time()
             log_string('---------- Eval batch: %d ----------'%(batch_idx) + str(end - start))
@@ -187,6 +227,7 @@ def evaluate_one_epoch():
         loss, end_points = criterion(end_points, config)        
 
         stat_dict['box_loss'] += end_points['box_loss']
+        stat_dict['heading_reg_loss'] += end_points['heading_reg_loss']
         stat_dict['vote_loss'] += end_points['vote_loss']
         stat_dict['objectness_loss'] += end_points['objectness_loss']
         stat_dict['sem_cls_loss'] += end_points['sem_cls_loss']

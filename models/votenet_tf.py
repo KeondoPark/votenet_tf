@@ -80,7 +80,7 @@ class VoteNet(tf.keras.Model):
             model_config=model_config)
             
 
-    def call(self, point_cloud, img=None, calib=None):
+    def call(self, point_cloud, imgs=None, calibs=None, deeplab_tflite_file=None):
         """ Forward pass of the network
 
         Args:
@@ -96,7 +96,7 @@ class VoteNet(tf.keras.Model):
             end_points: list
         """
         if self.use_tflite and self.use_multiThr:
-            end_points = self.backbone_net(point_cloud, img=img, calib=calib)
+            end_points = self.backbone_net(point_cloud, imgs=imgs, calibs=calibs, deeplab_tflite_file=deeplab_tflite_file)
         else:
             end_points = self.backbone_net(point_cloud)
         # --------- HOUGH VOTING ---------

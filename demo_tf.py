@@ -48,6 +48,7 @@ from votenet_tf import dump_results
 from PIL import Image
 from deeplab.deeplab import run_semantic_seg, run_semantic_seg_tflite
 import json
+from torch.utils.data import DataLoader
 
 model_config = json.load(open(FLAGS.config_path))
 DEFAULT_CHECKPOINT_PATH = os.path.join('tf_ckpt', model_config['model_id'])
@@ -89,13 +90,25 @@ if __name__=='__main__':
             DATASET_CONFIG = SunrgbdDatasetConfig()
         from sunrgbd_data import sunrgbd_object
         checkpoint_path = FLAGS.checkpoint_path if FLAGS.checkpoint_path is not None else DEFAULT_CHECKPOINT_PATH          
-        pc_path = os.path.join(demo_dir, 'input_pc_sunrgbd.ply')
-        #pc_path = os.path.join(demo_dir, 'pc_person2.ply')
+        data_idx = 5051
+        dataset = sunrgbd_object(os.path.join(DATA_DIR,'sunrgbd_trainval'), 'training', use_v1=True)
+        point_cloud = dataset.get_depth(data_idx)  
+        img = dataset.get_image2(data_idx)
+        calib = dataset.get_calibration(data_idx)    
+        deeplab_tflite_file = 'sunrgbd_COCO_15_quant_edgetpu.tflite'
+        imgs = [img]
+        calibs = [calib]
+        
     elif FLAGS.dataset == 'scannet':
         sys.path.append(os.path.join(ROOT_DIR, 'scannet'))
         from scannet_detection_dataset import DC # dataset config
-        checkpoint_path = os.path.join(demo_dir, 'pretrained_votenet_on_scannet.tar')
-        pc_path = os.path.join(demo_dir, 'input_pc_scannet.ply')
+        checkpoint_path = FLAGS.checkpoint_path if FLAGS.checkpoint_path is not None else DEFAULT_CHECKPOINT_PATH
+        dataset = scannet_object()
+        imgs, poses = dataset.get_image_and_pose(0, num_img=3)
+        calibs = [dataset.get_calibration(0, pose) for pose in poses]
+        point_cloud = dataset.get_pointcloud(0)
+        deeplab_tflite_file = 'scannet_2_quant_edgetpu.tflite'
+
     else:
         print('Unkown dataset. Exiting.')
         exit(-1)
@@ -138,11 +151,7 @@ if __name__=='__main__':
     #point_cloud = read_ply(pc_path)
     #pc = preprocess_point_cloud(point_cloud)
     #print('Loaded point cloud data: %s'%(pc_path))
-    ## TODO: NEED TO BE REPLACED
-    data_idx = 5051
-    dataset = sunrgbd_object(os.path.join(DATA_DIR,'sunrgbd_trainval'), 'training', use_v1=True)
-    point_cloud = dataset.get_depth(data_idx)        
-    
+    ## TODO: NEED TO BE REPLACED    
     
     time_record = [('Start: ', time.time())]
     point_cloud_sampled = random_sampling(point_cloud[:,0:3], FLAGS.num_point)
@@ -153,33 +162,34 @@ if __name__=='__main__':
     inputs = {'point_clouds': tf.convert_to_tensor(pc)}
    
     # Model inference    
-    if model_config['use_painted']:
-        ## TODO: NEED TO BE REPLACED
-        img = dataset.get_image2(data_idx)
-        calib = dataset.get_calibration(data_idx)                
-        
+    if model_config['use_painted']:                       
         if model_config['use_multiThr']:
-            end_points = net(inputs['point_clouds'], training=False, img=img, calib=calib)        
+            end_points = net(inputs['point_clouds'], training=False, img=imgs, calib=calibs, deeplab_tflite_file=deeplab_tflite_file)        
         else:
             xyz = pc[0,:,:3]
             if model_config['use_edgetpu']:
-                pred_prob = run_semantic_seg_tflite(img, save_result=False)                
+                pred_prob_list = run_semantic_seg_tflite(imgs, tflite_file=deeplab_tflite_file, save_result=False)                
             else:                
-                pred_prob, pred_class = run_semantic_seg(img, save_result=False)  
+                pred_prob, pred_class = run_semantic_seg(imgs, save_result=False)  
             
             time_record.append(('Deeplab inference time:', time.time()))
+            pointcloud = np.zeros((xyz.shape[0], 3 + 1 + DATASET_CONFIG.num_class + 1))
+            pointcloud[:,0:3] = xyz
+            for calib in calibs:
+                uv,d, filter_idx = calib.project_upright_depth_to_image(xyz) #uv: (N, 2)
+                uv = np.rint(uv - 1)
+                
+                pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)] # (npoint, num_class + 1 + 1 )
+                projected_class = np.argmax(pred_prob, axis=-1) # (npoint, 1) 
+                isPainted = np.where((projected_class > 0) & (projected_class < DATASET_CONFIG.num_class+1), 1, 0) # Point belongs to background?                    
+                #isPainted = np.expand_dims(isPainted, axis=-1)
 
-            uv,d = calib.project_upright_depth_to_image(xyz) #uv: (N, 2)
-            uv = np.rint(uv - 1)
-            
-            pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)] # (npoint, num_class + 1 + 1 )
-            projected_class = np.argmax(pred_prob, axis=-1) # (npoint, 1) 
-            isPainted = np.where((projected_class > 0) & (projected_class < DATASET_CONFIG.num_class+1), 1, 0) # Point belongs to background?                    
-            isPainted = np.expand_dims(isPainted, axis=-1)
+                # 0 is background class, deeplab is trained with "person" included, (height, width, num_class)
+                pred_prob = pred_prob[:,:(DATASET_CONFIG.num_class+1)] #(npoint, num_class)
+                pointcloud[filter_idx, 3] = isPainted
+                pointcloud[filter_idx, 4:] = pred_prob
 
-            # 0 is background class, deeplab is trained with "person" included, (height, width, num_class)
-            pred_prob = pred_prob[:,:(DATASET_CONFIG.num_class+1)] #(npoint, num_class)
-            pointcloud = np.concatenate([xyz, isPainted, pred_prob, pc[0,:,3:]], axis=-1)
+            #pointcloud = np.concatenate([xyz, isPainted, pred_prob, pc[0,:,3:]], axis=-1)
             time_record.append(('Pointpainting time:', time.time()))
 
             inputs['point_clouds'] = tf.convert_to_tensor(np.expand_dims(pointcloud, axis=0))

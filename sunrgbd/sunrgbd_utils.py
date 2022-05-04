@@ -112,7 +112,7 @@ class SUNRGBD_Calibration(object):
         uv = np.dot(pc2, np.transpose(self.K)) # (n,3)
         uv[:,0] /= uv[:,2]
         uv[:,1] /= uv[:,2]
-        return uv[:,0:2], pc2[:,2]
+        return uv[:,0:2], pc2[:,2], np.arange(uv.shape[0])
 
     def project_upright_depth_to_upright_camera(self, pc):
         return flip_axis_to_camera(pc)

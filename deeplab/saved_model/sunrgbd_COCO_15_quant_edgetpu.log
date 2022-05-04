@@ -1,0 +1,15 @@
+Edge TPU Compiler version 16.0.384591198
+Input: sunrgbd_COCO_15_quant.tflite
+Output: ./sunrgbd_COCO_15_quant_edgetpu.tflite
+
+Operator                       Count      Status
+
+CONCATENATION                  1          More than one subgraph is not supported
+SOFTMAX                        1          More than one subgraph is not supported
+ADD                            10         Mapped to Edge TPU
+CONV_2D                        36         Mapped to Edge TPU
+CONV_2D                        2          More than one subgraph is not supported
+RESIZE_BILINEAR                2          More than one subgraph is not supported
+RESIZE_BILINEAR                1          Image-interpolation layer won't run precisely enough on Edge TPU
+AVERAGE_POOL_2D                1          Mapped to Edge TPU
+DEPTHWISE_CONV_2D              17         Mapped to Edge TPU

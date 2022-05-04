@@ -155,7 +155,7 @@ def export_2dseg_results(exported_scan_dir=None, output_dir=None):
 
     # deeplabv3+ tf session
     INPUT_SIZE = (321, 321)    
-    with tf.compat.v1.gfile.GFile('../deeplab/saved_model/scannet_2.pb', "rb") as f:
+    with tf.compat.v1.gfile.GFile('../deeplab/saved_model/scannet_3.pb', "rb") as f:
         graph_def = tf.compat.v1.GraphDef()
         graph_def.ParseFromString(f.read())
     
