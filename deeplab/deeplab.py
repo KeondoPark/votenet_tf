@@ -94,7 +94,7 @@ def run_semantic_segmentation_graph(image, sess, input_size):
 
     return seg_prob, seg_class
 
-def run_semantic_seg(img, save_result=False, save_name='semantic_result', tflite_file='sunrgbd_COCO_15.pb', input_size=513):    
+def run_semantic_seg(imgs, save_result=False, save_name='semantic_result', tflite_file='sunrgbd_COCO_15.pb', input_size=513):    
     
     with tf.compat.v1.gfile.GFile(os.path.join(BASE_DIR,'saved_model',tflite_file), "rb") as f:
         graph_def = tf.compat.v1.GraphDef()
@@ -105,7 +105,13 @@ def run_semantic_seg(img, save_result=False, save_name='semantic_result', tflite
         tf.compat.v1.import_graph_def(graph_def, name='')
 
     sess = tf.compat.v1.Session(graph=myGraph)    
-    pred_prob, pred_class = run_semantic_segmentation_graph(img, sess, input_size) # (w, h, num_class)       
+
+    pred_prob_list, pred_class_list = [], []
+    for img in imgs:
+      pred_prob, pred_class = run_semantic_segmentation_graph(img, sess, input_size) # (w, h, num_class)
+      pred_prob_list.append(pred_prob)
+      pred_class_list.append(pred_class_list)
+
 
     # Save semantic segmentation result as image file(Original vs Semantic result)
     if save_result:
@@ -114,7 +120,7 @@ def run_semantic_seg(img, save_result=False, save_name='semantic_result', tflite
     return pred_prob, pred_class
 
 
-def run_semantic_seg_tflite(img, save_result=False, tflite_file='sunrgbd_ade20k_12_quant_edgetpu.tflite'):
+def run_semantic_seg_tflite(img_list, save_result=False, tflite_file='sunrgbd_ade20k_12_quant_edgetpu.tflite'):
     
     from pycoral.utils.edgetpu import make_interpreter
     from pycoral.adapters import common
@@ -123,31 +129,30 @@ def run_semantic_seg_tflite(img, save_result=False, tflite_file='sunrgbd_ade20k_
     interpreter = make_interpreter(os.path.join('saved_model', tflite_file))
     interpreter.allocate_tensors()
     width, height = common.input_size(interpreter)         
-    print(tflite_file)
-    print(width, height)
     
-    orig_w, orig_h = img.size      
-
-    resized_img, (scale1, scale2) = common.set_resized_input(
-        interpreter, img.size, lambda size: img.resize(size, Image.ANTIALIAS))    
-
-    a = time.time()
-    interpreter.invoke()
-    print(time.time() - a)
-
-    result = segment.get_output(interpreter)        
-    result = result/255 # Output is int8, not dequantized output
     
-    new_width, new_height = resized_img.size
-    pred_prob = result[:new_height, :new_width, :]    
-    
-    # Return to original image size
-    x = (np.array(range(orig_h)) * scale1).astype(np.int)
-    y = (np.array(range(orig_w)) * scale2).astype(np.int)
-    xv, yv = np.meshgrid(x, y, indexing='ij')
+    orig_w, orig_h = img_list[0].size  
 
-    pred_prob = pred_prob[xv, yv] # height, width
-    #pred_class = pred_class[xv, yv]
+    pred_prob_list = []
+    for img in img_list:   
+
+      resized_img, (scale1, scale2) = common.set_resized_input(
+          interpreter, img.size, lambda size: img.resize(size, Image.ANTIALIAS))    
+      
+      interpreter.invoke()    
+
+      result = segment.get_output(interpreter)        
+      result = result/255 # Output is int8, not dequantized output
+      
+      new_width, new_height = resized_img.size
+      pred_prob = result[:new_height, :new_width, :]    
+      
+      # Return to original image size
+      x = (np.array(range(orig_h)) * scale1).astype(np.int)
+      y = (np.array(range(orig_w)) * scale2).astype(np.int)
+      xv, yv = np.meshgrid(x, y, indexing='ij')
+
+      pred_prob_list.append(pred_prob[xv, yv]) # height, width
 
     # Save semantic segmentation result as image file(Original vs Semantic result)
     if save_result:
@@ -155,7 +160,7 @@ def run_semantic_seg_tflite(img, save_result=False, tflite_file='sunrgbd_ade20k_
         pred_class = np.argmax(pred_prob, axis=-1) 
         save_semantic_result(img, pred_class)
 
-    return pred_prob
+    return pred_prob_list
 
 if __name__ == '__main__':
   import os, sys

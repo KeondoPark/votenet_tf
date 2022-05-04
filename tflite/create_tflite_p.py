@@ -9,6 +9,7 @@ ROOT_DIR = BASE_DIR
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 sys.path.append(os.path.join(ROOT_DIR, 'models'))
 sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
+sys.path.append(os.path.join(ROOT_DIR, 'scannet'))
 from pc_util import random_sampling, read_ply
 
 import votenet_tf
@@ -30,6 +31,7 @@ parser.add_argument('--gpu_mem_limit', type=int, default=0, help='GPU memory usa
 parser.add_argument('--use_rep_data', action='store_true', help='When iterating representative dataset, use saved data')
 parser.add_argument('--rep_data_dir', default='tflite/tflite_rep_data', help='Saved representative data directory')
 parser.add_argument('--config_path', default=None, required=True, help='Model configuration path')
+parser.add_argument('--dataset', default='sunrgbd', help='Dataset name. sunrgbd or scannet. [default: sunrgbd]')
 FLAGS = parser.parse_args()
 
 # Limit GPU Memory usage, 256MB suffices
@@ -48,19 +50,49 @@ BATCH_SIZE = 1
 
 model_config = json.load(open(FLAGS.config_path))
 
+
+if 'dataset' in model_config:
+    DATASET = model_config['dataset']
+else:
+    DATASET =  FLAGS.dataset
+
 if not FLAGS.use_rep_data:
-    if 'include_person' in model_config and model_config['include_person']:
-        DATASET_CONFIG = SunrgbdDatasetConfig(include_person=True)
-    else:
-        DATASET_CONFIG = SunrgbdDatasetConfig()
-    TRAIN_DATASET = SunrgbdDetectionVotesDataset_tfrecord('train', num_points=20000,
-        augment=False, shuffle=True, batch_size=BATCH_SIZE,
-        use_color=False, use_height=True,
-        use_painted=model_config['use_painted'], DC=DATASET_CONFIG)
+    if DATASET == 'sunrgbd':
+        if 'include_person' in model_config and model_config['include_person']:
+            DATASET_CONFIG = SunrgbdDatasetConfig(include_person=True)
+        else:
+            DATASET_CONFIG = SunrgbdDatasetConfig()
+        NUM_POINT = 20000
+        TRAIN_DATASET = SunrgbdDetectionVotesDataset_tfrecord('train', num_points=NUM_POINT,
+            augment=False, shuffle=True, batch_size=BATCH_SIZE,
+            use_color=False, use_height=True,
+            use_painted=model_config['use_painted'], DC=DATASET_CONFIG)
 
-    ds = TRAIN_DATASET.preprocess()
-    ds = ds.prefetch(BATCH_SIZE)
+        ds = TRAIN_DATASET.preprocess()
+        ds = ds.prefetch(BATCH_SIZE)
+    elif DATASET == 'scannet':
+        sys.path.append(os.path.join(ROOT_DIR, 'scannet'))
+        from scannet_detection_dataset import ScannetDetectionDataset, MAX_NUM_OBJ
+        from model_util_scannet import ScannetDatasetConfig
+        DATASET_CONFIG = ScannetDatasetConfig()
+        NUM_POINT = 40000
 
+        TRAIN_DATASET = ScannetDetectionDataset('train', num_points=NUM_POINT,
+                augment=True,
+                use_color=False, use_height=True,
+                use_painted=use_painted)
+
+        # Init datasets and dataloaders 
+        def my_worker_init_fn(worker_id):
+            np.random.seed(np.random.get_state()[1][0] + worker_id)
+        
+        train_ds = DataLoader(TRAIN_DATASET, batch_size=BATCH_SIZE,
+            shuffle=True, num_workers=4, worker_init_fn=my_worker_init_fn, drop_last=True)
+
+if not model_config['use_painted']:
+    num_input_channel = 1
+else:
+    num_input_channel = 1 + DATASET_CONFIG.num_class + 1 + 1
 
 def preprocess_point_cloud(point_cloud):
     ''' Prepare the numpy point cloud (N,3) for forward pass '''
@@ -68,7 +100,7 @@ def preprocess_point_cloud(point_cloud):
     floor_height = np.percentile(point_cloud[:,2],0.99)
     height = point_cloud[:,2] - floor_height
     point_cloud = np.concatenate([point_cloud, np.expand_dims(height, 1)],1) # (N,4) or (N,7)
-    point_cloud = random_sampling(point_cloud, 20000)
+    point_cloud = random_sampling(point_cloud, NUM_POINT)
     pc = np.expand_dims(point_cloud.astype(np.float32), 0) # (1,40000,4)
     return pc
 
@@ -219,16 +251,11 @@ if __name__=='__main__':
 
     print("Loaded checkpoint %s (epoch: %d)"%(checkpoint_path, epoch))
    
-    # Load and preprocess input point cloud
-    if not model_config['use_painted']:
-        pc = tf.convert_to_tensor(np.random.random([BATCH_SIZE,20000,3+1]))
-    elif model_config['two_way']:
-        pc = tf.convert_to_tensor(np.random.random([BATCH_SIZE,20000,3+1+DATASET_CONFIG.num_class+1]))
-    else:
-        pc = tf.convert_to_tensor(np.random.random([BATCH_SIZE,20000,3+1+DATASET_CONFIG.num_class+1]))
+    
+    pc = tf.convert_to_tensor(np.random.random([BATCH_SIZE,NUM_POINT,3+num_input_channel]))    
    
     # Model inference
-    inputs = {'point_clouds': tf.convert_to_tensor(pc)}
+    inputs = {'point_clouds': pc}
 
     tic = time.time()
     end_points = net(inputs['point_clouds'], training=False)
@@ -391,11 +418,11 @@ if __name__=='__main__':
             sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[2048,64,1+3])
             dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,2048,64,1+3])) # (B, npoint, nsample, C+3)
         elif model_config['two_way']:
-            input_shape=[1024,64,3+1+DATASET_CONFIG.num_class+1] # xyz + height + (num_class + background)
+            input_shape=[1024,64,3+num_input_channel] # xyz + height + (num_class + background)
             sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=input_shape)
             dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE] + input_shape)) # (B, npoint, nsample, C+3)
         else:
-            input_shape=[2048,64,3+1+DATASET_CONFIG.num_class+1+1] # xyz + height + (num_class + background) + isPainted
+            input_shape=[2048,64,3+num_input_channel] # xyz + height + (num_class + background) + isPainted
             sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=input_shape)
             dummy_in_sa1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE] + input_shape)) # (B, npoint, nsample, C+3)
         dummy_out = sa1_mlp(dummy_in_sa1)
@@ -528,11 +555,11 @@ if __name__=='__main__':
             w, b = net.pnet.conv3.get_weights()
             layer.conv3_1.set_weights([w[:,:,:,:3], b[:3]])
             #layer.conv3_2.set_weights([w[:,:,:,3:], b[3:]])
-            w_2 = np.concatenate([w[:,:,:,3:3+2+NH], w[:,:,:,3+2+NH*2:3+2+NH*2+NC], w[:,:,:,3+2+NH*2+NC*4:]], axis=-1)
-            b_2 = np.concatenate([b[3:3+2+NH], b[3+2+NH*2:3+2+NH*2+NC], b[3+2+NH*2+NC*4:]], axis=-1)
+            w_2 = np.concatenate([w[:,:,:,3:3+2+NH+NC], w[:,:,:,3+2+NH*2+NC*4:]], axis=-1)
+            b_2 = np.concatenate([b[3:3+2+NH+NC], b[3+2+NH*2+NC*4:], axis=-1)
             layer.conv3_2.set_weights([w_2, b_2])
-            w_3 = np.concatenate([w[:,:,:,3+2+NH:3+2+NH*2], w[:,:,:,3+2+NH*2+NC:3+2+NH*2+NC*4]], axis=-1)
-            b_3 = np.concatenate([b[3+2+NH:3+2+NH*2], b[3+2+NH*2+NC:3+2+NH*2+NC*4]], axis=-1)
+            w_3 = w[:,:,:,3+2+NH+NC:3+2+NH*2+NC*4]
+            b_3 = b[3+2+NH+NC:3+2+NH*2+NC*4]
             layer.conv3_3.set_weights([w_3, b_3])
             
             #layer.conv3_1.set_weights([w[:,:3], b[:3]])

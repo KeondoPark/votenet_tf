@@ -135,7 +135,7 @@ class ScannetDetectionDataset(Dataset):
             point_cloud_recon = np.zeros((point_cloud.shape[0], 3 + 1 + DC.num_class + 1))
             point_cloud_recon[:,:3] = point_cloud[:,:3]
 
-            num_img = 5
+            num_img = 3
             sliced = len(frame_nums) // num_img
             frames_selected = []
             for i in range(num_img):
@@ -173,6 +173,8 @@ class ScannetDetectionDataset(Dataset):
 
                 camera_proj_sm[0,:] = projected[0,:] * 320/colorW
                 camera_proj_sm[1,:] = projected[1,:] * 240/colorH
+
+                camera_proj_sm = np.rint(camera_proj_sm)
 
                 # Get pixel index
                 x = camera_proj_sm[0,:].astype(np.uint8)

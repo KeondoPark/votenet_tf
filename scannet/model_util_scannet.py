@@ -130,21 +130,25 @@ class scannet_object(object):
     def __len__(self):
         return self.num_scans
 
-    def get_image_and_pose(self, idx):
+    def get_image_and_pose(self, idx, num_img=1):
         # Randomly select image and pose from the frames
         scan_name = self.scan_names[idx]
         color_files = os.listdir(os.path.join(self.exported_scan_dir, scan_name, 'color'))
 
         #Randomly choose color file
-        color_file_idx = np.random.choice(len(color_files),1)[0]
-        color_file = color_files[color_file_idx]
-        pose_file = color_file[:-4] + '.txt' #Same name but different extension
+        color_file_idx = np.random.choice(len(color_files),num_img)
+        color_files_selected = color_files[color_file_idx]
+        pose_files = [f[:-4] + '.txt' for f in color_files_selected] #Same name but different extension
         
-        img = Image.open(os.path.join(self.exported_scan_dir, scan_name, 'color', color_file))
-        pose_file_path = os.path.join(self.exported_scan_dir, scan_name, 'pose', pose_file)
-        pose_matrix = read_matrix(pose_file_path) 
+        imgs, pose_matrices = [], []
+        for i in range(num_img):
+            img = Image.open(os.path.join(self.exported_scan_dir, scan_name, 'color', color_files_selected[i]))
+            pose_file_path = os.path.join(self.exported_scan_dir, scan_name, 'pose', pose_files[i])
+            pose_matrix = read_matrix(pose_file_path) 
+            imgs.append(img)
+            pose_matrices.append(pose_matrix)
         
-        return img, pose_matrix
+        return imgs, pose_matrices
 
     def get_pointcloud(self, idx): 
         scan_name = self.scan_names[idx]
@@ -169,3 +173,53 @@ class scannet_object(object):
 
         axis_align_matrix = np.array(axis_align_matrix).reshape((4,4))
         return axis_align_matrix
+
+    def get_calibration(self, idx, pose):
+        K = self.get_color_intrinsic(idx)
+        axis_align_matrix = self.get_axisAlignment(idx)
+        return scannet_calibration(K, axis_align_matrix, pose)
+
+
+class scannet_calibration(object):
+    def __init__(self, K, axis_align_matrix, pose):
+        self.K = K
+        self.axis_align_matrix = axis_align_matrix
+        self.pose = pose
+
+    def project_upright_depth_to_image(self, point_cloud):
+
+        alinged_verts = np.ones((point_cloud.shape[0],4))
+        alinged_verts[:,:3] = point_cloud[:,:3]
+        
+        unalign_verts = np.dot(alinged_verts, np.linalg.inv(axis_align_matrix.transpose()))
+
+        sampled_h = np.ones((len(unalign_verts), 4))
+        sampled_h[:,:3] = unalign_verts[:,:3]
+
+        camera_coord = np.matmul(np.linalg.inv(self.pose), np.transpose(sampled_h))
+        camera_proj = np.matmul(K, camera_coord)
+
+        # Get valid points for the image
+        x = camera_proj[0,:]
+        y = camera_proj[1,:]
+        z = camera_proj[2,:]
+        filter_idx = np.where((x/z >= 0) & (x/z < colorW) & (y/z >= 0) & (y/z < colorH) & (z > 0))[0]
+
+        # Normalize by 4th coords(Homogeneous -> 3 coords system)
+        camera_proj_normalized = camera_proj / camera_proj[2,:]
+
+        #Get 3d -> 2d mapping
+        projected = camera_proj_normalized[:2, filter_idx]
+
+        #Reduce to 320,240 size
+        camera_proj_sm = np.zeros((5, projected.shape[-1]))
+
+        camera_proj_sm[0,:] = projected[0,:] * 320/colorW
+        camera_proj_sm[1,:] = projected[1,:] * 240/colorH
+
+        return camera_proj_sm[0:2].transpose(), camera_proj[2,:], filter_idx
+
+
+
+
+
