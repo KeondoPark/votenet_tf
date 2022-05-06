@@ -14,6 +14,7 @@ import datetime
 import numpy as np
 from load_scannet_data import export, export_with_2dseg, export_2dseg_results
 import pdb
+import tensorflow as tf
 
 SCANNET_DIR = 'scans'
 EXPORTED_2D_DIR = 'frames_square'
@@ -121,7 +122,18 @@ def batch_export():
 def save_2dsemantic_results():
     if not os.path.exists(OUTPUT_2DSEG_FOLDER):
         print('Creating new data folder: {}'.format(OUTPUT_2DSEG_FOLDER))                
-        os.mkdir(OUTPUT_2DSEG_FOLDER)        
+        os.mkdir(OUTPUT_2DSEG_FOLDER) 
+    
+    with tf.compat.v1.gfile.GFile('../deeplab/saved_model/scannet_3.pb', "rb") as f:
+        graph_def = tf.compat.v1.GraphDef()
+        graph_def.ParseFromString(f.read())
+    
+    myGraph = tf.compat.v1.Graph()
+    with myGraph.as_default():
+        tf.compat.v1.import_graph_def(graph_def, name='')
+
+    sess = tf.compat.v1.Session(graph=myGraph)
+
         
     for scan_name in TRAIN_SCAN_NAMES:
         print('-'*20+'begin')
@@ -132,10 +144,10 @@ def save_2dsemantic_results():
         exported_scan_dir = os.path.join(EXPORTED_2D_DIR, scan_name)
         
         try:            
-            export_2dseg_results(exported_scan_dir, output_filename_prefix)
+            export_2dseg_results(sess, exported_scan_dir, output_filename_prefix)
         except:
             print('Failed export scan: %s'%(scan_name))                    
-        print('-'*20+'done')        
+        print('-'*20+'done')                
 
 if __name__=='__main__':    
     #batch_export()

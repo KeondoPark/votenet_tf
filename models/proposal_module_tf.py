@@ -165,8 +165,15 @@ class ProposalModule(layers.Layer):
             
             self.bn1 = layers.BatchNormalization(axis=-1)
             self.bn2 = layers.BatchNormalization(axis=-1)
-            self.relu1 = layers.ReLU()
-            self.relu2 = layers.ReLU()
+
+            act = model_config['activation'] if 'activation' in model_config['activation'] else 'relu6'
+            if act == 'relu6':
+                maxval = 6
+            else:
+                maxval = None
+
+            self.relu1 = layers.ReLU(maxval)
+            self.relu2 = layers.ReLU(maxval)
 
     def call(self, xyz, features, end_points):
         """

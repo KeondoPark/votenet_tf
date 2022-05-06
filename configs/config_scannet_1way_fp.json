@@ -1,12 +1,13 @@
 {    
-    "model_id": "scannet_1way_fp2", 
+    "model_id": "scannet_1way_fp4", 
     "dataset": "scannet",
     "use_painted": true,   
     "two_way": false,       
     "use_fp_mlp": true, 
     "sep_coords": false,
     "use_tflite": false,
-    "tflite_folder": "tflite/tflite_models/scannet_1way_fp2",    
+    "activation": "relu",
+    "tflite_folder": "tflite/tflite_models/scannet_1way_fp4",    
     "use_edgetpu": false,        
     "use_multiThr": false
 }

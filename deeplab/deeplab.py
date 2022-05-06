@@ -94,9 +94,9 @@ def run_semantic_segmentation_graph(image, sess, input_size):
 
     return seg_prob, seg_class
 
-def run_semantic_seg(imgs, save_result=False, save_name='semantic_result', tflite_file='sunrgbd_COCO_15.pb', input_size=513):    
+def run_semantic_seg(imgs, save_result=False, save_name='semantic_result', graph_file='sunrgbd_COCO_15.pb', input_size=(513,513)):    
     
-    with tf.compat.v1.gfile.GFile(os.path.join(BASE_DIR,'saved_model',tflite_file), "rb") as f:
+    with tf.compat.v1.gfile.GFile(os.path.join(BASE_DIR,'saved_model',graph_file), "rb") as f:
         graph_def = tf.compat.v1.GraphDef()
         graph_def.ParseFromString(f.read())
     
@@ -117,7 +117,7 @@ def run_semantic_seg(imgs, save_result=False, save_name='semantic_result', tflit
     if save_result:
         save_semantic_result(img, pred_class, save_name)
     
-    return pred_prob, pred_class
+    return pred_prob_list, pred_class_list
 
 
 def run_semantic_seg_tflite(img_list, save_result=False, tflite_file='sunrgbd_ade20k_12_quant_edgetpu.tflite'):

@@ -53,6 +53,11 @@ from torch.utils.data import DataLoader
 model_config = json.load(open(FLAGS.config_path))
 DEFAULT_CHECKPOINT_PATH = os.path.join('tf_ckpt', model_config['model_id'])
 
+if 'dataset' in model_config:
+    DATASET = model_config['dataset']
+else:
+    DATASET =  FLAGS.dataset
+
 def preprocess_point_cloud(point_cloud):
     ''' Prepare the numpy point cloud (N,3) for forward pass '''
     if not model_config['use_painted']:
@@ -60,8 +65,8 @@ def preprocess_point_cloud(point_cloud):
     floor_height = np.percentile(point_cloud[:,2],0.99)
     height = point_cloud[:,2] - floor_height
     point_cloud = np.concatenate([point_cloud, np.expand_dims(height, 1)],1) # (N,4) or (N,7)
-    if point_cloud.shape[0] > FLAGS.num_point:
-        point_cloud = random_sampling(point_cloud, FLAGS.num_point)
+    #if point_cloud.shape[0] > num_point:
+    #point_cloud = random_sampling(point_cloud, num_point)
     pc = np.expand_dims(point_cloud.astype(np.float32), 0) # (1,20000,4)
     return pc
 
@@ -81,7 +86,7 @@ if __name__=='__main__':
 
     # Set file paths and dataset config
     demo_dir = os.path.join(BASE_DIR, 'demo_files') 
-    if FLAGS.dataset == 'sunrgbd':
+    if DATASET == 'sunrgbd':
         sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
         from model_util_sunrgbd import SunrgbdDatasetConfig
         if 'include_person' in model_config and model_config['include_person']:
@@ -90,24 +95,33 @@ if __name__=='__main__':
             DATASET_CONFIG = SunrgbdDatasetConfig()
         from sunrgbd_data import sunrgbd_object
         checkpoint_path = FLAGS.checkpoint_path if FLAGS.checkpoint_path is not None else DEFAULT_CHECKPOINT_PATH          
+        NUM_POINT = 20000
         data_idx = 5051
         dataset = sunrgbd_object(os.path.join(DATA_DIR,'sunrgbd_trainval'), 'training', use_v1=True)
         point_cloud = dataset.get_depth(data_idx)  
         img = dataset.get_image2(data_idx)
         calib = dataset.get_calibration(data_idx)    
         deeplab_tflite_file = 'sunrgbd_COCO_15_quant_edgetpu.tflite'
+        deeplab_pb = 'sunrgbd_COCO_15.pb'
+        img_input_size = (513,513)
         imgs = [img]
         calibs = [calib]
         
-    elif FLAGS.dataset == 'scannet':
+    elif DATASET == 'scannet':
         sys.path.append(os.path.join(ROOT_DIR, 'scannet'))
         from scannet_detection_dataset import DC # dataset config
+        from model_util_scannet import ScannetDatasetConfig, scannet_object
+        DATASET_CONFIG = ScannetDatasetConfig()        
         checkpoint_path = FLAGS.checkpoint_path if FLAGS.checkpoint_path is not None else DEFAULT_CHECKPOINT_PATH
+        NUM_POINT = 40000
+        data_idx = 0
         dataset = scannet_object()
-        imgs, poses = dataset.get_image_and_pose(0, num_img=3)
-        calibs = [dataset.get_calibration(0, pose) for pose in poses]
-        point_cloud = dataset.get_pointcloud(0)
+        imgs, poses = dataset.get_image_and_pose(data_idx, num_img=3)        
+        calibs = [dataset.get_calibration(data_idx, pose) for pose in poses]
+        point_cloud = dataset.get_pointcloud(data_idx)
         deeplab_tflite_file = 'scannet_2_quant_edgetpu.tflite'
+        deeplab_pb = 'scannet_3.pb'
+        img_input_size = (321,321)
 
     else:
         print('Unkown dataset. Exiting.')
@@ -154,7 +168,7 @@ if __name__=='__main__':
     ## TODO: NEED TO BE REPLACED    
     
     time_record = [('Start: ', time.time())]
-    point_cloud_sampled = random_sampling(point_cloud[:,0:3], FLAGS.num_point)
+    point_cloud_sampled = random_sampling(point_cloud[:,0:3], NUM_POINT)
     pc = preprocess_point_cloud(point_cloud_sampled)    
         
     time_record.append(('Votenet data preprocessing time:', time.time()))
@@ -165,18 +179,18 @@ if __name__=='__main__':
     if model_config['use_painted']:                       
         if model_config['use_multiThr']:
             end_points = net(inputs['point_clouds'], training=False, img=imgs, calib=calibs, deeplab_tflite_file=deeplab_tflite_file)        
-        else:
-            xyz = pc[0,:,:3]
+        else:            
             if model_config['use_edgetpu']:
                 pred_prob_list = run_semantic_seg_tflite(imgs, tflite_file=deeplab_tflite_file, save_result=False)                
-            else:                
-                pred_prob, pred_class = run_semantic_seg(imgs, save_result=False)  
+            else:     
+                pred_prob_list, _ = run_semantic_seg(imgs, graph_file=deeplab_pb, input_size=img_input_size, save_result=False)                  
             
             time_record.append(('Deeplab inference time:', time.time()))
-            pointcloud = np.zeros((xyz.shape[0], 3 + 1 + DATASET_CONFIG.num_class + 1))
-            pointcloud[:,0:3] = xyz
-            for calib in calibs:
-                uv,d, filter_idx = calib.project_upright_depth_to_image(xyz) #uv: (N, 2)
+            painted_pc = np.zeros((pc.shape[1], 3 + 1 + 1 + (DATASET_CONFIG.num_class + 1))) #Coords + height + isPainted + 
+            painted_pc[:,0:3] = pc[0,:,0:3]
+            painted_pc[:,-1] = pc[0,:,-1]
+            for pred_prob, calib in zip(pred_prob_list, calibs):
+                uv,d, filter_idx = calib.project_upright_depth_to_image(painted_pc[:,0:3]) #uv: (N, 2)
                 uv = np.rint(uv - 1)
                 
                 pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)] # (npoint, num_class + 1 + 1 )
@@ -186,15 +200,15 @@ if __name__=='__main__':
 
                 # 0 is background class, deeplab is trained with "person" included, (height, width, num_class)
                 pred_prob = pred_prob[:,:(DATASET_CONFIG.num_class+1)] #(npoint, num_class)
-                pointcloud[filter_idx, 3] = isPainted
-                pointcloud[filter_idx, 4:] = pred_prob
+                painted_pc[filter_idx, 3] = isPainted
+                painted_pc[filter_idx, 4:-1] = pred_prob
 
             #pointcloud = np.concatenate([xyz, isPainted, pred_prob, pc[0,:,3:]], axis=-1)
             time_record.append(('Pointpainting time:', time.time()))
 
-            inputs['point_clouds'] = tf.convert_to_tensor(np.expand_dims(pointcloud, axis=0))
+            inputs['point_clouds'] = tf.convert_to_tensor(np.expand_dims(painted_pc, axis=0))
 
-            print(inputs['point_clouds'].shape)
+            print("Input shape", inputs['point_clouds'].shape)
             end_points = net(inputs['point_clouds'])        
         
     else:        
@@ -243,7 +257,7 @@ if __name__=='__main__':
 
     print('Finished detection. %d object detected.'%(len(pred_map_cls[0][0])))
   
-    dump_dir = os.path.join(demo_dir, '%s_results'%(FLAGS.dataset))
+    dump_dir = os.path.join(demo_dir, '%s_results'%(DATASET))
     if not os.path.exists(dump_dir): os.mkdir(dump_dir) 
     dump_results(end_points, dump_dir, DATASET_CONFIG, True)
     print('Dumped detection results to folder %s'%(dump_dir))
