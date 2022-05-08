@@ -102,19 +102,6 @@ class ProposalModule(layers.Layer):
         self.num_proposal = num_proposal
         self.sampling = sampling
         self.seed_feat_dim = seed_feat_dim
-        """
-        # Vote clustering        
-        self.vote_aggregation = PointnetSAModuleVotes( 
-                npoint=self.num_proposal,
-                radius=0.3,
-                nsample=16,
-                mlp=[self.seed_feat_dim, 128, 128, 128],
-                use_xyz=True,
-                normalize_xyz=True
-                #use_tflite=use_tflite,
-                #tflite_name='va_quant_b8.tflite'
-            )
-        """
         self.npoint = self.num_proposal
         self.nsample = 16
         self.vote_aggregation = SamplingAndGrouping( 
@@ -125,7 +112,8 @@ class ProposalModule(layers.Layer):
                 normalize_xyz=True
             )
         self.use_tflite = model_config['use_tflite']
-        self.sep_coords = model_config['sep_coords']
+        #self.sep_coords = model_config['sep_coords']
+        self.q_gran = model_config['q_gran']
         
         mlp_spec = [self.seed_feat_dim, 128, 128, 128]
         mlp_spec[0] += 3  
@@ -134,7 +122,7 @@ class ProposalModule(layers.Layer):
             self.use_edgetpu = model_config['use_edgetpu']
             tflite_folder = model_config['tflite_folder']            
             if self.use_edgetpu: 
-                tflite_file = 'va_quant_test_edgetpu.tflite'           
+                tflite_file = 'va_quant_edgetpu.tflite'           
                 from pycoral.utils.edgetpu import make_interpreter            
                 self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join(tflite_folder, tflite_file)))
             else:
@@ -165,8 +153,15 @@ class ProposalModule(layers.Layer):
             
             self.bn1 = layers.BatchNormalization(axis=-1)
             self.bn2 = layers.BatchNormalization(axis=-1)
-            self.relu1 = layers.ReLU()
-            self.relu2 = layers.ReLU()
+
+            act = model_config['activation'] if 'activation' in model_config['activation'] else 'relu6'
+            if act == 'relu6':
+                maxval = 6
+            else:
+                maxval = None
+
+            self.relu1 = layers.ReLU(maxval)
+            self.relu2 = layers.ReLU(maxval)
 
     def call(self, xyz, features, end_points):
         """
@@ -204,7 +199,7 @@ class ProposalModule(layers.Layer):
             if len(self.input_details) > 1:
                 self.interpreter.set_tensor(self.input_details[1]['index'], xyz)
             self.interpreter.invoke()
-            if self.sep_coords:
+            if self.q_gran == 'semantic':
                 offset = self.interpreter.get_tensor(self.output_details[0]['index'])
                 offset = tf.convert_to_tensor(offset)
                 center = xyz + offset
@@ -228,6 +223,18 @@ class ProposalModule(layers.Layer):
                 #net = np.concatenate([net2, net3], aixs=-1)
                 net = tf.convert_to_tensor(net)                  
 
+            elif self.q_gran == 'channel':
+                out = []
+                for i in range(2+3+self.num_heading_bin*2+self.num_size_cluster*4+self.num_class):
+                    out.append(self.output_details[i]['index'])
+
+                offset = layers.Concatenate(axis=-1)(out[:3])
+                net = layers.Concatenate(axis=-1)(out[3:])
+                #net2 = layers.Concatenate(axis=-1)(out[3:3+2+self.num_heading_bin+self.num_size_cluster] + out[-self.num_class:])
+                #net3 = layers.Concatenate(axis=-1)(out[3+2+self.num_heading_bin+self.num_size_cluster:-self.num_class])
+
+                center = xyz + offset
+
             else:
                 net = self.interpreter.get_tensor(self.output_details[0]['index']) 
                 net = tf.convert_to_tensor(net)
@@ -247,8 +254,8 @@ class ProposalModule(layers.Layer):
             net = self.relu1(self.bn1(self.conv1(features)))
             net = self.relu2(self.bn2(self.conv2(net)))
             net = self.conv3(net)
-            offset = net[:,:,:,0:3]            
-            net = net[:,:,:,3:]    
+            offset = net[:,:,:,0:3]
+            net = net[:,:,:,3:]
             
             #offset = net[:,:,0:3]            
             #net = net[:,:,3:]    

@@ -32,7 +32,8 @@ import sunrgbd_utils
 from tqdm import tqdm
 import tensorflow as tf
 import time
-from deeplab import run_semantic_segmentation_graph
+#from deeplab import run_semantic_segmentation_graph
+import deeplab
 
 import json
 ROOT_DIR = os.path.dirname(BASE_DIR)
@@ -477,7 +478,7 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                         #pred_prob = np.eye(num_sunrgbd_class+1)[pred_class]
                         #pred_prob = pred_prob[:,:,1:]
                     else:
-                        pred_prob, pred_class = run_semantic_segmentation_graph(img, sess, INPUT_SIZE) # (w, h, num_class)     
+                        pred_prob, pred_class = deeplab.run_semantic_segmentation_graph(img, sess, INPUT_SIZE) # (w, h, num_class)     
                         pred_prob = pred_prob[:,:,:(num_sunrgbd_class+1)] # 0 is background class              
                         projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
                         pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
@@ -660,7 +661,7 @@ def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
         uv[:,0] = np.minimum(uv[:,0], w-1)
         uv[:,1] = np.minimum(uv[:,1], h-1)
 
-        pred_prob, _ = run_semantic_segmentation_graph(img, sess, INPUT_SIZE) # (w, h, num_class)     
+        pred_prob, _ = deeplab.run_semantic_segmentation_graph(img, sess, INPUT_SIZE) # (w, h, num_class)     
         pred_class = np.argmax(pred_prob, axis=-1)
         #pred_prob = pred_prob[:,:,num_sunrgbd_class - num_small_class:(num_sunrgbd_class+1)] # 0 is background class              
         projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]        

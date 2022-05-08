@@ -149,33 +149,29 @@ def read_matrix(filepath):
             i += 1
     return out_matrix
 
-def export_2dseg_results(exported_scan_dir=None, output_dir=None):
+def export_2dseg_results(sess, exported_scan_dir=None, output_dir=None):
     ## Preparation for pointpainting    
     n_classes = 18
 
     # deeplabv3+ tf session
     INPUT_SIZE = (321, 321)    
-    with tf.compat.v1.gfile.GFile('../deeplab/saved_model/scannet_3.pb', "rb") as f:
-        graph_def = tf.compat.v1.GraphDef()
-        graph_def.ParseFromString(f.read())
-    
-    myGraph = tf.compat.v1.Graph()
-    with myGraph.as_default():
-        tf.compat.v1.import_graph_def(graph_def, name='')
-
-    sess = tf.compat.v1.Session(graph=myGraph)
 
     color_files = os.listdir(os.path.join(exported_scan_dir, 'color'))   
     frame_nums = [int(f[:-4]) for f in color_files]
 
-    for frame in frame_nums:
+    if len(frame_nums) > 2 * 3:
+        N = 2
+    else:
+        N = 1
+
+    for frame in frame_nums[0::N]:
         # Get sementationr esult
         img_file = os.path.join(exported_scan_dir, 'color', str(frame) + '.jpg')
         img = Image.open(img_file)
         pred_prob, pred_class = run_semantic_segmentation_graph(img, sess, INPUT_SIZE)
-        pred_prob = pred_prob[:,:,:(n_classes+1)] # 0 is background class
+        pred_prob = pred_prob[:,:,:(n_classes+1)].astype(np.float32) # 0 is background class
         np.save(os.path.join(output_dir, 'prob_' + str(frame) + '.npy'), pred_prob)
-        np.save(os.path.join(output_dir, 'class_' + str(frame) + '.npy'), pred_class)
+        #np.save(os.path.join(output_dir, 'class_' + str(frame) + '.npy'), pred_class)
 
 
 

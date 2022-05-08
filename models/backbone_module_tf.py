@@ -207,14 +207,7 @@ import functools
 
 class Pointnet2Backbone_p(layers.Layer):
     r"""
-       Backbone network for point cloud feature learning.
-       Based on Pointnet++ single-scale grouping network. 
-        
-       Parameters
-       ----------
-       input_feature_dim: int
-            Number of input channels in the feature descriptor for each point.
-            e.g. 3 for RGB.
+       Backbone network using 2way SA layers
     """
     def __init__(self, input_feature_dim=0, model_config=None):
         super().__init__()
@@ -228,7 +221,7 @@ class Pointnet2Backbone_p(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True                
             )
-        self.sa1_mlp = PointnetMLP(mlp=[input_feature_dim, 64, 64, 128], nsample=64)        
+        self.sa1_mlp = PointnetMLP(mlp=[input_feature_dim, 64, 64, 128], nsample=64, model_config=model_config)        
         
         self.sa2 = SamplingAndGrouping(
                 npoint=512,
@@ -237,7 +230,7 @@ class Pointnet2Backbone_p(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True                
             )
-        self.sa2_mlp = PointnetMLP(mlp=[128, 128, 128, 256], nsample=32)
+        self.sa2_mlp = PointnetMLP(mlp=[128, 128, 128, 256], nsample=32, model_config=model_config)
 
         self.sa3 = SamplingAndGrouping(
                 npoint=256,
@@ -246,7 +239,7 @@ class Pointnet2Backbone_p(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True                
             )
-        self.sa3_mlp = PointnetMLP(mlp=[256, 128, 128, 256], nsample=16)
+        self.sa3_mlp = PointnetMLP(mlp=[256, 128, 128, 256], nsample=16, model_config=model_config)
         
         self.sa4 = SamplingAndGrouping(
                 npoint=128,
@@ -255,7 +248,7 @@ class Pointnet2Backbone_p(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True                
             )
-        self.sa4_mlp = PointnetMLP(mlp=[256, 128, 128, 256], nsample=16)
+        self.sa4_mlp = PointnetMLP(mlp=[256, 128, 128, 256], nsample=16, model_config=model_config)
 
         
         self.fp1 = PointnetFPModule(mlp=[256+256,256,256], m=512, model_config=model_config)
@@ -301,11 +294,38 @@ class Pointnet2Backbone_p(layers.Layer):
         #print("Painted from original", tf.reduce_sum(isPainted[0]))
         #print("Painted from SA1", tf.reduce_sum(sa1_painted[0]))        
         
+        '''
+        # Batch index. i in (i,j) index type
+        B = tf.shape(xyz)[0]
+        N = tf.shape(xyz)[1]
+        npoint = tf.shape(sa1_xyz1)[1]
+        batch_inds = tf.expand_dims(tf.tile(tf.expand_dims(tf.range(B),-1), [1,npoint]), -1)
+        new_inds = tf.concat([batch_inds, tf.expand_dims(sa1_inds1, -1)], -1)
+        updates = tf.cast(tf.ones([B,npoint]), tf.bool)
+        mask = tf.scatter_nd(new_inds, updates, [B,N]) # mask where sa1_inds = True
+
+        new_xyz, new_isPainted, new_features = [], [], []
+
+        new_xyz = tf.boolean_mask(xyz, tf.logical_not(mask))
+        new_xyz = tf.reshape(new_xyz, [B, N - npoint, -1])
+
+        new_isPainted = tf.boolean_mask(isPainted, tf.logical_not(mask))
+        new_isPainted = tf.reshape(new_isPainted, [B, N - npoint])
+
+        new_features = tf.boolean_mask(features, tf.logical_not(mask))
+        new_features = tf.reshape(new_features, [B, N - npoint, -1])
+        '''
+
+        new_xyz = xyz
+        new_isPainted = isPainted
+        new_features = features
+
+
         
         sa1_features1 = self.sa1_mlp(sa1_grouped_features1)        
         time_record.append(("SA1 MLP:", time.time()))
         
-        sa1_xyz2, sa1_inds2, sa1_grouped_features2, sa1_painted2 = self.sa1(xyz, isPainted, features, bg1=True, wght1=4)        
+        sa1_xyz2, sa1_inds2, sa1_grouped_features2, sa1_painted2 = self.sa1(new_xyz, new_isPainted, new_features, bg1=True, wght1=4, xyz_ball=xyz, features_ball=features)        
         #time_record.append(("SA1 sampling and grouping:", time.time()))        
 
         sa1_features2 = self.sa1_mlp(sa1_grouped_features2)  
@@ -331,17 +351,6 @@ class Pointnet2Backbone_p(layers.Layer):
         sa2_features2 = self.sa2_mlp(sa2_grouped_features2)
         time_record.append(("SA2 MLP:", time.time()))
 
-        """
-        sa2_xyz = layers.Concatenate(axis=1)([sa2_xyz1, sa2_xyz2])
-        sa2_features = layers.Concatenate(axis=1)([sa2_features1, sa2_features2])        
-
-        sa3_xyz, sa3_inds, sa3_grouped_features, sa3_painted = self.sa3(sa2_xyz, None, sa2_features)
-        sa3_features = self.sa3_mlp(sa3_grouped_features)
-        
-        sa4_xyz, sa4_inds, sa4_grouped_features, sa4_painted = self.sa4(sa3_xyz, None, sa3_features)
-        sa4_features = self.sa4_mlp(sa4_grouped_features)
-
-        """
         # ------------------------------- SA3-------------------------------        
         sa3_xyz1, sa3_inds1, sa3_grouped_features1, sa3_painted1 = self.sa3(sa2_xyz1, sa2_painted1, sa2_features1, bg1=True, wght1=1)
         time_record.append(("SA3 sampling and grouping:", time.time()))
@@ -431,7 +440,15 @@ class Pointnet2Backbone_p(layers.Layer):
         #num_seed = sa2_inds.shape[1]
         #end_points['fp2_inds'] = sa1_inds[:,0:num_seed] # indices among the entire input point clouds
         seed_inds1 = tf.gather(sa1_inds1, axis=1, indices=sa2_inds1, batch_dims=1)
+        
+        # Necessary if excluding first sampling points
+        # all_inds = tf.tile(tf.expand_dims(tf.range(N), 0), [B,1])
+        # rem_inds = tf.boolean_mask(all_inds, tf.logical_not(mask))
+        # rem_inds = tf.reshape(rem_inds, [B,-1])
+        # sa1_2_inds2 = tf.gather(sa1_inds2, axis=1, indices=sa2_inds2, batch_dims=1)
+        # seed_inds2 = tf.gather(rem_inds, indices=sa1_2_inds2, batch_dims=1)        
         seed_inds2 = tf.gather(sa1_inds2, axis=1, indices=sa2_inds2, batch_dims=1)
+        
         end_points['fp2_inds'] = layers.Concatenate(axis=1)([seed_inds1, seed_inds2])      
         
         time_record.append(("SA End:", time.time()))
@@ -571,7 +588,7 @@ class Pointnet2Backbone_tflite(layers.Layer):
         sa1_ball_inds1 = None
 
         # Run image segmentation result and get result
-        if img is not None and self.use_multiThr:
+        if imgs is not None and self.use_multiThr:
             xyz = pointcloud[:,:,:3]                        
             future0 = self._executor.submit(run_semantic_seg_tflite, imgs, deeplab_tflite_file, False)  
             sa1_inds1 = tf_sampling.farthest_point_sample(1024, xyz) # First sampling is not biased FPS, i.e. weight = 1
@@ -580,24 +597,32 @@ class Pointnet2Backbone_tflite(layers.Layer):
             
             xyz = xyz[0] #Assume single pointset
 
-            uv,d, filter_idx = calib.project_upright_depth_to_image(xyz) #uv: (N, 2)
-            uv = np.rint(uv - 1)
+            uv_list, filter_idx_list = [], []
+            for calib in calibs:
+                uv, d, filter_idx = calib.project_upright_depth_to_image(xyz) #uv: (N, 2)
+                uv = np.rint(uv - 1)
 
             #if self.use_multiThr:  
             pred_prob_list = future0.result()
-            time_record.append(('Deeplab inference time:', time.time()))                
-            
+            time_record.append(('Deeplab inference time:', time.time()))      
+
+            features = np.zeros((0, xyz.shape[0], self.num_class+1))
+            isPainted = np.zeros((0, xyz.shape[0]))
+
+            for pred_prob, uv, filter_idx in zip(pred_prob_list, uv_list, filter_idx_list): 
                 pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)] # (npoint, num_class + 1 + 1 )
                 projected_class = np.argmax(pred_prob, axis=-1) # (npoint, 1) 
-                isPainted = np.where((projected_class > 0) & (projected_class < self.num_class+1), 1, 0) # Point belongs to background?                    
-                #isPainted = np.expand_dims(isPainted, axis=-1)
+                _isPainted = np.where((projected_class > 0) & (projected_class < self.num_class+1), 1, 0) # Point belongs to background?                                    
 
                 # 0 is background class, deeplab is trained with "person" included, (height, width, num_class)
                 pred_prob = pred_prob[:,:(self.num_class+1)] # (npoint, num_class+1)
-                features = np.concatenate([pred_prob, pointcloud[0,:,3:]], axis=-1)
-            features = np.expand_dims(features, axis=0)
+                #features = np.concatenate([pred_prob, pointcloud[0,:,3:]], axis=-1)
+                isPainted[0, filter_idx] = _isPainted
+                features[0, filter_idx] = pred_prob
+
+            #features = np.expand_dims(features, axis=0)
             xyz = np.expand_dims(xyz, axis=0)
-            isPainted = np.expand_dims(isPainted, axis=0)
+            #isPainted = np.expand_dims(isPainted, axis=0)
             
             #projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]         
             #painted = np.concatenate([xyz, isPainted, pred_prob], axis=-1)

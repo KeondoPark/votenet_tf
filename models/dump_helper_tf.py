@@ -107,6 +107,7 @@ def dump_results(end_points, dump_dir, config, inference_switch=False):
         
         #isPainted = np.where((pc_seed[:,3] > 0) & (pc_seed[:,3] < 11), 3, 0)
         isPainted = pc_seed[:,3] 
+        pred_class = pc_seed[:,4:] 
         print(isPainted)       
 
         pc_util.write_ply(pc, os.path.join(dump_dir, '%06d_pc.ply'%(idx_beg+i)))

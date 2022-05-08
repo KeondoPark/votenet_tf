@@ -253,7 +253,6 @@ def eval_det_multiprocessing(pred_all, gt_all, ovthresh=0.25, use_07_metric=Fals
         else:
             rec[classname] = 0
             prec[classname] = 0
-            ap[classname] = 0
-        print(classname, ap[classname])
+            ap[classname] = 0        
     
     return rec, prec, ap 
