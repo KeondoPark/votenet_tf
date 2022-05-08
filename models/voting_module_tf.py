@@ -42,7 +42,8 @@ class VotingModule(layers.Layer):
         self.out_dim = self.in_dim # due to residual feature, in_dim has to be == out_dim
 
         self.use_tflite = model_config['use_tflite']
-        self.sep_coords = model_config['sep_coords']
+        #self.sep_coords = model_config['sep_coords']
+        self.q_gran = model_config['q_gran']
         self.use_fp_mlp = model_config['use_fp_mlp']
 
         if self.use_tflite:
@@ -106,16 +107,33 @@ class VotingModule(layers.Layer):
             if len(self.input_details) > 1:
                 self.interpreter.set_tensor(self.input_details[1]['index'], seed_xyz)
             self.interpreter.invoke()
-            if self.sep_coords:
+            if self.q_gran == 'semantic':
                 offset = self.interpreter.get_tensor(self.output_details[0]['index'])
-                vote_features = self.interpreter.get_tensor(self.output_details[1]['index'])
-                
+                vote_xyz = seed_xyz + offset
+                vote_features = self.interpreter.get_tensor(self.output_details[1]['index'])                                
+
+            elif self.q_gran == 'channel':
+                out = []
+                for i in range((self.out_dim+3) * self.vote_factor):
+                    out.append(self.output_details[i]['index'])
+
+                offset = layers.Concatenate(axis=-1)(out[:3])
                 vote_xyz = seed_xyz + offset
 
+                residual_features = layers.Concatenate(axis=-1)(out[3:-1])
+                net0 = out[-1]
+                net0 = layers.Reshape((num_seed, self.vote_factor, net0.shape[-1]))(net0)
+                vote_features = net0 + residual_features 
+
             else:
-                offset = self.interpreter.get_tensor(self.output_details[0]['index'])
-                vote_features = self.interpreter.get_tensor(self.output_details[1]['index'])
+                net = self.interpreter.get_tensor(self.output_details[0]['index'])
+                net0 = self.interpreter.get_tensor(self.output_details[1]['index'])
+
+                offset = net[:,:,:,0:3]            
                 vote_xyz = seed_xyz + offset
+
+                residual_features = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net[:,:,:,3:]) # (batch_size, num_seed, vote_factor, out_dim)
+                vote_features = net0 + residual_features                
 
         else:
             if not self.use_fp_mlp:

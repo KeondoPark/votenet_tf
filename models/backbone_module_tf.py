@@ -207,14 +207,7 @@ import functools
 
 class Pointnet2Backbone_p(layers.Layer):
     r"""
-       Backbone network for point cloud feature learning.
-       Based on Pointnet++ single-scale grouping network. 
-        
-       Parameters
-       ----------
-       input_feature_dim: int
-            Number of input channels in the feature descriptor for each point.
-            e.g. 3 for RGB.
+       Backbone network using 2way SA layers
     """
     def __init__(self, input_feature_dim=0, model_config=None):
         super().__init__()
@@ -301,6 +294,7 @@ class Pointnet2Backbone_p(layers.Layer):
         #print("Painted from original", tf.reduce_sum(isPainted[0]))
         #print("Painted from SA1", tf.reduce_sum(sa1_painted[0]))        
         
+        '''
         # Batch index. i in (i,j) index type
         B = tf.shape(xyz)[0]
         N = tf.shape(xyz)[1]
@@ -320,18 +314,18 @@ class Pointnet2Backbone_p(layers.Layer):
 
         new_features = tf.boolean_mask(features, tf.logical_not(mask))
         new_features = tf.reshape(new_features, [B, N - npoint, -1])
+        '''
 
-
-        # new_xyz = xyz
-        # new_isPainted = isPainted
-        # new_features = features
+        new_xyz = xyz
+        new_isPainted = isPainted
+        new_features = features
 
 
         
         sa1_features1 = self.sa1_mlp(sa1_grouped_features1)        
         time_record.append(("SA1 MLP:", time.time()))
         
-        sa1_xyz2, sa1_inds2, sa1_grouped_features2, sa1_painted2 = self.sa1(new_xyz, new_isPainted, new_features, bg1=True, wght1=4)        
+        sa1_xyz2, sa1_inds2, sa1_grouped_features2, sa1_painted2 = self.sa1(new_xyz, new_isPainted, new_features, bg1=True, wght1=4, xyz_ball=xyz, features_ball=features)        
         #time_record.append(("SA1 sampling and grouping:", time.time()))        
 
         sa1_features2 = self.sa1_mlp(sa1_grouped_features2)  
@@ -357,17 +351,6 @@ class Pointnet2Backbone_p(layers.Layer):
         sa2_features2 = self.sa2_mlp(sa2_grouped_features2)
         time_record.append(("SA2 MLP:", time.time()))
 
-        """
-        sa2_xyz = layers.Concatenate(axis=1)([sa2_xyz1, sa2_xyz2])
-        sa2_features = layers.Concatenate(axis=1)([sa2_features1, sa2_features2])        
-
-        sa3_xyz, sa3_inds, sa3_grouped_features, sa3_painted = self.sa3(sa2_xyz, None, sa2_features)
-        sa3_features = self.sa3_mlp(sa3_grouped_features)
-        
-        sa4_xyz, sa4_inds, sa4_grouped_features, sa4_painted = self.sa4(sa3_xyz, None, sa3_features)
-        sa4_features = self.sa4_mlp(sa4_grouped_features)
-
-        """
         # ------------------------------- SA3-------------------------------        
         sa3_xyz1, sa3_inds1, sa3_grouped_features1, sa3_painted1 = self.sa3(sa2_xyz1, sa2_painted1, sa2_features1, bg1=True, wght1=1)
         time_record.append(("SA3 sampling and grouping:", time.time()))
@@ -459,12 +442,12 @@ class Pointnet2Backbone_p(layers.Layer):
         seed_inds1 = tf.gather(sa1_inds1, axis=1, indices=sa2_inds1, batch_dims=1)
         
         # Necessary if excluding first sampling points
-        all_inds = tf.tile(tf.expand_dims(tf.range(N), 0), [B,1])
-        rem_inds = tf.boolean_mask(all_inds, tf.logical_not(mask))
-        rem_inds = tf.reshape(rem_inds, [B,-1])
-        sa1_2_inds2 = tf.gather(sa1_inds2, axis=1, indices=sa2_inds2, batch_dims=1)
-        seed_inds2 = tf.gather(rem_inds, indices=sa1_2_inds2, batch_dims=1)        
-        #seed_inds2 = tf.gather(sa1_inds2, axis=1, indices=sa2_inds2, batch_dims=1)
+        # all_inds = tf.tile(tf.expand_dims(tf.range(N), 0), [B,1])
+        # rem_inds = tf.boolean_mask(all_inds, tf.logical_not(mask))
+        # rem_inds = tf.reshape(rem_inds, [B,-1])
+        # sa1_2_inds2 = tf.gather(sa1_inds2, axis=1, indices=sa2_inds2, batch_dims=1)
+        # seed_inds2 = tf.gather(rem_inds, indices=sa1_2_inds2, batch_dims=1)        
+        seed_inds2 = tf.gather(sa1_inds2, axis=1, indices=sa2_inds2, batch_dims=1)
         
         end_points['fp2_inds'] = layers.Concatenate(axis=1)([seed_inds1, seed_inds2])      
         
@@ -605,7 +588,7 @@ class Pointnet2Backbone_tflite(layers.Layer):
         sa1_ball_inds1 = None
 
         # Run image segmentation result and get result
-        if img is not None and self.use_multiThr:
+        if imgs is not None and self.use_multiThr:
             xyz = pointcloud[:,:,:3]                        
             future0 = self._executor.submit(run_semantic_seg_tflite, imgs, deeplab_tflite_file, False)  
             sa1_inds1 = tf_sampling.farthest_point_sample(1024, xyz) # First sampling is not biased FPS, i.e. weight = 1

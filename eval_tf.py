@@ -89,8 +89,13 @@ def log_string(out_str):
 
 use_painted = model_config['use_painted']
 
+if 'dataset' in model_config:
+    DATASET = model_config['dataset']
+else:
+    DATASET =  FLAGS.dataset
+
 # Create Dataset and Dataloader
-if FLAGS.dataset == 'sunrgbd':
+if DATASET == 'sunrgbd':
     sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
     from sunrgbd_detection_dataset_tf import SunrgbdDetectionVotesDataset_tfrecord
     from model_util_sunrgbd import SunrgbdDatasetConfig
@@ -123,7 +128,7 @@ elif DATASET == 'scannet':
         shuffle=True, num_workers=4, worker_init_fn=my_worker_init_fn)
 
 else:
-    print('Unknown dataset %s. Exiting...'%(FLAGS.dataset))
+    print('Unknown dataset %s. Exiting...'%(DATASET))
     exit(-1)
 
 # Init the model and optimzier
@@ -190,7 +195,7 @@ def evaluate_one_epoch():
     start = time.time()    
     total_start = start
     for batch_idx, batch_data in enumerate(test_ds):        
-        #if batch_idx*BATCH_SIZE >= 400: break
+        if batch_idx*BATCH_SIZE >= 8: break
         if DATASET == 'scannet':                
             point_clouds = tf.convert_to_tensor(batch_data['point_clouds'], dtype=tf.float32)
             center_label = tf.convert_to_tensor(batch_data['center_label'], dtype=tf.float32)

@@ -220,8 +220,7 @@ class BNMomentumScheduler(object):
 
     def step(self, epoch=None):
         def reset_momentum(sharedMLP):
-            if sharedMLP is None: return
-            print(sharedMLP.name)
+            if sharedMLP is None: return            
             for l in sharedMLP.mlp_layers:
                 if isinstance(l.bn_unit, (tf.keras.layers.BatchNormalization)):      
                     #print("Batch norm reschdule!", l.bn_unit.name)
@@ -232,8 +231,7 @@ class BNMomentumScheduler(object):
 
         self.last_epoch = epoch
         for layer in self.model.layers:
-            if hasattr(layer, 'sa1_mlp'):                
-                print("Batch norm reschedule, 2way")
+            if hasattr(layer, 'sa1_mlp'):                                
                 reset_momentum(layer.sa1_mlp.mlp_module)
                 reset_momentum(layer.sa2_mlp.mlp_module)
                 reset_momentum(layer.sa3_mlp.mlp_module)
@@ -242,8 +240,7 @@ class BNMomentumScheduler(object):
                 reset_momentum(layer.fp2.mlp)
                 
 
-            if hasattr(layer, 'sa1') and hasattr(layer.sa1, 'mlp_module'):
-                print("Batch norm reschedule, 1way")
+            if hasattr(layer, 'sa1') and hasattr(layer.sa1, 'mlp_module'):                
                 reset_momentum(layer.sa1.mlp_module)
                 reset_momentum(layer.sa2.mlp_module)
                 reset_momentum(layer.sa3.mlp_module)
@@ -251,8 +248,7 @@ class BNMomentumScheduler(object):
                 reset_momentum(layer.fp1.mlp)
                 reset_momentum(layer.fp2.mlp)                
 
-            if hasattr(layer, 'bn1'):
-                print("Batch norm reschdule!")
+            if hasattr(layer, 'bn1'):                
                 layer.bn1.monemtum = self.lmbd(epoch) 
                 layer.bn2.momentum = self.lmbd(epoch)
 
