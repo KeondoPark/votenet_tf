@@ -589,30 +589,32 @@ class Pointnet2Backbone_tflite(layers.Layer):
 
         # Run image segmentation result and get result
         if imgs is not None and self.use_multiThr:
-            xyz = pointcloud[:,:,:3]                        
-            future0 = self._executor.submit(run_semantic_seg_tflite, imgs, deeplab_tflite_file, False)  
+            xyz = pointcloud[0,:,:3]     #Assume single pointset                   
+            future0 = self._executor.submit(run_semantic_seg_tflite, imgs, False, deeplab_tflite_file)  
             sa1_inds1 = tf_sampling.farthest_point_sample(1024, xyz) # First sampling is not biased FPS, i.e. weight = 1
             sa1_new_xyz1 = tf_sampling.gather_point(xyz, sa1_inds1)
             sa1_ball_inds1, _ = tf_grouping.query_ball_point(0.2, 64, xyz, sa1_new_xyz1)
             
-            xyz = xyz[0] #Assume single pointset
+            #xyz = xyz[0] 
 
             uv_list, filter_idx_list = [], []
             for calib in calibs:
-                uv, d, filter_idx = calib.project_upright_depth_to_image(xyz) #uv: (N, 2)
+                uv, d, filter_idx = calib.project_upright_depth_to_image(xyz[0]) #uv: (N, 2)
                 uv = np.rint(uv - 1)
+                uv_list.append(uv)
+                filter_idx_list.append(filter_idx)
 
             #if self.use_multiThr:  
             pred_prob_list = future0.result()
             time_record.append(('Deeplab inference time:', time.time()))      
 
-            features = np.zeros((0, xyz.shape[0], self.num_class+1))
-            isPainted = np.zeros((0, xyz.shape[0]))
+            features = np.zeros((1, xyz.shape[1], self.num_class+1+1))
+            isPainted = np.zeros((1, xyz.shape[1]))
 
             for pred_prob, uv, filter_idx in zip(pred_prob_list, uv_list, filter_idx_list): 
                 pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)] # (npoint, num_class + 1 + 1 )
                 projected_class = np.argmax(pred_prob, axis=-1) # (npoint, 1) 
-                _isPainted = np.where((projected_class > 0) & (projected_class < self.num_class+1), 1, 0) # Point belongs to background?                                    
+                _isPainted = np.where(projected_class > 0, 1, 0) # Point belongs to background?                                    
 
                 # 0 is background class, deeplab is trained with "person" included, (height, width, num_class)
                 pred_prob = pred_prob[:,:(self.num_class+1)] # (npoint, num_class+1)

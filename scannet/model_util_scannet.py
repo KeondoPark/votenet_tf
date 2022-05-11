@@ -137,21 +137,28 @@ class scannet_object(object):
         # Randomly select image and pose from the frames
         scan_name = self.scan_names[idx]
         color_files = os.listdir(os.path.join(self.exported_scan_dir, scan_name, 'color'))
+        print(scan_name)
 
         #Randomly choose color file
         color_file_idx = np.random.choice(len(color_files),num_img)
         color_files_selected = [color_files[idx] for idx in color_file_idx]
         pose_files = [f[:-4] + '.txt' for f in color_files_selected] #Same name but different extension
+        depth_files = [f[:-4] + '.png' for f in color_files_selected] #Same name but different extension
         
-        imgs, pose_matrices = [], []
+        imgs, pose_matrices, depth_nps = [], [], []
         for i in range(num_img):
             img = Image.open(os.path.join(self.exported_scan_dir, scan_name, 'color', color_files_selected[i]))
             pose_file_path = os.path.join(self.exported_scan_dir, scan_name, 'pose', pose_files[i])
+            depth_file_path = os.path.join(self.exported_scan_dir, scan_name, 'depth', depth_files[i])            
+            
             pose_matrix = read_matrix(pose_file_path) 
+            depth_np = np.array(Image.open(depth_file_path))
+
             imgs.append(img)
             pose_matrices.append(pose_matrix)
+            depth_nps.append(depth_np)            
         
-        return imgs, pose_matrices
+        return imgs, pose_matrices, depth_nps
 
     def get_pointcloud(self, idx): 
         scan_name = self.scan_names[idx]
@@ -187,21 +194,22 @@ class scannet_object(object):
                 colorH = int(line.strip('colorHeight = ').split(' ')[0])
         return colorW, colorH
 
-    def get_calibration(self, idx, pose):
+    def get_calibration(self, idx, pose, depth_np):
         K = self.get_color_intrinsic(idx)
         axis_align_matrix = self.get_axisAlignment(idx)
         colorW, colorH = self.get_colorSize(idx)
-        return scannet_calibration(K, axis_align_matrix, pose, colorW, colorH)
+        return scannet_calibration(K, axis_align_matrix, pose, depth_np, colorW, colorH)
 
 DC = ScannetDatasetConfig()
 
 class scannet_calibration(object):
-    def __init__(self, K, axis_align_matrix, pose, colorW, colorH):
+    def __init__(self, K, axis_align_matrix, pose, depth_np, colorW, colorH):
         self.K = K
         self.axis_align_matrix = axis_align_matrix
         self.pose = pose
         self.colorW = colorW
         self.colorH = colorH
+        self.depth_np = depth_np
 
     def project_upright_depth_to_image(self, point_cloud):
 
@@ -223,19 +231,29 @@ class scannet_calibration(object):
         filter_idx = np.where((x/z >= 0) & (x/z < self.colorW) & (y/z >= 0) & (y/z < self.colorH) & (z > 0))[0]
 
         # Normalize by 4th coords(Homogeneous -> 3 coords system)
-        camera_proj_normalized = camera_proj / camera_proj[2,:]
+        camera_proj_normalized = camera_proj[:,filter_idx] / camera_proj[2, filter_idx]
 
         #Get 3d -> 2d mapping
-        projected = camera_proj_normalized[:2, filter_idx]
+        projected = camera_proj_normalized[:2]
 
         #Reduce to 320,240 size
         exportW, exportH = DC.exported_scan_size
-        camera_proj_sm = np.zeros((5, projected.shape[-1]))        
+        camera_proj_sm = np.zeros((2, projected.shape[-1]))          
 
         camera_proj_sm[0,:] = projected[0,:] * exportW/self.colorW
         camera_proj_sm[1,:] = projected[1,:] * exportH/self.colorH
 
-        return camera_proj_sm[0:2].transpose(), camera_proj[2,:], filter_idx
+        camera_proj_sm = np.rint(camera_proj_sm)                
+
+        x = np.clip(camera_proj_sm[0,:].astype(np.uint8), 0, exportW-1)
+        y = np.clip(camera_proj_sm[1,:].astype(np.uint8), 0, exportH-1)
+
+        depth_filter = np.where(self.depth_np[y,x]/1000 * 1.1 > camera_proj[2,filter_idx])[0]
+        filter_idx2 = np.take(filter_idx, depth_filter)  
+
+        camera_proj_sm = camera_proj_sm[:,depth_filter]  
+
+        return camera_proj_sm[0:2].transpose(), camera_proj[2,:], filter_idx2
 
 
 

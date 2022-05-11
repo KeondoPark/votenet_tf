@@ -100,6 +100,8 @@ def dump_results(end_points, dump_dir, config, inference_switch=False):
 
     for i in range(batch_size):
         pc = point_clouds[i,:,:]
+        pred_class = np.argmax(pc[:,4:-1] , axis=-1)        
+        pred_class = pred_class.astype(np.uint8)
         objectness_prob = softmax(objectness_scores[i,:,:])[:,1] # (K,)
 
         # Dump various point clouds
@@ -107,12 +109,14 @@ def dump_results(end_points, dump_dir, config, inference_switch=False):
         
         #isPainted = np.where((pc_seed[:,3] > 0) & (pc_seed[:,3] < 11), 3, 0)
         isPainted = pc_seed[:,3] 
-        pred_class = pc_seed[:,4:] 
-        print(isPainted)       
+        pred_class_seed = np.argmax(pc_seed[:,4:] , axis=-1).astype(np.uint8)
+        #pc_color = np.tile(np.expand_dims(pred_class, axis=-1), [1,3])
+        #pc_color = np.tile(np.expand_dims(pred_class, axis=-1), [1,3])
 
         pc_util.write_ply(pc, os.path.join(dump_dir, '%06d_pc.ply'%(idx_beg+i)))
-        #pc_util.write_ply(seed_xyz[i,:,:], os.path.join(dump_dir, '%06d_seed_pc.ply'%(idx_beg+i)))
-        pc_util.write_ply_color(pc_seed[:,:3], isPainted, os.path.join(dump_dir, '%06d_seed_pc.ply'%(idx_beg+i)))
+        pc_util.write_ply_color(pc, pred_class, os.path.join(dump_dir, '%06d_painted_pc.ply'%(idx_beg+i)))
+        pc_util.write_ply(seed_xyz[i,:,:], os.path.join(dump_dir, '%06d_seed_pc.ply'%(idx_beg+i)))
+        pc_util.write_ply_color(pc_seed[:,:3], pred_class_seed, os.path.join(dump_dir, '%06d_seed_painted_pc.ply'%(idx_beg+i)))
         
         #if 'vote_xyz' in end_points:
         pc_util.write_ply(vote_xyz[i,:,:], os.path.join(dump_dir, '%06d_vgen_pc.ply'%(idx_beg+i)))

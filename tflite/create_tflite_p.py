@@ -112,6 +112,7 @@ def preprocess_point_cloud(point_cloud):
     pc = np.expand_dims(point_cloud.astype(np.float32), 0) # (1,40000,4)
     return pc
 
+'''
 def wrapper_representative_data_gen_mlp(keyword, base_model):
     def representative_data_gen_mlp():        
         for i in range(int(10 / BATCH_SIZE)):            
@@ -226,7 +227,7 @@ def tflite_convert(keyword, model, base_model, out_dir, mlp=True):
 
     with open(os.path.join(out_dir, keyword + '_quant.tflite'), 'wb') as f:
         f.write(tflite_model)
-
+'''
 
 
 def simulate_run(base_model, keyword_list):
@@ -305,7 +306,11 @@ def tflite_convert_multi(keyword_list, model_list, base_model, out_dir, mlp=True
         converter.inference_output_type = tf.float32
         tflite_model = converter.convert()
 
-        with open(os.path.join(out_dir, k + '_quant.tflite'), 'wb') as f:
+        if q_gran != 'semantic':
+            tflite_name = k + '_quant_%s.tflite'%(q_gran)
+        else:
+            tflite_name = k + '_quant.tflite'
+        with open(os.path.join(out_dir, tflite_name), 'wb') as f:
             f.write(tflite_model)
     del features_dict
 
@@ -403,7 +408,7 @@ if __name__=='__main__':
             self.out_dim = self.in_dim # due to residual feature, in_dim has to be == out_dim            
             self.use_fp_mlp = model_config['use_fp_mlp']
             self.conv0 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
-            self.conv1 = layers.Conv2D(filters=self.in_dim, kernel_size=1)        
+            self.conv1 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
             self.conv2 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
             #self.conv0 = layers.Dense(self.in_dim)
             #self.conv1 = layers.Dense(self.in_dim)
