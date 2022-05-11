@@ -262,6 +262,9 @@ class SunrgbdDetectionVotesDataset_tfrecord():
 
         print(self.data_path)
 
+        if split_set == 'val':
+            tf.random.set_seed(1111)
+
         self.raw_data_path = os.path.join(ROOT_DIR, 'sunrgbd/sunrgbd_trainval')
         self.num_points = num_points
         self.augment = augment
@@ -293,6 +296,8 @@ class SunrgbdDetectionVotesDataset_tfrecord():
            
         # Reshape
         self.dataset = self.dataset.map(map_func=self.reshape_tensor, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+
+        self.dataset = self.dataset.map(self.sample_points, num_parallel_calls=tf.data.experimental.AUTOTUNE)
  
         if self.use_color:
             self.dataset = self.dataset.map(self.preprocess_color, num_parallel_calls=tf.data.experimental.AUTOTUNE)
@@ -303,7 +308,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         if self.augment:
             self.dataset = self.dataset.map(self.augment_tensor, num_parallel_calls=tf.data.experimental.AUTOTUNE)
         
-        self.dataset = self.dataset.map(self.sample_points, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        
         self.dataset = self.dataset.map(self.tf_get_output) #tf.data.experimental.AUTOTUNE)
         
         return self.dataset
@@ -326,6 +331,17 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         
         return point_cloud, bboxes, point_votes, n_valid_box
 
+    def sample_points(self, point_cloud, bboxes, point_votes, n_valid_box):        
+        n_pc = point_cloud.shape[1]        
+
+        choice_indices = tf.random.uniform([self.num_points], minval=0, maxval=n_pc, dtype=tf.int64)
+        choice_indices = tf.tile(tf.expand_dims(choice_indices,0), [tf.shape(point_cloud)[0],1])
+        
+        point_cloud = tf.gather(point_cloud, choice_indices, axis=1, batch_dims=1)
+        point_votes = tf.gather(point_votes, choice_indices, axis=1, batch_dims=1)        
+    
+        return point_cloud, bboxes, point_votes, n_valid_box
+
     def preprocess_color(self, point_cloud, bboxes, point_votes, n_valid_box):    
         # Not used
         MEAN_COLOR_RGB=tf.constant([0.5,0.5,0.5])
@@ -338,8 +354,8 @@ class SunrgbdDetectionVotesDataset_tfrecord():
     def preprocess_height(self, point_cloud, bboxes, votes, n_valid_box):
         y_coords = point_cloud[:, :, 2]
         y_coords = tf.sort(y_coords, direction='DESCENDING', axis=-1)
-        floor_height = y_coords[:, int(0.99*N_POINT), None]         
-        height = point_cloud[:,:,2] - tf.tile(floor_height, [1,N_POINT])
+        floor_height = y_coords[:, int(0.99*self.num_points), None]         
+        height = point_cloud[:,:,2] - tf.tile(floor_height, [1,self.num_points])
         if self.use_painted or self.use_color:
             point_cloud = tf.concat([point_cloud, tf.expand_dims(height, axis=-1)], axis=-1) # (N, C+1)
         #elif not self.augment:
@@ -410,10 +426,10 @@ class SunrgbdDetectionVotesDataset_tfrecord():
             rgb_color = point_cloud[:,:,3:6] + MEAN_COLOR_RGB
             rgb_color = rgb_color * (1+0.4*tf.random.uniform([3])-0.2) # brightness change for each channel
             rgb_color = rgb_color + (0.1*tf.random.uniform([3])-0.05) # color shift for each channel
-            rgb_color = rgb_color + tf.expand_dims((0.05*tf.random.uniform([B, N_POINT])-0.025), -1) # jittering on each pixel        
+            rgb_color = rgb_color + tf.expand_dims((0.05*tf.random.uniform([B, self.num_points])-0.025), -1) # jittering on each pixel        
             rgb_color = tf.clip_by_value(rgb_color, 0, 1)
             # randomly drop out 30% of the points' colors
-            rgb_color = rgb_color * tf.expand_dims(tf.where(tf.random.uniform([B, N_POINT])>0.3, 1.0, 0.0),-1)
+            rgb_color = rgb_color * tf.expand_dims(tf.where(tf.random.uniform([B, self.num_points])>0.3, 1.0, 0.0),-1)
             rgb_color = rgb_color - MEAN_COLOR_RGB
             point_cloud = tf.concat((pc_coords, rgb_color, pc_height), axis=-1)
         else:
@@ -425,17 +441,6 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         bboxes = tf.concat((bboxes_coords, bboxes_edges, bboxes_angle, bboxes[:,:,7:]), axis=-1)
         point_votes = tf.concat((votes0, votes1, votes2, votes3, point_votes[:,:,10:]), axis=-1)           
         
-        return point_cloud, bboxes, point_votes, n_valid_box
-
-    def sample_points(self, point_cloud, bboxes, point_votes, n_valid_box):        
-        n_pc = point_cloud.shape[1]        
-
-        choice_indices = tf.random.uniform([self.num_points], minval=0, maxval=n_pc, dtype=tf.int64)
-        choice_indices = tf.tile(tf.expand_dims(choice_indices,0), [tf.shape(point_cloud)[0],1])
-        
-        point_cloud = tf.gather(point_cloud, choice_indices, axis=1, batch_dims=1)
-        point_votes = tf.gather(point_votes, choice_indices, axis=1, batch_dims=1)        
-    
         return point_cloud, bboxes, point_votes, n_valid_box
 
     def _get_output(self, point_cloud, bboxes, point_votes, n_valid_box):

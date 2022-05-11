@@ -382,6 +382,10 @@ def train(start_epoch):
                 max_gt_bboxes = tf.convert_to_tensor(np.zeros((BATCH_SIZE, 64, 8)), dtype=tf.float32) 
                 batch_data = point_clouds, center_label, heading_class_label, heading_residual_label, size_class_label, \
                     size_residual_label, sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes                
+            else:                
+                point_cloud = batch_data[0]    
+                if point_cloud.shape[0] < BATCH_SIZE: continue
+            
 
             train_loss += distributed_train_step(batch_data)
             #train_loss += train_one_epoch(batch_data)            

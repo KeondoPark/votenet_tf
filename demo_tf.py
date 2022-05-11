@@ -28,15 +28,17 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
 
 import json
-environ_file = os.path.join(ROOT_DIR,'configs','environ.json')
-environ = json.load(open(environ_file))['environ']
+# environ_file = os.path.join(ROOT_DIR,'configs','environ.json')
+# environ = json.load(open(environ_file))['environ']
 
-if environ == 'server':    
-    DATA_DIR = '/home/aiot/data'
-elif environ == 'jetson':
-    DATA_DIR= 'sunrgbd'
-elif environ == 'server2':    
-    DATA_DIR = '/data'
+# if environ == 'server':    
+#     DATA_DIR = '/home/aiot/data'
+# elif environ == 'jetson':
+#     DATA_DIR= 'sunrgbd'
+# elif environ == 'server2':    
+#     DATA_DIR = '/data'
+DATA_DIR = 'sunrgbd'
+
 
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 sys.path.append(os.path.join(ROOT_DIR, 'models'))
@@ -116,8 +118,8 @@ if __name__=='__main__':
         NUM_POINT = 40000
         data_idx = 0
         dataset = scannet_object()
-        imgs, poses = dataset.get_image_and_pose(data_idx, num_img=3)        
-        calibs = [dataset.get_calibration(data_idx, pose) for pose in poses]
+        imgs, poses, depth_nps = dataset.get_image_and_pose(data_idx, num_img=3)        
+        calibs = [dataset.get_calibration(data_idx, pose, depth_np) for pose, depth_np in zip(poses, depth_nps)]        
         point_cloud = dataset.get_pointcloud(data_idx)
         deeplab_tflite_file = 'scannet_2_quant_edgetpu.tflite'
         deeplab_pb = 'scannet_3.pb'
@@ -195,7 +197,7 @@ if __name__=='__main__':
                 
                 pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)] # (npoint, num_class + 1 + 1 )
                 projected_class = np.argmax(pred_prob, axis=-1) # (npoint, 1) 
-                isPainted = np.where((projected_class > 0) & (projected_class < DATASET_CONFIG.num_class+1), 1, 0) # Point belongs to background?                    
+                isPainted = np.where(projected_class > 0, 1, 0) # Point belongs to background?                    
                 #isPainted = np.expand_dims(isPainted, axis=-1)
 
                 # 0 is background class, deeplab is trained with "person" included, (height, width, num_class)
@@ -214,6 +216,7 @@ if __name__=='__main__':
     else:        
         end_points = net(inputs['point_clouds'], training=False)                
     
+    print(net.summary())
 
     time_record += end_points['time_record']    
     time_record = time_record + [('Voting and Proposal time:', time.time())]

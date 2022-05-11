@@ -119,7 +119,8 @@ class PointnetSAModuleVotes(layers.Layer):
         """        
         if inds is None:           
             if bg:
-                inds = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, weight=1)
+                isPainted = tf.cast(features[:,:,0], dtype=tf.int32) 
+                inds, isPainted = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, isPainted, weight=1)
                 xyz = xyz[:,:,:3]
             else:
                 inds = tf_sampling.farthest_point_sample(self.npoint, xyz)                
