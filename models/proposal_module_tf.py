@@ -218,7 +218,7 @@ class ProposalModule(layers.Layer):
                 head_residual = net3[:,:,:self.num_heading_bin]
                 cluster_residual = net3[:,:,self.num_heading_bin:]
 
-                net = np.concatenate([obj_score, head_score, head_residual, cluster_score, cluster_residual, class_score], axis=-1)
+                net = np.concatenate([obj_score, head_score, cluster_score, head_residual, cluster_residual, class_score], axis=-1)
 
                 #net = np.concatenate([net2, net3], aixs=-1)
                 net = tf.convert_to_tensor(net)                  

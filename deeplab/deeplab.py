@@ -126,20 +126,18 @@ def run_semantic_seg_tflite(img_list, save_result=False, tflite_file='sunrgbd_ad
     from pycoral.adapters import common
     from pycoral.adapters import segment
     
-    interpreter = make_interpreter(os.path.join('saved_model', tflite_file))
+    interpreter = make_interpreter(os.path.join(BASE_DIR,'saved_model', tflite_file))
     interpreter.allocate_tensors()
-    width, height = common.input_size(interpreter)         
-    
+    width, height = common.input_size(interpreter)   
     
     orig_w, orig_h = img_list[0].size  
 
-    pred_prob_list = []
-    for img in img_list:   
-
+    pred_prob_list = []    
+    for img in img_list:         
       resized_img, (scale1, scale2) = common.set_resized_input(
           interpreter, img.size, lambda size: img.resize(size, Image.ANTIALIAS))    
       
-      interpreter.invoke()    
+      interpreter.invoke()          
 
       result = segment.get_output(interpreter)        
       result = result/255 # Output is int8, not dequantized output
@@ -150,7 +148,7 @@ def run_semantic_seg_tflite(img_list, save_result=False, tflite_file='sunrgbd_ad
       # Return to original image size
       x = (np.array(range(orig_h)) * scale1).astype(np.int)
       y = (np.array(range(orig_w)) * scale2).astype(np.int)
-      xv, yv = np.meshgrid(x, y, indexing='ij')
+      xv, yv = np.meshgrid(x, y, indexing='ij')      
 
       pred_prob_list.append(pred_prob[xv, yv]) # height, width
 

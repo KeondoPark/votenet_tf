@@ -178,7 +178,7 @@ if __name__=='__main__':
     # Model inference    
     if model_config['use_painted']:                       
         if model_config['use_multiThr']:
-            end_points = net(inputs['point_clouds'], training=False, img=imgs, calib=calibs, deeplab_tflite_file=deeplab_tflite_file)        
+            end_points = net(inputs['point_clouds'], training=False, imgs=imgs, calibs=calibs, deeplab_tflite_file=deeplab_tflite_file)        
         else:            
             if model_config['use_edgetpu']:
                 pred_prob_list = run_semantic_seg_tflite(imgs, tflite_file=deeplab_tflite_file, save_result=False)                
@@ -209,7 +209,7 @@ if __name__=='__main__':
             inputs['point_clouds'] = tf.convert_to_tensor(np.expand_dims(painted_pc, axis=0))
 
             print("Input shape", inputs['point_clouds'].shape)
-            end_points = net(inputs['point_clouds'])        
+            end_points = net(inputs['point_clouds'], training=False)        
         
     else:        
         end_points = net(inputs['point_clouds'], training=False)                
@@ -259,6 +259,6 @@ if __name__=='__main__':
   
     dump_dir = os.path.join(demo_dir, '%s_results'%(DATASET))
     if not os.path.exists(dump_dir): os.mkdir(dump_dir) 
-    dump_results(end_points, dump_dir, DATASET_CONFIG, True)
-    print('Dumped detection results to folder %s'%(dump_dir))
+    #dump_results(end_points, dump_dir, DATASET_CONFIG, True)
+    #print('Dumped detection results to folder %s'%(dump_dir))
 

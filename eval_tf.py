@@ -57,6 +57,7 @@ parser.add_argument('--conf_thresh', type=float, default=0.05, help='Filter out 
 parser.add_argument('--faster_eval', action='store_true', help='Faster evaluation by skippling empty bounding box removal.')
 parser.add_argument('--shuffle_dataset', action='store_true', help='Shuffle the dataset (random order).')
 parser.add_argument('--config_path', default=None, required=True, help='Model configuration path')
+parser.add_argument('--gpu_mem_limit', type=int, default=0, help='GPU memory usage')
 
 FLAGS = parser.parse_args()
 
@@ -77,6 +78,18 @@ assert(CHECKPOINT_PATH is not None)
 FLAGS.DUMP_DIR = DUMP_DIR
 AP_IOU_THRESHOLDS = [float(x) for x in FLAGS.ap_iou_thresholds.split(',')]
 
+
+# Limit GPU Memory usage, 256MB suffices in jetson nano
+if FLAGS.gpu_mem_limit:
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            tf.config.experimental.set_virtual_device_configuration(gpus[0], 
+            [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=FLAGS.gpu_mem_limit)])
+            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            print(len(gpus), "Physical GPUs", len(logical_gpus), "Logical GPUs")
+        except RuntimeError as e:
+            print(e)
 
 # Prepare DUMP_DIR
 if not os.path.exists(DUMP_DIR): os.mkdir(DUMP_DIR)
@@ -195,7 +208,7 @@ def evaluate_one_epoch():
     start = time.time()    
     total_start = start
     for batch_idx, batch_data in enumerate(test_ds):        
-        if batch_idx*BATCH_SIZE >= 8: break
+        #if batch_idx*BATCH_SIZE >= 100: break
         if DATASET == 'scannet':                
             point_clouds = tf.convert_to_tensor(batch_data['point_clouds'], dtype=tf.float32)
             center_label = tf.convert_to_tensor(batch_data['center_label'], dtype=tf.float32)
