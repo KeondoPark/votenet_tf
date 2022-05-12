@@ -120,14 +120,17 @@ class ProposalModule(layers.Layer):
 
         if self.use_tflite:
             self.use_edgetpu = model_config['use_edgetpu']
-            tflite_folder = model_config['tflite_folder']            
+            tflite_folder = model_config['tflite_folder']
+            tflite_file = 'va_quant'
+            if q_gran != 'semantic':
+                tflite_name += q_gran
+
             if self.use_edgetpu: 
-                tflite_file = 'va_quant_edgetpu.tflite'           
+                tflite_file += 'edgetpu'           
                 from pycoral.utils.edgetpu import make_interpreter            
-                self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join(tflite_folder, tflite_file)))
-            else:
-                tflite_file = 'va_quant.tflite'           
-                self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join(tflite_folder, tflite_file)))                             
+                self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join(tflite_folder, tflite_file + '.tflite')))
+            else:                
+                self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join(tflite_folder, tflite_file + '.tflite')))                             
             self.interpreter.allocate_tensors()
 
             # Get input and output tensors.
@@ -234,6 +237,16 @@ class ProposalModule(layers.Layer):
                 #net3 = layers.Concatenate(axis=-1)(out[3+2+self.num_heading_bin+self.num_size_cluster:-self.num_class])
 
                 center = xyz + offset
+
+            elif self.q_gran == 'group':
+                out = []
+                for i in range(3):
+                    out.append(self.output_details[i]['index'])
+
+                net = layers.Concatenate(axis=-1)(out)
+                offset = net[:,:,0:3]
+                net = net[:,:,3:]                
+                center = xyz + offset  
 
             else:
                 net = self.interpreter.get_tensor(self.output_details[0]['index']) 
