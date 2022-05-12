@@ -425,7 +425,13 @@ if __name__=='__main__':
                 self.conv3_2 = layers.Conv2D(filters=(self.out_dim) * self.vote_factor, kernel_size=1) 
                 #self.conv3_1 = layers.Dense(3 * self.vote_factor)
                 #self.conv3_2 = layers.Dense(self.out_dim * self.vote_factor)
-           
+
+            elif self.q_gran=='group':
+                self.conv3_chn_list = []
+                grp1_size = ((3+self.out_dim) * self.vote_factor) // 2
+                grp2_size = (3+self.out_dim) * self.vote_factor  - grp1_size
+                self.conv3_chn_list.append(layers.Conv2D(filters=grp1_size, kernel_size=1))
+                self.conv3_chn_list.append(layers.Conv2D(filters=grp2_size, kernel_size=1))
 
             else:
                 self.conv3 = layers.Conv2D(filters=(self.out_dim+3) * self.vote_factor, kernel_size=1)
@@ -473,6 +479,12 @@ if __name__=='__main__':
                 #return [vote_xyz, vote_features]
                 return [offset, vote_features]
 
+            elif self.q_gran=='group':
+                out = []
+                for i in range(2):
+                    out.append(self.conv3_chn_list[i](net))
+                out.append(net0)
+                return out
             
             else:
                 net = self.conv3(net)
@@ -513,6 +525,16 @@ if __name__=='__main__':
                 #self.conv3_2 = layers.Conv2D(filters=2+DATASET_CONFIG.num_heading_bin*2+DATASET_CONFIG.num_size_cluster*4+DATASET_CONFIG.num_class, kernel_size=1) 
                 #self.conv3_1 = layers.Dense(3)
                 #self.conv3_2 = layers.Dense(2 + DATASET_CONFIG.num_heading_bin*2 + DATASET_CONFIG.num_size_cluster*4 + DATASET_CONFIG.num_class)
+
+            elif self.q_gran=='group':
+                self.conv3_chn_list = []
+                grp1_size = (2+3+self.NH*2+self.NC*4+self.num_class) // 3
+                grp2_size = grp1_size
+                grp3_size = 2+3+self.NH*2+self.NC*4+self.num_class - grp1_size - grp2_size                
+                self.conv3_chn_list.append(layers.Conv2D(filters=grp1_size, kernel_size=1))
+                self.conv3_chn_list.append(layers.Conv2D(filters=grp2_size, kernel_size=1))
+                self.conv3_chn_list.append(layers.Conv2D(filters=grp3_size, kernel_size=1))
+
             else:
                 self.conv3 = layers.Conv2D(filters=2+3+self.NH*2+self.NC*4+self.num_class, kernel_size=1)
                 #self.conv3 = layers.Dense(3 + 2 + DATASET_CONFIG.num_heading_bin*2 + DATASET_CONFIG.num_size_cluster*4 + DATASET_CONFIG.num_class)
@@ -556,7 +578,14 @@ if __name__=='__main__':
                 net2 = layers.Reshape((self.npoint, net2.shape[-1]))(net2)
                 net3 = layers.Reshape((self.npoint, net3.shape[-1]))(net3)                
 
-                return [offset, net2, net3]            
+                return [offset, net2, net3] 
+
+            elif self.q_gran=='group':                
+                out = []
+                for i in range(3):
+                    out.append(self.conv3_chn_list[i](net))
+                return out
+
             else:
                 net = self.conv3(net)
                 net = layers.Reshape((self.npoint, net.shape[-1]))(net)
@@ -687,7 +716,16 @@ if __name__=='__main__':
         elif q_gran=='semantic':
             w, b = net.vgen.conv3.get_weights()
             layer.conv3_1.set_weights([w[:,:,:,:3], b[:3]])
-            layer.conv3_2.set_weights([w[:,:,:,3:], b[3:]])                    
+            layer.conv3_2.set_weights([w[:,:,:,3:], b[3:]]) 
+
+        elif q_gran=='group':
+            w, b = net.vgen.conv3.get_weights()                        
+
+            grp1_size = ((3+layer.out_dim) * layer.vote_factor) // 2
+            grp2_size = (3+layer.out_dim) * layer.vote_factor  - grp1_size
+            
+            layer.conv3_chn_list[0].set_weights([w[:,:,:,:grp1_size], b[:grp1_size]])                   
+            layer.conv3_chn_list[1].set_weights([w[:,:,:,grp1_size:], b[grp1_size:]])                               
 
         else:
             layer.conv3.set_weights(net.vgen.conv3.get_weights())
@@ -735,7 +773,19 @@ if __name__=='__main__':
             layer.conv3_3.set_weights([w_3, b_3])
             
             #layer.conv3_1.set_weights([w[:,:3], b[:3]])
-            #layer.conv3_2.set_weights([w[:,3:], b[3:]])        
+            #layer.conv3_2.set_weights([w[:,3:], b[3:]])     
+        
+        elif q_gran=='group':
+            w, b = net.pnet.conv3.get_weights()
+
+            grp1_size = (2+3+layer.NH*2+layer.NC*4+layer.num_class) // 3
+            grp2_size = grp1_size
+            grp3_size = 2+3+layer.NH*2+layer.NC*4+layer.num_class - grp1_size - grp2_size                
+            
+            layer.conv3_chn_list[0].set_weights([w[:,:,:,:grp1_size], b[:grp1_size]])                   
+            layer.conv3_chn_list[1].set_weights([w[:,:,:,grp1_size:grp1_size+grp2_size], b[grp1_size:grp1_size+grp2_size]])                   
+            layer.conv3_chn_list[2].set_weights([w[:,:,:,-grp3_size:], b[-grp3_size:]])     
+
         else:
             layer.conv3.set_weights(net.pnet.conv3.get_weights())
         layer.bn1.set_weights(net.pnet.bn1.get_weights())

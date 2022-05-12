@@ -48,15 +48,18 @@ class VotingModule(layers.Layer):
 
         if self.use_tflite:
             self.use_edgetpu = model_config['use_edgetpu']
-            tflite_folder = model_config['tflite_folder']            
+            tflite_folder = model_config['tflite_folder']   
+
+            tflite_file = 'voting_quant'
+            if q_gran != 'semantic':
+                tflite_name += q_gran         
 
             if self.use_edgetpu:            
-                tflite_file = 'voting_quant_edgetpu.tflite'
+                tflite_file += 'edgetpu'
                 from pycoral.utils.edgetpu import make_interpreter            
-                self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join(tflite_folder,tflite_file)))
-            else:
-                tflite_file = 'voting_quant.tflite'
-                self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join(tflite_folder, tflite_file)))                             
+                self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join(tflite_folder,tflite_file + '.tflite')))
+            else:                
+                self.interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR,os.path.join(tflite_folder, tflite_file+ '.tflite')))                             
             
             self.interpreter.allocate_tensors()
 
@@ -121,6 +124,20 @@ class VotingModule(layers.Layer):
                 vote_xyz = seed_xyz + offset
 
                 residual_features = layers.Concatenate(axis=-1)(out[3:-1])
+                net0 = out[-1]
+                net0 = layers.Reshape((num_seed, self.vote_factor, net0.shape[-1]))(net0)
+                vote_features = net0 + residual_features 
+
+            elif self.q_gran == 'group':
+                out = []
+                for i in range(2):
+                    out.append(self.output_details[i]['index'])
+                net = layers.Concatenate(axis=-1)(out)
+
+                offset = net[:,:,:,0:3]
+                vote_xyz = seed_xyz + offset
+
+                residual_features = offset = net[:,:,:,3:]
                 net0 = out[-1]
                 net0 = layers.Reshape((num_seed, self.vote_factor, net0.shape[-1]))(net0)
                 vote_features = net0 + residual_features 
