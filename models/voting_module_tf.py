@@ -51,11 +51,11 @@ class VotingModule(layers.Layer):
             tflite_folder = model_config['tflite_folder']   
 
             tflite_file = 'voting_quant'
-            if q_gran != 'semantic':
-                tflite_name += q_gran         
+            if self.q_gran != 'semantic':
+                tflite_file += '_' + self.q_gran         
 
             if self.use_edgetpu:            
-                tflite_file += 'edgetpu'
+                tflite_file += '_edgetpu'
                 from pycoral.utils.edgetpu import make_interpreter            
                 self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join(tflite_folder,tflite_file + '.tflite')))
             else:                
@@ -117,8 +117,8 @@ class VotingModule(layers.Layer):
 
             elif self.q_gran == 'channel':
                 out = []
-                for i in range((self.out_dim+3) * self.vote_factor):
-                    out.append(self.output_details[i]['index'])
+                for i in range((self.out_dim+3) * self.vote_factor + 1):
+                    out.append(self.interpreter.get_tensor(self.output_details[i]['index']))                
 
                 offset = layers.Concatenate(axis=-1)(out[:3])
                 vote_xyz = seed_xyz + offset
@@ -130,9 +130,9 @@ class VotingModule(layers.Layer):
 
             elif self.q_gran == 'group':
                 out = []
-                for i in range(2):
-                    out.append(self.output_details[i]['index'])
-                net = layers.Concatenate(axis=-1)(out)
+                for i in range(3):
+                    out.append(self.interpreter.get_tensor(self.output_details[i]['index']))
+                net = layers.Concatenate(axis=-1)(out[:2])
 
                 offset = net[:,:,:,0:3]
                 vote_xyz = seed_xyz + offset

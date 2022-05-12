@@ -36,10 +36,10 @@ environ = json.load(open(environ_file))['environ']
 #DATA_DIR = os.path.dirname(ROOT_DIR)
 if environ == 'server':    
     DATA_DIR = '/home/aiot/data'
-elif environ == 'jetson':
-    DATA_DIR='/media'
-elif environ == 'server2':    
+
+elif environ in ['server2', 'jetson']:    
     DATA_DIR = '/data'
+    
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 import pc_util
