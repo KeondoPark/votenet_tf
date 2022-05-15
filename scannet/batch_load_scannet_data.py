@@ -147,7 +147,7 @@ def save_2dsemantic_results():
             export_2dseg_results(sess, exported_scan_dir, output_filename_prefix)
         except:
             print('Failed export scan: %s'%(scan_name))                    
-        print('-'*20+'done')                
+        print('-'*20+'done')                        
 
 if __name__=='__main__':    
     #batch_export()

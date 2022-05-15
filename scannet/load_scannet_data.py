@@ -169,7 +169,7 @@ def export_2dseg_results(sess, exported_scan_dir=None, output_dir=None):
         img_file = os.path.join(exported_scan_dir, 'color', str(frame) + '.jpg')
         img = Image.open(img_file)
         pred_prob, pred_class = run_semantic_segmentation_graph(img, sess, INPUT_SIZE)
-        pred_prob = pred_prob[:,:,:(n_classes+1)].astype(np.float32) # 0 is background class
+        pred_prob = pred_prob[:,:,:(n_classes+1)].astype(np.float32) # 0 is background class        
         np.save(os.path.join(output_dir, 'prob_' + str(frame) + '.npy'), pred_prob)
         #np.save(os.path.join(output_dir, 'class_' + str(frame) + '.npy'), pred_class)
 
