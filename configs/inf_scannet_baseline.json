@@ -1,0 +1,13 @@
+{    
+    "model_id": "scannet_baseline13",
+    "dataset": "scannet",
+    "use_painted": false,   
+    "two_way": false,       
+    "use_fp_mlp": true, 
+    "q_gran": "semantic",
+    "activation": "relu6",
+    "use_tflite": false,
+    "tflite_folder": "tflite/tflite_models/scannet_baseline13",    
+    "use_edgetpu": false,        
+    "use_multiThr": false
+}

@@ -63,6 +63,7 @@ class PointnetSAModuleVotes(layers.Layer):
             self.sigma = self.radius/2
         self.normalize_xyz = normalize_xyz
         self.ret_unique_cnt = ret_unique_cnt
+        self.layer_name = layer_name
 
         if npoint is not None:
             self.grouper = pointnet2_utils_tf.QueryAndGroup(radius, nsample,
@@ -146,7 +147,7 @@ class PointnetSAModuleVotes(layers.Layer):
             #grouped_features, grouped_xyz, unique_cnt = self.grouper(
                 xyz, new_xyz, features
             )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)        
-        time_record.append(("Runtime for Sampling and Grouping:", time.time()))
+        time_record.append((f"{self.layer_name} Runtime for Sampling and Grouping:", time.time()))
          
         if self.use_tflite:
             self.interpreter.set_tensor(self.input_details[0]['index'], grouped_features)
@@ -178,7 +179,7 @@ class PointnetSAModuleVotes(layers.Layer):
             '''
         #new_features = tf.squeeze(new_features, axis=-2)  # (B, npoint, mlp[-1])
         new_features = layers.Reshape((self.npoint, new_features.shape[-1]))(new_features)        
-        time_record.append(("Runtime for shared MLP:", time.time()))
+        time_record.append((f"{self.layer_name} Runtime for shared MLP:", time.time()))
 
         if not self.ret_unique_cnt:
             #return new_xyz, new_features, inds
