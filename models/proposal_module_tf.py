@@ -122,11 +122,11 @@ class ProposalModule(layers.Layer):
             self.use_edgetpu = model_config['use_edgetpu']
             tflite_folder = model_config['tflite_folder']
             tflite_file = 'va_quant'
-            if q_gran != 'semantic':
-                tflite_name += q_gran
+            if self.q_gran != 'semantic':
+                tflite_file += '_' + self.q_gran
 
             if self.use_edgetpu: 
-                tflite_file += 'edgetpu'           
+                tflite_file += '_edgetpu'           
                 from pycoral.utils.edgetpu import make_interpreter            
                 self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join(tflite_folder, tflite_file + '.tflite')))
             else:                
@@ -221,7 +221,7 @@ class ProposalModule(layers.Layer):
                 head_residual = net3[:,:,:self.num_heading_bin]
                 cluster_residual = net3[:,:,self.num_heading_bin:]
 
-                net = np.concatenate([obj_score, head_score, head_residual, cluster_score, cluster_residual, class_score], axis=-1)
+                net = np.concatenate([obj_score, head_score, cluster_score, head_residual, cluster_residual, class_score], axis=-1)
 
                 #net = np.concatenate([net2, net3], aixs=-1)
                 net = tf.convert_to_tensor(net)                  
@@ -229,10 +229,12 @@ class ProposalModule(layers.Layer):
             elif self.q_gran == 'channel':
                 out = []
                 for i in range(2+3+self.num_heading_bin*2+self.num_size_cluster*4+self.num_class):
-                    out.append(self.output_details[i]['index'])
+                    out.append(self.interpreter.get_tensor(self.output_details[i]['index']))
 
                 offset = layers.Concatenate(axis=-1)(out[:3])
+                offset = layers.Reshape((self.npoint, 3))(offset)
                 net = layers.Concatenate(axis=-1)(out[3:])
+                net = layers.Reshape((self.npoint, net.shape[-1]))(net)
                 #net2 = layers.Concatenate(axis=-1)(out[3:3+2+self.num_heading_bin+self.num_size_cluster] + out[-self.num_class:])
                 #net3 = layers.Concatenate(axis=-1)(out[3+2+self.num_heading_bin+self.num_size_cluster:-self.num_class])
 
@@ -241,9 +243,10 @@ class ProposalModule(layers.Layer):
             elif self.q_gran == 'group':
                 out = []
                 for i in range(3):
-                    out.append(self.output_details[i]['index'])
+                    out.append(self.interpreter.get_tensor(self.output_details[i]['index']))
 
                 net = layers.Concatenate(axis=-1)(out)
+                net = layers.Reshape((self.npoint, net.shape[-1]))(net)
                 offset = net[:,:,0:3]
                 net = net[:,:,3:]                
                 center = xyz + offset  

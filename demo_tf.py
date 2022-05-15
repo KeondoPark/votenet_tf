@@ -50,7 +50,7 @@ from votenet_tf import dump_results
 from PIL import Image
 from deeplab.deeplab import run_semantic_seg, run_semantic_seg_tflite
 import json
-from torch.utils.data import DataLoader
+#from torch.utils.data import DataLoader
 
 model_config = json.load(open(FLAGS.config_path))
 DEFAULT_CHECKPOINT_PATH = os.path.join('tf_ckpt', model_config['model_id'])
@@ -178,70 +178,93 @@ if __name__=='__main__':
     inputs = {'point_clouds': tf.convert_to_tensor(pc)}
    
     # Model inference    
-    if model_config['use_painted']:                       
-        if model_config['use_multiThr']:
-            end_points = net(inputs['point_clouds'], training=False, imgs=imgs, calibs=calibs, deeplab_tflite_file=deeplab_tflite_file)        
-        else:            
-            if model_config['use_edgetpu']:
-                pred_prob_list = run_semantic_seg_tflite(imgs, tflite_file=deeplab_tflite_file, save_result=False)                
-            else:     
-                pred_prob_list, _ = run_semantic_seg(imgs, graph_file=deeplab_pb, input_size=img_input_size, save_result=False)                  
-            
-            time_record.append(('Deeplab inference time:', time.time()))
-            painted_pc = np.zeros((pc.shape[1], 3 + 1 + 1 + (DATASET_CONFIG.num_class + 1))) #Coords + height + isPainted + 
-            painted_pc[:,0:3] = pc[0,:,0:3]
-            painted_pc[:,-1] = pc[0,:,-1]
-            for pred_prob, calib in zip(pred_prob_list, calibs):
-                uv,d, filter_idx = calib.project_upright_depth_to_image(painted_pc[:,0:3]) #uv: (N, 2)
-                uv = np.rint(uv - 1)
+    for ii in range(4):
+        if model_config['use_painted']:                       
+            if model_config['use_multiThr']:
+                end_points = net(inputs['point_clouds'], training=False, imgs=imgs, calibs=calibs, deeplab_tflite_file=deeplab_tflite_file)        
+            else:            
+                if model_config['use_edgetpu']:
+                    pred_prob_list = run_semantic_seg_tflite(imgs, tflite_file=deeplab_tflite_file, save_result=False)                
+                else:     
+                    pred_prob_list, _ = run_semantic_seg(imgs, graph_file=deeplab_pb, input_size=img_input_size, save_result=False)                  
                 
-                pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)] # (npoint, num_class + 1 + 1 )
-                projected_class = np.argmax(pred_prob, axis=-1) # (npoint, 1) 
-                isPainted = np.where(projected_class > 0, 1, 0) # Point belongs to background?                    
-                #isPainted = np.expand_dims(isPainted, axis=-1)
+                time_record.append(('Deeplab inference time:', time.time()))
+                painted_pc = np.zeros((pc.shape[1], 3 + 1 + 1 + (DATASET_CONFIG.num_class + 1))) #Coords + height + isPainted + 
+                painted_pc[:,0:3] = pc[0,:,0:3]
+                painted_pc[:,-1] = pc[0,:,-1]
+                for pred_prob, calib in zip(pred_prob_list, calibs):
+                    uv,d, filter_idx = calib.project_upright_depth_to_image(painted_pc[:,0:3]) #uv: (N, 2)
+                    uv = np.rint(uv - 1)
+                    
+                    pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)] # (npoint, num_class + 1 + 1 )
+                    projected_class = np.argmax(pred_prob, axis=-1) # (npoint, 1) 
+                    isPainted = np.where(projected_class > 0, 1, 0) # Point belongs to background?                    
+                    #isPainted = np.expand_dims(isPainted, axis=-1)
 
-                # 0 is background class, deeplab is trained with "person" included, (height, width, num_class)
-                pred_prob = pred_prob[:,:(DATASET_CONFIG.num_class+1)] #(npoint, num_class)
-                painted_pc[filter_idx, 3] = isPainted
-                painted_pc[filter_idx, 4:-1] = pred_prob
+                    # 0 is background class, deeplab is trained with "person" included, (height, width, num_class)
+                    pred_prob = pred_prob[:,:(DATASET_CONFIG.num_class+1)] #(npoint, num_class)
+                    painted_pc[filter_idx, 3] = isPainted
+                    painted_pc[filter_idx, 4:-1] = pred_prob
 
-            #pointcloud = np.concatenate([xyz, isPainted, pred_prob, pc[0,:,3:]], axis=-1)
-            time_record.append(('Pointpainting time:', time.time()))
+                #pointcloud = np.concatenate([xyz, isPainted, pred_prob, pc[0,:,3:]], axis=-1)
+                time_record.append(('Pointpainting time:', time.time()))
 
-            inputs['point_clouds'] = tf.convert_to_tensor(np.expand_dims(painted_pc, axis=0))
+                inputs['point_clouds'] = tf.convert_to_tensor(np.expand_dims(painted_pc, axis=0))
 
-            print("Input shape", inputs['point_clouds'].shape)
-            end_points = net(inputs['point_clouds'])        
-        
-    else:        
-        end_points = net(inputs['point_clouds'], training=False)                
+                print("Input shape", inputs['point_clouds'].shape)
+                end_points = net(inputs['point_clouds'], training=False)        
+            
+        else:                
+            print("Inference", ii)
+            end_points = net(inputs['point_clouds'], training=False)                
+    
+        time_record += end_points['time_record']
+        time_record = time_record + [('Voting and Proposal time:', time.time())]
     
     print(net.summary())
 
-    time_record += end_points['time_record']    
-    time_record = time_record + [('Voting and Proposal time:', time.time())]
+    
+    time_dict = {}
 
     if FLAGS.inf_time_file:
         inf_time_log = open(FLAGS.inf_time_file, 'a+')
 
         for idx, (desc, t) in enumerate(time_record):
             if idx == 0:                 
-                inf_time_log.write(desc + str(t) + '\n')
+                #inf_time_log.write(desc + str(t) + '\n')
+                time_dict[desc] = t
                 prev_time = t
                 continue
-            inf_time_log.write(desc + str(t - prev_time) + '\n')
+            #inf_time_log.write(desc + str(t - prev_time) + '\n')
+            if desc in time_dict:
+                time_dict[desc] += (t - prev_time)
+            else:
+                time_dict[desc] = (t - prev_time) 
             prev_time = t
-        
+        for k, v in time_dict.items():
+            inf_time_log.write(str(k) + str(v) + '\n')
+
         inf_time_log.write('Total inference time: %f \n'%(time_record[-1][1] - time_record[0][1]))
         inf_time_log.close()
     else:
         for idx, (desc, t) in enumerate(time_record):
             if idx == 0:                                 
-                print(desc, t)
+                #print(desc, t)
                 prev_time = t
+                time_dict[desc] = t
                 continue
-            print(desc, t - prev_time)            
+            
+            if desc in time_dict:
+                time_dict[desc] += (t - prev_time)
+            else:
+                time_dict[desc] = (t - prev_time)            
+            
+            # print(desc, t - prev_time)
             prev_time = t
+        print("*" * 20, "Time to inference 4 times", "*"*20)
+        for k, v in time_dict.items():
+            print(k, v)
+
         print('Total inference time: %f \n'%(time_record[-1][1] - time_record[0][1]))
     
 
@@ -262,6 +285,6 @@ if __name__=='__main__':
   
     dump_dir = os.path.join(demo_dir, '%s_results'%(DATASET))
     if not os.path.exists(dump_dir): os.mkdir(dump_dir) 
-    dump_results(end_points, dump_dir, DATASET_CONFIG, True)
-    print('Dumped detection results to folder %s'%(dump_dir))
+    #dump_results(end_points, dump_dir, DATASET_CONFIG, True)
+    #print('Dumped detection results to folder %s'%(dump_dir))
 
