@@ -1,5 +1,5 @@
 {    
-    "model_id": "scannet_1way_fp6", 
+    "model_id": "scannet_1way_fp15", 
     "dataset": "scannet",
     "use_painted": true,   
     "two_way": false,       
@@ -7,7 +7,7 @@
     "q_gran": "semantic",
     "use_tflite": false,
     "activation": "relu",
-    "tflite_folder": "tflite/tflite_models/scannet_1way_fp6",    
+    "tflite_folder": "tflite/tflite_models/scannet_1way_fp15",    
     "use_edgetpu": false,        
     "use_multiThr": false
 }
