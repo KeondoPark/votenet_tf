@@ -233,7 +233,7 @@ def tflite_convert(keyword, model, base_model, out_dir, mlp=True):
 def simulate_run(base_model, keyword_list):
     output_dict = {}
 
-    for i in range(int(800 / BATCH_SIZE)):                               
+    for i in range(int(400 / BATCH_SIZE)):                               
         batch_data = next(iter(ds))
         
         if DATASET == 'sunrgbd':
@@ -591,7 +591,7 @@ if __name__=='__main__':
                 net = layers.Reshape((self.npoint, net.shape[-1]))(net)
                 return net
 
-    converting_layers = ['sa1','sa2','sa3','sa4','voting','va']
+    converting_layers = ['sa1','sa2','sa3','sa4','fp1','fp2','voting','va']
     #converting_layers = ['voting','va']    
     model_list = []
 

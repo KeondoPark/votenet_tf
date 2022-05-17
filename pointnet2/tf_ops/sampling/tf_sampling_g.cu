@@ -233,7 +233,11 @@ __global__ void farthestpointsamplingBgKernel(int b,int n,int m,
     __syncthreads();
     
     if (threadIdx.x == 0){
-      if (wght <= 1.0){ // sampling background points
+      if (wght == 1.0){
+        idxs[i*m+0] = 0;     
+        painted_out[i*m + 0] = painted[i*n+0];
+        w = wght;
+      } else if (wght < 1.0){ // sampling background points
         for (int j = 0; j < n; j++){        
           if (painted[i*n + j] == 0){
             idxs[i*m+0] = j;     
@@ -289,9 +293,20 @@ __global__ void farthestpointsamplingBgKernel(int b,int n,int m,
 
         float d = (x2-x1)*(x2-x1) + (y2-y1)*(y2-y1) + (z2-z1)*(z2-z1);
         
-        if (painted[i*n + k] > 0){
-          d = w * d;
-        }        
+        if (wght > 1){
+        // if (painted[i*n + k] > 0 || painted[i*n+old] > 0){
+          if (painted[i*n + k] > 0){
+            d = w * d;                
+          //} else if (painted[i*n + k] < 0 || painted[i*n+old] < 0) {
+          } else if (painted[i*n + k] < 0) {
+            d = 0.01 * d;
+          } 
+        }                  
+        
+        // Sample more unknown, when small weight is given(Neither painted nor unpainted)
+        //} else if (wght < 1 && painted[i*n + k] != 0){
+        //  d = w * d;          
+        //}
         
         float d2 = min(d,td);
         if (d2!=td)

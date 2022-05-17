@@ -66,7 +66,7 @@ def run_semantic_segmentation_graph(image, sess, input_size):
     target_size = (int(resize_ratio * width), int(resize_ratio * height))
     #target_size = input_size
     resized_image = image.convert('RGB').resize(target_size, Image.ANTIALIAS)
-    print(target_size)
+    
     batch_seg_map = sess.run(
         ['SemanticProbabilities:0',
         'SemanticPredictions:0'],

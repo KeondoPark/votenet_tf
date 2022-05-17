@@ -124,7 +124,7 @@ def save_2dsemantic_results():
         print('Creating new data folder: {}'.format(OUTPUT_2DSEG_FOLDER))                
         os.mkdir(OUTPUT_2DSEG_FOLDER) 
     
-    with tf.compat.v1.gfile.GFile('../deeplab/saved_model/scannet_3.pb', "rb") as f:
+    with tf.compat.v1.gfile.GFile('../deeplab/saved_model/scannet_5.pb', "rb") as f:
         graph_def = tf.compat.v1.GraphDef()
         graph_def.ParseFromString(f.read())
     

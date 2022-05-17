@@ -242,7 +242,7 @@ class Pointnet2Backbone_p(layers.Layer):
         self.sa3_mlp = PointnetMLP(mlp=[256, 128, 128, 256], nsample=16, model_config=model_config)
         
         self.sa4 = SamplingAndGrouping(
-                npoint=128,
+                npoint=256,
                 radius=1.2,
                 nsample=16,                
                 use_xyz=True,
@@ -295,7 +295,7 @@ class Pointnet2Backbone_p(layers.Layer):
         #print("Painted from original", tf.reduce_sum(isPainted[0]))
         #print("Painted from SA1", tf.reduce_sum(sa1_painted[0]))        
         
-        '''
+        
         # Batch index. i in (i,j) index type
         B = tf.shape(xyz)[0]
         N = tf.shape(xyz)[1]
@@ -315,11 +315,11 @@ class Pointnet2Backbone_p(layers.Layer):
 
         new_features = tf.boolean_mask(features, tf.logical_not(mask))
         new_features = tf.reshape(new_features, [B, N - npoint, -1])
-        '''
+        
 
-        new_xyz = xyz
-        new_isPainted = isPainted
-        new_features = features
+        # new_xyz = xyz
+        # new_isPainted = isPainted
+        # new_features = features
 
 
         
@@ -346,7 +346,7 @@ class Pointnet2Backbone_p(layers.Layer):
         sa1_xyz = layers.Concatenate(axis=1)([sa1_xyz1, sa1_xyz2])
         sa1_features = layers.Concatenate(axis=1)([sa1_features1, sa1_features2])        
 
-        sa2_xyz2, sa2_inds2, sa2_grouped_features2, sa2_painted2 = self.sa2(sa1_xyz2, sa1_painted2, sa1_features2, bg1=True, wght1=1, xyz_ball=sa1_xyz, features_ball=sa1_features)
+        sa2_xyz2, sa2_inds2, sa2_grouped_features2, sa2_painted2 = self.sa2(sa1_xyz2, sa1_painted2, sa1_features2, bg1=True, wght1=4, xyz_ball=sa1_xyz, features_ball=sa1_features)
         time_record.append(("SA2 sampling and grouping 2:", time.time()))        
 
         sa2_features2 = self.sa2_mlp(sa2_grouped_features2)
@@ -362,27 +362,39 @@ class Pointnet2Backbone_p(layers.Layer):
         sa2_xyz = layers.Concatenate(axis=1)([sa2_xyz1, sa2_xyz2])
         sa2_features = layers.Concatenate(axis=1)([sa2_features1, sa2_features2])        
 
-        sa3_xyz2, sa3_inds2, sa3_grouped_features2, sa3_painted2 = self.sa3(sa2_xyz2, sa2_painted2, sa2_features2, bg1=True, wght1=1, xyz_ball=sa2_xyz, features_ball=sa2_features)        
+        sa3_xyz2, sa3_inds2, sa3_grouped_features2, sa3_painted2 = self.sa3(sa2_xyz2, sa2_painted2, sa2_features2, bg1=True, wght1=4, xyz_ball=sa2_xyz, features_ball=sa2_features)        
         time_record.append(("SA3 sampling and grouping 2:", time.time()))
 
         sa3_features2 = self.sa3_mlp(sa3_grouped_features2)
         time_record.append(("SA3 MLP 2:", time.time()))
 
-        # ------------------------------- SA4-------------------------------        
+        # ------------------------------- SA4-------------------------------       
+
+        sa3_xyz = layers.Concatenate(axis=1)([sa3_xyz1, sa3_xyz2])
+        sa3_features = layers.Concatenate(axis=1)([sa3_features1, sa3_features2])        
+        sa3_painted = layers.Concatenate(axis=1)([sa3_painted1, sa3_painted2])
+
+        sa4_xyz, sa4_inds, sa4_grouped_features, sa4_painted = self.sa4(sa3_xyz, sa3_painted, sa3_features, bg1=True, wght1=4)
+        sa4_features = self.sa4_mlp(sa4_grouped_features)
+
+
+
+        '''
         sa4_xyz1, sa4_inds1, sa4_grouped_features1, sa4_painted1 = self.sa4(sa3_xyz1, sa3_painted1, sa3_features1, bg1=True, wght1=1)
-        time_record.append(("SA4 sampling and grouping 1:", time.time()))
+        time_record.append(("SA4 sampling and grouping:", time.time()))
 
         sa4_features1 = self.sa4_mlp(sa4_grouped_features1)
-        time_record.append(("SA4 MLP 1:", time.time()))
+        time_record.append(("SA4 MLP:", time.time()))
 
         sa3_xyz = layers.Concatenate(axis=1)([sa3_xyz1, sa3_xyz2])
         sa3_features = layers.Concatenate(axis=1)([sa3_features1, sa3_features2])        
 
         sa4_xyz2, sa4_inds2, sa4_grouped_features2, sa4_painted2 = self.sa4(sa3_xyz2, sa3_painted2, sa3_features2, bg1=True, wght1=1, xyz_ball=sa3_xyz, features_ball=sa3_features)        
-        time_record.append(("SA4 sampling and grouping 2:", time.time()))
+        time_record.append(("SA4 sampling and grouping:", time.time()))
 
         sa4_features2 = self.sa4_mlp(sa4_grouped_features2)
-        time_record.append(("SA4 MLP 2:", time.time()))   
+        time_record.append(("SA4 MLP:", time.time()))   
+        '''      
                 
 
         #end_points['sa1_xyz1'] = sa1_xyz1
@@ -415,14 +427,14 @@ class Pointnet2Backbone_p(layers.Layer):
         #end_points['sa4_xyz1'] = sa4_xyz1
         #end_points['sa4_features1'] = sa4_features1
         #end_points['sa4_inds1'] = sa4_inds1               
-        end_points['sa4_grouped_features1'] = sa4_grouped_features1
+        #end_points['sa4_grouped_features1'] = sa4_grouped_features1
         #end_points['sa4_xyz2'] = sa4_xyz2
         #end_points['sa4_features2'] = sa4_features2
         #end_points['sa4_inds2'] = sa4_inds2               
-        end_points['sa4_grouped_features2'] = sa4_grouped_features2
+        #end_points['sa4_grouped_features2'] = sa4_grouped_features2
 
-        sa4_features = layers.Concatenate(axis=1)([sa4_features1, sa4_features2])
-        sa4_xyz = layers.Concatenate(axis=1)([sa4_xyz1, sa4_xyz2])        
+        #sa4_features = layers.Concatenate(axis=1)([sa4_features1, sa4_features2])
+        #sa4_xyz = layers.Concatenate(axis=1)([sa4_xyz1, sa4_xyz2])        
 
         #sa2_inds = layers.Concatenate(axis=1)([sa2_inds1, sa2_inds2])
         #sa1_inds = layers.Concatenate(axis=1)([sa1_inds1, sa1_inds2])
@@ -443,12 +455,12 @@ class Pointnet2Backbone_p(layers.Layer):
         seed_inds1 = tf.gather(sa1_inds1, axis=1, indices=sa2_inds1, batch_dims=1)
         
         # Necessary if excluding first sampling points
-        # all_inds = tf.tile(tf.expand_dims(tf.range(N), 0), [B,1])
-        # rem_inds = tf.boolean_mask(all_inds, tf.logical_not(mask))
-        # rem_inds = tf.reshape(rem_inds, [B,-1])
-        # sa1_2_inds2 = tf.gather(sa1_inds2, axis=1, indices=sa2_inds2, batch_dims=1)
-        # seed_inds2 = tf.gather(rem_inds, indices=sa1_2_inds2, batch_dims=1)        
-        seed_inds2 = tf.gather(sa1_inds2, axis=1, indices=sa2_inds2, batch_dims=1)
+        all_inds = tf.tile(tf.expand_dims(tf.range(N), 0), [B,1])
+        rem_inds = tf.boolean_mask(all_inds, tf.logical_not(mask))
+        rem_inds = tf.reshape(rem_inds, [B,-1])
+        sa1_2_inds2 = tf.gather(sa1_inds2, axis=1, indices=sa2_inds2, batch_dims=1)
+        seed_inds2 = tf.gather(rem_inds, indices=sa1_2_inds2, batch_dims=1)        
+        # seed_inds2 = tf.gather(sa1_inds2, axis=1, indices=sa2_inds2, batch_dims=1)
         
         end_points['fp2_inds'] = layers.Concatenate(axis=1)([seed_inds1, seed_inds2])      
         
