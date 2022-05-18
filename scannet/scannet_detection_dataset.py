@@ -98,7 +98,7 @@ class ScannetDetectionDataset(Dataset):
         instance_bboxes = np.load(os.path.join(self.data_path, scan_name)+'_bbox.npy')       
 
         if not self.use_color:
-            point_cloud = mesh_vertices  #[:,0:3] # do not use color for now
+            point_cloud = mesh_vertices[:,0:3]  #[:,0:3] # do not use color for now
             #pcl_color = mesh_vertices[:,3:6]
         else:
             point_cloud = mesh_vertices[:,0:6] 

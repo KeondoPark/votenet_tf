@@ -233,7 +233,7 @@ def tflite_convert(keyword, model, base_model, out_dir, mlp=True):
 def simulate_run(base_model, keyword_list):
     output_dict = {}
 
-    for i in range(int(100 / BATCH_SIZE)):                               
+    for i in range(int(400 / BATCH_SIZE)):                               
         batch_data = next(iter(ds))
         
         if DATASET == 'sunrgbd':
