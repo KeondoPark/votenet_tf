@@ -8,6 +8,6 @@
     "activation": "relu6",
     "q_gran": "semantic",
     "tflite_folder": "tflite/tflite_models/2way_nofp_sep",    
-    "use_edgetpu": false,    
+    "use_edgetpu": true,    
     "use_multiThr": false
 }

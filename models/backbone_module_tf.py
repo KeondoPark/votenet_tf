@@ -732,6 +732,9 @@ class Pointnet2Backbone_tflite(layers.Layer):
         seed_inds1 = tf.gather(sa1_inds1, axis=1, indices=sa2_inds1, batch_dims=1)
         
         # Necessary if excluding first sampling points
+        B = tf.shape(xyz)[0]
+        N = tf.shape(xyz)[1]
+        
         all_inds = tf.tile(tf.expand_dims(tf.range(N), 0), [B,1])
         rem_inds = tf.boolean_mask(all_inds, tf.logical_not(mask))
         rem_inds = tf.reshape(rem_inds, [B,-1])
