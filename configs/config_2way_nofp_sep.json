@@ -1,5 +1,5 @@
 {    
-    "model_id": "2way_nofp_sep2", 
+    "model_id": "2way_nofp_sep", 
     "use_painted": true,   
     "two_way": true,       
     "use_fp_mlp": false, 
