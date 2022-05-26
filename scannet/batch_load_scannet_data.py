@@ -150,6 +150,6 @@ def save_2dsemantic_results():
         print('-'*20+'done')                        
 
 if __name__=='__main__':    
-    #batch_export()
+    batch_export()
     save_2dsemantic_results()
 

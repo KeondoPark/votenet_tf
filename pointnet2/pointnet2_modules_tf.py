@@ -98,7 +98,8 @@ class PointnetSAModuleVotes(layers.Layer):
         else:
             act = model_config['activation'] if 'activation' in model_config['activation'] else 'relu6'
             self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=bn, activation=act, input_shape=[npoint, nsample, mlp_spec[0]])        
-            #self.max_pool = layers.MaxPooling2D(pool_size=(1, self.nsample), strides=1, data_format="channels_last")
+            
+            #This is to make it EdgeTPU-compatible
             self.max_pool = layers.MaxPooling2D(pool_size=(1, 16), strides=(1,16), data_format="channels_last")
             self.max_pool2 = layers.MaxPooling2D(pool_size=(1, int(self.nsample/16)), strides=(1,int(self.nsample/16)), data_format="channels_last")
             self.avg_pool = layers.AveragePooling2D(pool_size=(1, self.nsample), strides=1, data_format="channels_last")        
@@ -124,8 +125,7 @@ class PointnetSAModuleVotes(layers.Layer):
                 inds, isPainted = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, isPainted, weight=1)
                 xyz = xyz[:,:,:3]
             else:
-                inds = tf_sampling.farthest_point_sample(self.npoint, xyz)                
-            #inds, batch_distances = pointnet2_utils.fps_light(xyz, self.npoint)            
+                inds = tf_sampling.farthest_point_sample(self.npoint, xyz)                            
         else:
             assert(inds.shape[1] == self.npoint)   
 
@@ -136,15 +136,12 @@ class PointnetSAModuleVotes(layers.Layer):
         
         
 
-        if not self.ret_unique_cnt:
-            #grouped_features, grouped_xyz = self.grouper(
+        if not self.ret_unique_cnt:            
             grouped_features= self.grouper(
-                xyz, new_xyz, features
-                #xyz, new_xyz, batch_distances, inds, features
+                xyz, new_xyz, features                
             )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)
         else:
-            grouped_features, unique_cnt = self.grouper(
-            #grouped_features, grouped_xyz, unique_cnt = self.grouper(
+            grouped_features, unique_cnt = self.grouper(            
                 xyz, new_xyz, features
             )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)        
         time_record.append((f"{self.layer_name} Runtime for Sampling and Grouping:", time.time()))
@@ -157,18 +154,13 @@ class PointnetSAModuleVotes(layers.Layer):
             new_features = self.mlp_module(
                     grouped_features
                 )  # (B, npoint, nsample, mlp[-1])
-            #end = time.time()
-            #print("Runtime for shared MLP", end - start)
 
-            if self.pooling == 'max':
-                #new_features = layers.MaxPooling2D(pool_size=(1, tf.shape(new_features)[2]), strides=1, data_format="channels_last")(new_features)  # (B, npoint, 1, mlp[-1])
-                #new_features = self.max_pool(new_features)  # (B, npoint, 1, mlp[-1])
+            if self.pooling == 'max':                
                 if self.nsample == 16:
                     new_features = self.max_pool(new_features)  # (B, npoint, 1, mlp[-1])
                 elif self.nsample > 16:
                     new_features = self.max_pool2(self.max_pool(new_features))  # (B, npoint, 1, mlp[-1])
-            elif self.pooling == 'avg':
-                #new_features = layers.AvgPooling2D(pool_size=(1, tf.shape(new_features)[2]), strides=1, data_format="channels_last")(new_features) # (B, npoint, 1, mlp[-1])
+            elif self.pooling == 'avg':                
                 new_features = self.avg_pool(new_features)  # (B, npoint, 1, mlp[-1])
             '''
             elif self.pooling == 'rbf': 
@@ -176,13 +168,11 @@ class PointnetSAModuleVotes(layers.Layer):
                 # Ref: https://en.wikipedia.org/wiki/Radial_basis_function_kernel
                 rbf = tf.math.exp(-1 * grouped_xyz.pow(2).sum(1,keepdim=False) / (self.sigma**2) / 2) # (B, npoint, nsample)
                 new_features = tf.reduce_sum(new_features * rbf.unsqueeze(1), axis=-1, keepdims=True) / float(self.nsample) # (B, mlp[-1], npoint, 1)
-            '''
-        #new_features = tf.squeeze(new_features, axis=-2)  # (B, npoint, mlp[-1])
+            '''        
         new_features = layers.Reshape((self.npoint, new_features.shape[-1]))(new_features)        
         time_record.append((f"{self.layer_name} Runtime for shared MLP:", time.time()))
 
-        if not self.ret_unique_cnt:
-            #return new_xyz, new_features, inds
+        if not self.ret_unique_cnt:            
             return new_xyz, new_features, inds, grouped_features
         else:
             return new_xyz, new_features, inds, unique_cnt
@@ -219,14 +209,22 @@ class SamplingAndGrouping(layers.Layer):
         else:
             self.grouper = pointnet2_utils_tf.GroupAll(use_xyz, ret_grouped_xyz=True)
         
-    def call(self, xyz, isPainted, features, inds=None, new_xyz=None, ball_inds=None, bg1=False, bg2=False, wght1=1, wght2=1, xyz_ball=None, features_ball=None):
-    #def call(self, xyz, features, inds=None, bg=False, wght=1, isFront=0, xyz_ball=None, features_ball=None):
+    def call(self, xyz, isPainted, features, inds=None, new_xyz=None, ball_inds=None, bg1=False, bg2=False, wght1=1, wght2=1, xyz_ball=None, features_ball=None):    
         r"""
         Parameters
         ----------
         xyz : (B, N, 3) tensor of the xyz coordinates of the features
+        isPainted: (B, N) indicating the point is painted or not
         features : (B, N, C) tensor of the descriptors of the the features
         inds : (Optinal)(B, npoint) tensor that stores index to the xyz points (values in 0-N-1)
+        new_xyz: If points are already sampled outside this module, it can be input
+        ball_inds: If points are already ball-queried outside this module, it can be input
+        bg1: Use Biased sampling
+        bg2: Use Biased sampling, sample 2 point sets in one operation
+        wght1: Biased sampling weight
+        wght2: Biased sampling weight for second point set, only used when bg2 is True
+        xyz_ball: To use ball query points other than input xyz, use this
+        features_ball: To use ball query features other than input xyz, use this
 
         Returns
         -------
@@ -237,8 +235,7 @@ class SamplingAndGrouping(layers.Layer):
         """
         
         if inds is None:                        
-            if bg2:                                    
-                #inds = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, wght, isFront)                                
+            if bg2:                                                    
                 inds, isPainted = tf_sampling.farthest_point_sample_bg2(self.npoint, xyz, isPainted, wght1, wght2)                                                          
             elif bg1:
                 inds, isPainted = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, isPainted, wght1)
@@ -273,7 +270,7 @@ class SamplingAndGrouping(layers.Layer):
             return new_xyz, inds, unique_cnt, isPainted
 
 class PointnetMLP(layers.Layer):
-    ''' Only shareMLP and maxpooling in PointnetSAModuleVotes '''
+    ''' Only shareMLP and maxpooling from PointnetSAModuleVotes '''
 
     def __init__(
             self,
@@ -319,6 +316,7 @@ class PointnetFPModule(layers.Layer):
         Pointnet module parameters
     bn : bool
         Use batchnorm
+    model_config: if model_config['use_fp_mlp'] == False, do not run sharedMLP in this module
     """
 
     def __init__(self, *, mlp: List[int], bn: bool = True, m: int, model_config = None, layer_name = 'fp1'):
@@ -369,21 +367,15 @@ class PointnetFPModule(layers.Layer):
             (B, n, mlp[-1]) tensor of the features of the unknown features
         """
 
-        if known is not None:            
-            #start = time.time()
+        if known is not None:                    
             dist, idx = tf_interpolate.three_nn(unknown, known)
             dist_recip = tf.divide(tf.constant(1.0, dtype=tf.float32), (dist + 1e-8))
             norm = tf.reduce_sum(dist_recip, axis=2, keepdims=True)
             weight = tf.divide(dist_recip, norm)  # (B, n, 3)
-            #end = time.time()
-            #print("Runtime for Threenn original", end - start)
             
-            #start = time.time() 
             interpolated_feats = tf_interpolate.three_interpolate(
                 known_feats, idx, weight
-            )
-            #end = time.time()
-            #print("Runtime for Inverse three_interpolate original: ", end - start)
+            )            
 
         else:
             interpolated_feats = tf.tile(known_feats, [1, tf.shape(unknow_feats)[1] / tf.shape(known_feats)[1], 1])
@@ -391,12 +383,9 @@ class PointnetFPModule(layers.Layer):
         if unknow_feats is not None:
             prop_features = layers.concatenate([interpolated_feats, unknow_feats], axis=2)  #(B, n, C2 + C1)
         else:
-            prop_features = interpolated_feats
+            prop_features = interpolated_feats       
         
-        
-        #new_features = tf.expand_dims(new_features, axis=-2)
-        if self.use_fp_mlp:
-            print("FP MLP!")
+        if self.use_fp_mlp:            
             prop_features = layers.Reshape((prop_features.shape[1], 1, prop_features.shape[2]))(prop_features)
             if self.use_tflite:
                 self.interpreter.set_tensor(self.input_details[0]['index'], prop_features)
@@ -409,6 +398,7 @@ class PointnetFPModule(layers.Layer):
             return prop_features, prop_features
         
 
+########## For test only ##########
 
 class MultiheadAttention(tf.keras.layers.Layer):
     def __init__(self, npoint, n_heads, embed_dim):

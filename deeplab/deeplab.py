@@ -59,7 +59,10 @@ def save_semantic_result(img, pred_class, save_name='semantic_result'):
     output_img.save('semantic_results/%s.jpg'%(save_name))
 
 
-def run_semantic_segmentation_graph(image, sess, input_size):        
+def run_semantic_segmentation_graph(image, sess, input_size): 
+    '''
+    Executing semantic segmentation graph    
+    '''       
     width, height = image.size
     #resize_ratio = 1.0 * input_size / max(width, height)
     resize_ratio = min(input_size[0] / width, input_size[1] / height)
@@ -80,15 +83,8 @@ def run_semantic_segmentation_graph(image, sess, input_size):
 
     x_int0 = x.astype(np.int)
     y_int0 = y.astype(np.int)
-    '''
-    x_int1 = np.minimum(x_int + 1, height - 1)
-    y_int1 = np.minimum(y_int + 1, width - 1)
 
-    x_f = x - x_int0
-    y_f = y - y_int0
-    '''
-    xv0, yv0 = np.meshgrid(x_int0, y_int0, indexing='ij') # xv, yv has shape (height, width)
-    #xv1, yv1 = np.meshgrid(x_int1, y_int1, indexing='ij') # xv, yv has shape (height, width)
+    xv0, yv0 = np.meshgrid(x_int0, y_int0, indexing='ij') # xv, yv has shape (height, width)    
 
     seg_prob = resized_seg_prob[xv0, yv0]
     seg_class = resized_seg_class[xv0, yv0]
@@ -96,7 +92,15 @@ def run_semantic_segmentation_graph(image, sess, input_size):
     return seg_prob, seg_class
 
 def run_semantic_seg(imgs, save_result=False, save_name='semantic_result', graph_file='sunrgbd_COCO_15.pb', input_size=(513,513)):    
-    
+    '''
+    Run semantic segmentation with tensorflow graph file(.pb)
+    imgs: list of input RGB images
+    save_result: True if you want to save the semantic segmentation results
+    save_name: if save_result is True, the name of result file
+    graph_file: tensorflow graph file(.pb)
+    input_size: The image size
+    '''
+
     with tf.compat.v1.gfile.GFile(os.path.join(BASE_DIR,'saved_model',graph_file), "rb") as f:
         graph_def = tf.compat.v1.GraphDef()
         graph_def.ParseFromString(f.read())
@@ -121,20 +125,29 @@ def run_semantic_seg(imgs, save_result=False, save_name='semantic_result', graph
     return pred_prob_list, pred_class_list
 
 
-def run_semantic_seg_tflite(img_list, save_result=False, tflite_file='sunrgbd_ade20k_12_quant_edgetpu.tflite'):
+def run_semantic_seg_tflite(img_list, save_result=False, tflite_file='sunrgbd_COCO_15_quant_edgetpu.tflite'):
+    '''
+    Run semantic segmentation with tensorflow graph file(.pb)
+    img_list: list of input RGB images
+    save_result: True if you want to save the semantic segmentation results    
+    tflite_file: tensorflow graph file(.pb)    
+    '''
     
     from pycoral.utils.edgetpu import make_interpreter
     from pycoral.adapters import common
     from pycoral.adapters import segment
-    
+
+    #Initialize interpreter    
     interpreter = make_interpreter(os.path.join(BASE_DIR,'saved_model', tflite_file))
     interpreter.allocate_tensors()
     width, height = common.input_size(interpreter)   
     
+    #Get input size
     orig_w, orig_h = img_list[0].size  
 
     pred_prob_list = []    
     for img in img_list:         
+      #Resize image to  tflite model input size
       resized_img, (scale1, scale2) = common.set_resized_input(
           interpreter, img.size, lambda size: img.resize(size, Image.ANTIALIAS))    
       

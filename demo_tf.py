@@ -121,7 +121,7 @@ if __name__=='__main__':
         imgs, poses, depth_nps = dataset.get_image_and_pose(data_idx, num_img=3)        
         calibs = [dataset.get_calibration(data_idx, pose, depth_np) for pose, depth_np in zip(poses, depth_nps)]        
         point_cloud = dataset.get_pointcloud(data_idx)
-        deeplab_tflite_file = 'scannet_2_quant_edgetpu.tflite'
+        deeplab_tflite_file = 'scannet_5_quant_edgetpu.tflite'
         deeplab_pb = 'scannet_3.pb'
         img_input_size = (321,321)
 
@@ -148,8 +148,6 @@ if __name__=='__main__':
 
     if model_config['use_tflite']:          
         restore_list = []  
-        #restore_list.append(tf.train.Checkpoint(pnet=net.pnet))
-        #restore_list.append(tf.train.Checkpoint(vgen=net.vgen))
         
         for layer in restore_list:
             new_root = tf.train.Checkpoint(net=layer)
@@ -164,11 +162,6 @@ if __name__=='__main__':
         print("Loaded checkpoint %s (epoch: %d)"%(checkpoint_path, epoch))  
    
     # Load and preprocess input point cloud     
-    #point_cloud = read_ply(pc_path)
-    #pc = preprocess_point_cloud(point_cloud)
-    #print('Loaded point cloud data: %s'%(pc_path))
-    ## TODO: NEED TO BE REPLACED    
-    
     time_record = [('Start: ', time.time())]
     point_cloud_sampled = random_sampling(point_cloud[:,0:3], NUM_POINT)
     pc = preprocess_point_cloud(point_cloud_sampled)    
@@ -177,7 +170,7 @@ if __name__=='__main__':
 
     inputs = {'point_clouds': tf.convert_to_tensor(pc)}
    
-    # Model inference    
+    # Model inference, 4 times  
     for ii in range(4):
         if model_config['use_painted']:                       
             if model_config['use_multiThr']:

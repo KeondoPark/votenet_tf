@@ -1,6 +1,6 @@
 #!/bin/bash
 
-TFLITE_DIR="tflite_models/scannet_baseline13"
+TFLITE_DIR="tflite_models/2way_nofp_sep9"
 
 for entry in "$TFLITE_DIR"/*
 do    

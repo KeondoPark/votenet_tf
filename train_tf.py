@@ -409,7 +409,7 @@ def train(start_epoch):
         t_epoch = time.time() - start
         log_string("1 Epoch training time:" + str(t_epoch))        
                
-        if EPOCH_CNT % 10 == 9 or EPOCH_CNT == 0: # Eval every 10 epochs                                
+        if EPOCH_CNT+1 >= 100 and (EPOCH_CNT % 10 == 9 or EPOCH_CNT == 0): # Eval every 10 epochs                                
             stat_dict = defaultdict(float) # collect statistics            
             ap_calculator = APCalculator(ap_iou_thresh=FLAGS.ap_iou_thresh,
                 class2type_map=DATASET_CONFIG.class2type)     

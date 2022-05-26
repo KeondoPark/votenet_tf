@@ -40,13 +40,7 @@ ROOT_DIR = os.path.dirname(BASE_DIR)
 environ_file = os.path.join(ROOT_DIR,'configs','environ.json')
 environ = json.load(open(environ_file))['environ']
 
-if environ == 'server':    
-    DATA_DIR = '/home/aiot/data'
-elif environ == 'jetson':
-    DATA_DIR='/media'
-elif environ == 'server2':
-    DATA_DIR = '/data'
-
+DATA_DIR = BASE_DIR
 
 DEFAULT_TYPE_WHITELIST = ['bed','table','sofa','chair','toilet','desk','dresser','night_stand','bookshelf','bathtub']
 
@@ -472,19 +466,13 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                         projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
                         pred_prob = np.eye(num_sunrgbd_class+1)[projected_class]                        
                         pred_prob = pred_prob[:,:(num_sunrgbd_class+1)]
-                        print(data_idx, mask.shape, max(uv[:,0]), max(uv[:,1]), pred_class.shape)
-                        print(projected_class.shape, pred_prob.shape)
 
-                        #pred_prob = np.eye(num_sunrgbd_class+1)[pred_class]
-                        #pred_prob = pred_prob[:,:,1:]
                     else:
                         pred_prob, pred_class = deeplab.run_semantic_segmentation_graph(img, sess, INPUT_SIZE) # (w, h, num_class)     
                         pred_prob = pred_prob[:,:,:(num_sunrgbd_class+1)] # 0 is background class              
                         projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
                         pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
 
-                    #print("maximum value of uv, Expected:", w-1, h-1, "Actual:", max(uv[:,0]), max(uv[:,1]))
-                    #print("Minimum of uv", min(uv[:,0]), min(uv[:,1]))
                     
                     isPainted = np.where((projected_class > 0) & (projected_class < num_sunrgbd_class+1), 1, 0) # Point belongs to foreground?                    
                     isPainted = np.expand_dims(isPainted, axis=-1)
@@ -587,7 +575,7 @@ def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
         #INPUT_SIZE = 737
         INPUT_SIZE = (513, 513)
         #with tf.compat.v1.gfile.GFile('../deeplab/saved_model/sunrgbd_ade20k_12.pb', "rb") as f:
-        with tf.compat.v1.gfile.GFile('../deeplab/saved_model/sunrgbd_COCO_12.pb', "rb") as f:
+        with tf.compat.v1.gfile.GFile('../deeplab/saved_model/sunrgbd_COCO_15.pb', "rb") as f:
             graph_def = tf.compat.v1.GraphDef()
             graph_def.ParseFromString(f.read())
         

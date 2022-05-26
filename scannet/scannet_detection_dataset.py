@@ -165,15 +165,18 @@ class ScannetDetectionDataset(Dataset):
             sliced = len(frame_nums) // num_img
             frames_selected = []
             
-            for i in range(num_img):
-               if i == num_img - 1:
-                   frames_selected.append(np.random.choice(frame_nums[sliced*i:], 1, replace=False)[0])
-               else:
-                   frames_selected.append(np.random.choice(frame_nums[sliced*i:sliced*(i+1)], 1, replace=False)[0])            
+            if len(frame_nums) > num_img:
+                for i in range(num_img):
+                    if i == num_img - 1:
+                        frames_selected.append(np.random.choice(frame_nums[sliced*i:], 1, replace=False)[0])
+                    else:
+                        frames_selected.append(np.random.choice(frame_nums[sliced*i:sliced*(i+1)], 1, replace=False)[0])                
+            else:
+                frames_selected = np.random.choice(frame_nums, num_img, replace=True)          
             
             for frame in frames_selected:
                 pose_file = os.path.join(exported_scan_dir, 'pose', str(frame) + '.txt')
-                depth_file = os.path.join(exported_scan_dir, 'depth', str(frame) + '.png')
+                depth_file = os.path.join(exported_scan_dir, 'depth-erode', str(frame) + '.png')
 
                 depth_img = Image.open(depth_file)
                 depth_np = np.array(depth_img)                          
@@ -228,7 +231,7 @@ class ScannetDetectionDataset(Dataset):
                 
                 #projected_class = pred_class[y, x]    
 
-                isPainted = np.where(projected_class > 0, 1, 0) # Point belongs to foreground?        
+                isPainted = np.where(projected_class == 0, -1, projected_class) # Point belongs to foreground?                    
                 
                 point_cloud_recon[filter_idx2, 3] = isPainted
                 point_cloud_recon[filter_idx2, 4:-1] = pred_prob

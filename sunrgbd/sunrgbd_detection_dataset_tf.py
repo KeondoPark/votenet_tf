@@ -263,7 +263,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         print(self.data_path)
 
         if split_set == 'val':
-            tf.random.set_seed(1111)
+            tf.random.set_seed(1234)
 
         self.raw_data_path = os.path.join(ROOT_DIR, 'sunrgbd/sunrgbd_trainval')
         self.num_points = num_points

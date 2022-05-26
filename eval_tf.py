@@ -261,8 +261,8 @@ def evaluate_one_epoch():
             ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)            
         
         # Dump evaluation results for visualization
-        if batch_idx == 0:
-            dump_results(end_points, DUMP_DIR, DATASET_CONFIG)
+        # if batch_idx == 0:
+        #     dump_results(end_points, DUMP_DIR, DATASET_CONFIG)
 
     # Log statistics
     #TEST_VISUALIZER.log_scalars({key:stat_dict[key]/float(batch_idx+1) for key in stat_dict},

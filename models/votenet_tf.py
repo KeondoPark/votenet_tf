@@ -41,6 +41,7 @@ class VoteNet(tf.keras.Model):
             Number of proposals/detections generated from the network. Each proposal is a 3D OBB with a semantic class.
         vote_factor: (default: 1)
             Number of votes generated from each seed point.
+        model_config: Configuration information including "use_tflite", "use_multiThre", "two_way", "q_gran" etc.
     """
 
     def __init__(self, num_class, num_heading_bin, num_size_cluster, mean_size_arr,
@@ -62,12 +63,13 @@ class VoteNet(tf.keras.Model):
 
         if two_way:
             if self.use_tflite:
-                # inference only
+                # inference only, pipelining is implemented here.
                 self.backbone_net = Pointnet2Backbone_tflite(input_feature_dim=self.input_feature_dim, model_config=model_config, num_class=num_class)
             else:
-                # Backbone point feature learning
+                # 2-way set abstraction + no pointnnet in feature propagation
                 self.backbone_net = Pointnet2Backbone_p(input_feature_dim=self.input_feature_dim, model_config=model_config)
         else:
+            # Original votenet architecture
             self.backbone_net = Pointnet2Backbone(input_feature_dim=self.input_feature_dim, model_config=model_config)
             
         # Hough voting
@@ -92,6 +94,15 @@ class VoteNet(tf.keras.Model):
                     Point cloud to run predicts on
                     Each point in the point-cloud MUST
                     be formated as (x, y, z, features...)
+
+                imgs: 2D images for pointpainting
+                    Only used when pipelining(multithreading) is used.
+                    Otherwise, already processed before this module starts
+
+                calibs: 2D - 3D projection
+                    Only used when pipelining(multithreading) is used.
+                    Otherwise, already processed before this module starts
+                        
         Returns:
             end_points: list
         """

@@ -112,125 +112,10 @@ def preprocess_point_cloud(point_cloud):
     pc = np.expand_dims(point_cloud.astype(np.float32), 0) # (1,40000,4)
     return pc
 
-'''
-def wrapper_representative_data_gen_mlp(keyword, base_model):
-    def representative_data_gen_mlp():        
-        for i in range(int(10 / BATCH_SIZE)):            
-            if not FLAGS.use_rep_data:            
-                batch_data = next(iter(ds))
-                
-                if DATASET == 'sunrgbd':
-                    inputs = batch_data[0]
-                else:
-                    inputs = batch_data['point_clouds']
-                end_points = base_model(inputs, training=False)
-                print("Using inference results", i, "-th batch...")
-
-                rnd = np.random.rand(1)
-                if 'sa1_grouped_features1' in end_points:
-                    sa1_grouped_features = end_points['sa1_grouped_features1'] if rnd > 0.5  else end_points['sa1_grouped_features2']
-                    sa2_grouped_features = end_points['sa2_grouped_features1'] if rnd > 0.5  else end_points['sa2_grouped_features2']
-                    sa3_grouped_features = end_points['sa3_grouped_features1'] if rnd > 0.5  else end_points['sa3_grouped_features2']
-                    sa4_grouped_features = end_points['sa4_grouped_features1'] if rnd > 0.5  else end_points['sa4_grouped_features2']
-                else:
-                    sa1_grouped_features = end_points['sa1_grouped_features']
-                    sa2_grouped_features = end_points['sa2_grouped_features']
-                    sa3_grouped_features = end_points['sa3_grouped_features']
-                    sa4_grouped_features = end_points['sa4_grouped_features']
-
-                fp1_grouped_features = end_points['fp1_grouped_features']
-                fp2_grouped_features = end_points['fp2_grouped_features']
-                va_grouped_features = end_points['va_grouped_features']
-
-                feature_dict = {'sa1':sa1_grouped_features,
-                        'sa2':sa2_grouped_features,
-                        'sa3':sa3_grouped_features,
-                        'sa4':sa4_grouped_features,
-                        'fp1':fp1_grouped_features,
-                        'fp2':fp2_grouped_features
-                        }
-
-                if keyword == 'va':                    
-                    va_xyz = end_points['aggregated_vote_xyz']
-                    #va_features = layers.Reshape((256,-1))(va_grouped_features)
-                    #va_input = layers.Concatenate(axis=-1)([va_xyz, va_features])
-                    #yield [va_grouped_features, va_xyz]
-                    yield [va_grouped_features]
-                    
-                    #yield [va_grouped_features]
-                else:
-                    yield [feature_dict[keyword]]
-            else:
-                if (i * BATCH_SIZE) % 200 == 0:
-                    start = i * BATCH_SIZE
-                    end = start + 200                            
-                    np_feats = np.load(os.path.join(FLAGS.rep_data_dir, keyword + '_rep_' + str(start) + '_to_' + str(end) + '.npy'))
-                    feats = tf.convert_to_tensor(np_feats)
-                print("Using saved rep data", i, "-th batch...")
-                idx = (i * BATCH_SIZE) % 200
-                yield [feats[idx: idx+BATCH_SIZE,:,:,:]]
-    return representative_data_gen_mlp
-
-def wrapper_representative_data_gen_voting(base_model):
-    def representative_data_gen_voting():
-        for i in range(int(800 / BATCH_SIZE)):
-            if not FLAGS.use_rep_data:
-                batch_data = next(iter(ds))
-                
-                if DATASET == 'sunrgbd':
-                    inputs = batch_data[0]
-                else:
-                    inputs = batch_data['point_clouds']
-
-                end_points = base_model(inputs, training=False)
-                print(i, "-th batch...")
-                #voting_input = [tf.expand_dims(end_points['seed_features'], axis=-2),
-                #                tf.expand_dims(end_points['seed_xyz'], axis=-2)]
-                #voting_input = [end_points['seed_features'], end_points['seed_xyz']]
-                voting_input = [tf.expand_dims(end_points['seed_features'],axis=2)]
-
-                yield voting_input
-                #yield [tf.expand_dims(seed_features, axis=-2)]
-            else:
-                if (i * BATCH_SIZE) % 200 == 0:
-                    start = i * BATCH_SIZE
-                    end = start + 200                            
-                    np_feats = np.load(os.path.join(FLAGS.rep_data_dir, 'voting_rep_' + str(start) + '_to_' + str(end) + '.npy'))
-                    feats = tf.convert_to_tensor(np_feats)
-                    feats = tf.reshape(feats, (feats.shape[0], feats.shape[1], 1, feats.shape[2]))
-                print("Using saved rep data", i, "-th batch...")
-                idx = (i * BATCH_SIZE) % 200
-                
-                yield [feats[idx: idx+BATCH_SIZE,:,:,:]]
-    return representative_data_gen_voting
-
-# TFlite conversion
-def tflite_convert(keyword, model, base_model, out_dir, mlp=True):
-    # A generator that provides a representative dataset
-
-    converter = tf.lite.TFLiteConverter.from_keras_model(model)
-    # This enables quantization
-    converter.optimizations = [tf.lite.Optimize.DEFAULT]
-    # This sets the representative dataset for quantization
-    if mlp:
-        converter.representative_dataset = wrapper_representative_data_gen_mlp(keyword, base_model)
-    else:        
-        converter.representative_dataset = wrapper_representative_data_gen_voting(base_model)
-    # This ensures that if any ops can't be quantized, the converter throws an error
-    converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
-    # For full integer quantization, though supported types defaults to int8 only, we explicitly declare it for clarity.
-    converter.target_spec.supported_types = [tf.int8]
-    # These set the input and output tensors to uint8 (added in r2.3)
-    converter.inference_input_type = tf.float32
-    converter.inference_output_type = tf.float32
-    tflite_model = converter.convert()
-
-    with open(os.path.join(out_dir, keyword + '_quant.tflite'), 'wb') as f:
-        f.write(tflite_model)
-'''
-
-
 def simulate_run(base_model, keyword_list):
+    '''
+    Prepare intermediate tensor data for post-training quantization
+    '''
     output_dict = {}
 
     for i in range(int(400 / BATCH_SIZE)):                               
@@ -248,12 +133,13 @@ def simulate_run(base_model, keyword_list):
             sa1_grouped_features = end_points['sa1_grouped_features1'] if rnd > 0.5  else end_points['sa1_grouped_features2']
             sa2_grouped_features = end_points['sa2_grouped_features1'] if rnd > 0.5  else end_points['sa2_grouped_features2']
             sa3_grouped_features = end_points['sa3_grouped_features1'] if rnd > 0.5  else end_points['sa3_grouped_features2']
-            sa4_grouped_features = end_points['sa4_grouped_features1'] if rnd > 0.5  else end_points['sa4_grouped_features2']
+            #sa4_grouped_features = end_points['sa4_grouped_features1'] if rnd > 0.5  else end_points['sa4_grouped_features2']
         else:
             sa1_grouped_features = end_points['sa1_grouped_features']
             sa2_grouped_features = end_points['sa2_grouped_features']
             sa3_grouped_features = end_points['sa3_grouped_features']
-            sa4_grouped_features = end_points['sa4_grouped_features']
+        
+        sa4_grouped_features = end_points['sa4_grouped_features']
 
         fp1_grouped_features = end_points['fp1_grouped_features']
         fp2_grouped_features = end_points['fp2_grouped_features']
@@ -275,6 +161,8 @@ def simulate_run(base_model, keyword_list):
                 output_dict[k] = [feature_dict[k]]
             else:                
                 output_dict[k].append(feature_dict[k])                
+
+        del feature_dict
     return output_dict                             
 
 def data_gen_wrapper(keyword, features_dict):
@@ -312,7 +200,276 @@ def tflite_convert_multi(keyword_list, model_list, base_model, out_dir, mlp=True
             tflite_name = k + '_quant.tflite'
         with open(os.path.join(out_dir, tflite_name), 'wb') as f:
             f.write(tflite_model)
+    # Remove from memory
     del features_dict
+
+# Build Shard MLP parts of the pointnet backbone as a model
+class SharedMLPModel(tf.keras.Model):
+    def __init__(self, mlp_spec, input_shape, nsample=0):
+        super().__init__()
+        self.sharedMLP = tf_utils.SharedMLP(mlp_spec, bn=True, activation=act, input_shape=input_shape)
+        self.nsample = nsample
+        self.npoint = input_shape[0]
+        if nsample:
+            self.max_pool = layers.MaxPooling2D(pool_size=(1, 16), strides=(1,16), data_format="channels_last")
+            self.max_pool2 = layers.MaxPooling2D(pool_size=(1, int(self.nsample/16)), strides=(1,int(self.nsample/16)), data_format="channels_last")
+
+    def call(self, grouped_features):
+        if self.nsample:
+            if self.nsample == 16:
+                features = self.sharedMLP(grouped_features)                    
+                new_features = self.max_pool(features)
+
+                # features2 = self.sharedMLP(grouped_features*0.67)
+                # new_features2 = self.max_pool(features2)
+                # features = layers.Concatenate(axis=-2)([new_features, new_features2])
+                # new_features = tf.nn.max_pool(features, ksize=(1,2), strides=(1,2), padding="SAME")
+            elif self.nsample > 16:
+                features = self.sharedMLP(grouped_features)                    
+                new_features = self.max_pool2(self.max_pool(features))
+                
+                # features2 = self.sharedMLP(grouped_features*0.67)
+                # new_features2 = self.max_pool2(self.max_pool(features2))
+                # features = layers.Concatenate(axis=-2)([new_features, new_features2])
+                # new_features = tf.nn.max_pool(features, ksize=(1,2), strides=(1,2), padding="SAME")
+        else:                
+            new_features = self.sharedMLP(grouped_features)
+
+            # features2 = self.sharedMLP(grouped_features*0.67)
+            # features = layers.Concatenate(axis=-2)([new_features, features2])
+            # new_features = tf.nn.max_pool(features, ksize=(1,2), strides=(1,2), padding="SAME")
+            
+
+        new_features = layers.Reshape((self.npoint, new_features.shape[-1]))(new_features)
+
+        return new_features
+
+# Voting module for tflite conversion
+class nnInVotingModule(tf.keras.Model):
+    def __init__(self, vote_factor, seed_feature_dim, q_gran='semantic'):            
+        super().__init__()
+        
+        self.vote_factor = vote_factor
+        self.in_dim = seed_feature_dim            
+        self.out_dim = self.in_dim # due to residual feature, in_dim has to be == out_dim            
+        self.use_fp_mlp = model_config['use_fp_mlp']
+        self.conv0 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
+        self.conv1 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
+        self.conv2 = layers.Conv2D(filters=self.in_dim, kernel_size=1)            
+        self.q_gran = q_gran
+        
+        if self.q_gran=='channel':
+            self.conv3_chn_list = []
+            for i in range((3 + self.out_dim) * self.vote_factor):
+                self.conv3_chn_list.append(layers.Conv2D(filters=1, kernel_size=1))
+
+        elif self.q_gran=='semantic':
+            # self.conv3_1 = layers.Conv2D(filters=(3) * self.vote_factor, kernel_size=1) 
+            # self.conv3_2 = layers.Conv2D(filters=(self.out_dim) * self.vote_factor, kernel_size=1) 
+            self.conv3_1 = layers.Dense(3 * self.vote_factor)
+            self.conv3_2 = layers.Dense(self.out_dim * self.vote_factor)
+
+        elif self.q_gran=='group':
+            self.conv3_chn_list = []
+            grp1_size = ((3+self.out_dim) * self.vote_factor) // 2
+            grp2_size = (3+self.out_dim) * self.vote_factor  - grp1_size
+            self.conv3_chn_list.append(layers.Dense(grp1_size))
+            self.conv3_chn_list.append(layers.Dense(grp2_size))
+
+        else:
+            self.conv3 = layers.Conv2D(filters=(self.out_dim+3) * self.vote_factor, kernel_size=1)
+        
+            #self.conv3 = layers.Dense((self.out_dim+3) * self.vote_factor)
+        self.bn0 = layers.BatchNormalization(axis=-1)
+        self.bn1 = layers.BatchNormalization(axis=-1)
+        self.bn2 = layers.BatchNormalization(axis=-1)
+
+        self.relu0 = layers.ReLU(maxval)
+        self.relu1 = layers.ReLU(maxval)
+        self.relu2 = layers.ReLU(maxval)
+    
+    def call(self, voting_input):
+
+        num_seed = 1024
+        seed_features = voting_input            
+
+        if not self.use_fp_mlp:
+            net0 = self.relu0(self.bn0(self.conv0(seed_features)))
+            # net0_2 = self.relu0(self.bn0(self.conv0(seed_features*0.67)))
+        else:
+            net0 = seed_features
+            # net0_2 = seed_features*0.5
+        net = self.relu1(self.bn1(self.conv1(net0))) 
+        net = self.relu2(self.bn2(self.conv2(net))) 
+        net0 = layers.Reshape((num_seed, self.vote_factor, net0.shape[-1]))(net0)
+
+        # net2 = self.relu1(self.bn1(self.conv1(net0_2))) 
+        # net2 = self.relu2(self.bn2(self.conv2(net2))) 
+        # net0_2 = layers.Reshape((num_seed, self.vote_factor, net0_2.shape[-1]))(net0_2)
+        
+        if self.q_gran=='channel':
+            out = []
+            for i in range((3 + self.out_dim) * self.vote_factor):
+                out.append(self.conv3_chn_list[i](net))
+            # offset = layers.Concatenate(axis=-1)(out[:3])
+            # residual_features = layers.Concatenate(axis=-1)(out[3:])
+            # vote_features = net0 + residual_features 
+            # return [offset, vote_features]
+            out.append(net0)
+            return out
+
+        
+        elif self.q_gran=='semantic':
+            net = layers.Reshape((num_seed, net.shape[-1]))(net)
+            offset = self.conv3_1(net)
+            net = self.conv3_2(net) # (batch_size, num_seed, (3+out_dim)*vote_factor)
+            offset = layers.Reshape((num_seed, self.vote_factor, 3))(offset)                
+            residual_features = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net)                
+            vote_features = net0 + residual_features 
+            '''
+
+            net2 = layers.Reshape((num_seed, net2.shape[-1]))(net2)
+            offset2 = self.conv3_1(net2)
+            net2 = self.conv3_2(net2) # (batch_size, num_seed, (3+out_dim)*vote_factor)
+            offset2 = layers.Reshape((num_seed, self.vote_factor, 3))(offset2)                
+            residual_features2 = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net2)                
+            vote_features2 = net0_2 + residual_features2
+
+            offset = layers.Concatenate(axis=-2)([offset, offset2])
+            offset = tf.nn.max_pool(offset, ksize=(1,2), strides=(1,2), padding="SAME")
+
+            vote_features = layers.Concatenate(axis=-2)([vote_features, vote_features2])
+            vote_features = tf.nn.max_pool(vote_features, ksize=(1,2), strides=(1,2), padding="SAME")
+            '''
+            return [offset, vote_features]
+
+        elif self.q_gran=='group':
+            out = []
+            net = layers.Reshape((num_seed, net.shape[-1]))(net)
+            for i in range(2):
+                out_grp = self.conv3_chn_list[i](net)
+                out_grp = layers.Reshape((num_seed, self.vote_factor, out_grp.shape[-1]))(out_grp)
+                out.append(out_grp)
+            out.append(net0)
+            return out
+        
+        else:
+            net = self.conv3(net)
+
+            return [net, net0]
+
+# Vote Aggregation module for tflite conversion
+class vaModule(tf.keras.Model):
+    def __init__(self, mlp_spec, input_shape, nsample=0, q_gran='semantic'):
+        super().__init__()
+        self.sharedMLP = tf_utils.SharedMLP(mlp_spec, bn=True, input_shape=input_shape)
+        self.npoint = 256
+        self.nsample = nsample            
+        self.q_gran = q_gran
+        self.max_pool = layers.MaxPooling2D(pool_size=(1, 16), strides=(1,16), data_format="channels_last")            
+
+        self.conv1 = layers.Conv2D(filters=128, kernel_size=1)        
+        self.conv2 = layers.Conv2D(filters=128, kernel_size=1)
+        self.NH = DATASET_CONFIG.num_heading_bin
+        self.NC = DATASET_CONFIG.num_size_cluster
+        self.num_class = DATASET_CONFIG.num_class
+                
+        if self.q_gran=='channel':
+            self.conv3_chn_list = []
+            for i in range(2+3+self.NH*2+self.NC*4+self.num_class):
+                self.conv3_chn_list.append(layers.Conv2D(filters=1, kernel_size=1))
+
+        elif self.q_gran=='semantic':
+            self.conv3_1 = layers.Dense(3) 
+            self.conv3_2 = layers.Dense(2 + self.NH + self.NC  + self.num_class) 
+            self.conv3_3 = layers.Dense(self.NH + self.NC * 3)                
+            
+
+        elif self.q_gran=='group':
+            self.conv3_chn_list = []
+            grp1_size = (2+3+self.NH*2+self.NC*4+self.num_class) // 3
+            grp2_size = grp1_size
+            grp3_size = 2+3+self.NH*2+self.NC*4+self.num_class - grp1_size - grp2_size                
+            self.conv3_chn_list.append(layers.Dense(grp1_size))
+            self.conv3_chn_list.append(layers.Dense(grp2_size))
+            self.conv3_chn_list.append(layers.Dense(grp3_size))
+
+        else:
+            self.conv3 = layers.Conv2D(filters=2+3+self.NH*2+self.NC*4+self.num_class, kernel_size=1)            
+        self.bn1 = layers.BatchNormalization(axis=-1)
+        self.bn2 = layers.BatchNormalization(axis=-1)
+        self.relu1 = layers.ReLU(maxval)
+        self.relu2 = layers.ReLU(maxval)
+        
+    def call(self, va_input):            
+        
+        grouped_features = va_input            
+
+        new_features = self.max_pool(self.sharedMLP(grouped_features))             
+
+        # --------- PROPOSAL GENERATION ---------
+        net = self.relu1(self.bn1(self.conv1(new_features)))
+        net = self.relu2(self.bn2(self.conv2(net))) 
+
+        # new_features2 = self.max_pool(self.sharedMLP(grouped_features*0.67))     
+        # net_2 = self.relu1(self.bn1(self.conv1(new_features2)))
+        # net_2 = self.relu2(self.bn2(self.conv2(net_2))) 
+
+        if self.q_gran=='channel':
+            out = []
+            for i in range(2+3+self.NH*2+self.NC*4+self.num_class):
+                out.append(self.conv3_chn_list[i](net))
+            #offset = layers.Concatenate(axis=-1)(out[:3])
+
+            #net2 = layers.Concatenate(axis=-1)(out[3:3+2+self.NH+self.NC] + out[-self.num_class:])
+            #net3 = layers.Concatenate(axis=-1)(out[3+2+self.NH+self.NC:3+2+self.NH*2+self.NC*4])
+
+            #return [offset, net2, net3]            
+            return out
+
+        elif self.q_gran=='semantic':
+            net = layers.Reshape((self.npoint, net.shape[-1]))(net)
+            offset = self.conv3_1(net)                                
+            net2 = self.conv3_2(net)
+            net3 = self.conv3_3(net)
+
+            '''
+            net_2 = layers.Reshape((self.npoint, net.shape[-1]))(net_2)
+            offset_2 = self.conv3_1(net_2)                                
+            net2_2 = self.conv3_2(net_2)
+            net3_2 = self.conv3_3(net_2)
+
+            
+            offset = layers.Concatenate(axis=-1)([offset, offset_2])
+            offset = layers.Reshape((self.npoint, 2, 3))(offset)
+            offset = tf.nn.max_pool(offset, ksize=(1,2), strides=(1,2), padding="SAME")
+
+            net2 = layers.Concatenate(axis=-1)([net2, net2_2])
+            net2 = layers.Reshape((self.npoint, 2, net2_2.shape[-1]))(net2)
+            net2 = tf.nn.max_pool(net2, ksize=(1,2), strides=(1,2), padding="SAME")
+
+            net3 = layers.Concatenate(axis=-1)([net3, net3_2])
+            net3 = layers.Reshape((self.npoint, 2, net3_2.shape[-1]))(net3)
+            net3 = tf.nn.max_pool(net3, ksize=(1,2), strides=(1,2), padding="SAME")
+            '''
+
+            offset = layers.Reshape((self.npoint,3))(offset)
+            net2 = layers.Reshape((self.npoint, net2.shape[-1]))(net2)
+            net3 = layers.Reshape((self.npoint, net3.shape[-1]))(net3)  
+
+            return [offset, net2, net3] 
+
+        elif self.q_gran=='group':
+            net = layers.Reshape((self.npoint, net.shape[-1]))(net)                
+            out = []
+            for i in range(3):
+                out.append(self.conv3_chn_list[i](net))
+            return out
+
+        else:
+            net = self.conv3(net)
+            net = layers.Reshape((self.npoint, net.shape[-1]))(net)
+            return net
 
 if __name__=='__main__':
     
@@ -355,7 +512,7 @@ if __name__=='__main__':
 
     print("Loaded checkpoint %s (epoch: %d)"%(checkpoint_path, epoch))
    
-    
+    #Dummy run to build the model
     pc = tf.convert_to_tensor(np.random.random([BATCH_SIZE,NUM_POINT,3+num_input_channel]))    
    
     # Model inference
@@ -375,226 +532,11 @@ if __name__=='__main__':
     else:
         maxval = None
 
-    # Build Shard MLP parts of the pointnet backbone as a model
-    class SharedMLPModel(tf.keras.Model):
-        def __init__(self, mlp_spec, input_shape, nsample=0):
-            super().__init__()
-            self.sharedMLP = tf_utils.SharedMLP(mlp_spec, bn=True, activation=act, input_shape=input_shape)
-            self.nsample = nsample
-            self.npoint = input_shape[0]
-            if nsample:
-                self.max_pool = layers.MaxPooling2D(pool_size=(1, 16), strides=(1,16), data_format="channels_last")
-                self.max_pool2 = layers.MaxPooling2D(pool_size=(1, int(self.nsample/16)), strides=(1,int(self.nsample/16)), data_format="channels_last")
-
-        def call(self, grouped_features):
-            if self.nsample:
-                if self.nsample == 16:
-                    new_features = self.max_pool(self.sharedMLP(grouped_features))
-                elif self.nsample > 16:
-                    new_features = self.max_pool2(self.max_pool(self.sharedMLP(grouped_features)))
-            else:                
-                new_features = self.sharedMLP(grouped_features)
-
-            new_features = layers.Reshape((self.npoint, new_features.shape[-1]))(new_features)
-
-            return new_features
-
-    class nnInVotingModule(tf.keras.Model):
-        def __init__(self, vote_factor, seed_feature_dim, q_gran='semantic'):            
-            super().__init__()
-            
-            self.vote_factor = vote_factor
-            self.in_dim = seed_feature_dim            
-            self.out_dim = self.in_dim # due to residual feature, in_dim has to be == out_dim            
-            self.use_fp_mlp = model_config['use_fp_mlp']
-            self.conv0 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
-            self.conv1 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
-            self.conv2 = layers.Conv2D(filters=self.in_dim, kernel_size=1)
-            #self.conv0 = layers.Dense(self.in_dim)
-            #self.conv1 = layers.Dense(self.in_dim)
-            #self.conv2 = layers.Dense(self.in_dim)
-            self.q_gran = q_gran
-            
-            if self.q_gran=='channel':
-                self.conv3_chn_list = []
-                for i in range((3 + self.out_dim) * self.vote_factor):
-                    self.conv3_chn_list.append(layers.Conv2D(filters=1, kernel_size=1))
-
-            elif self.q_gran=='semantic':
-                self.conv3_1 = layers.Conv2D(filters=(3) * self.vote_factor, kernel_size=1) 
-                self.conv3_2 = layers.Conv2D(filters=(self.out_dim) * self.vote_factor, kernel_size=1) 
-                #self.conv3_1 = layers.Dense(3 * self.vote_factor)
-                #self.conv3_2 = layers.Dense(self.out_dim * self.vote_factor)
-
-            elif self.q_gran=='group':
-                self.conv3_chn_list = []
-                grp1_size = ((3+self.out_dim) * self.vote_factor) // 2
-                grp2_size = (3+self.out_dim) * self.vote_factor  - grp1_size
-                self.conv3_chn_list.append(layers.Conv2D(filters=grp1_size, kernel_size=1))
-                self.conv3_chn_list.append(layers.Conv2D(filters=grp2_size, kernel_size=1))
-
-            else:
-                self.conv3 = layers.Conv2D(filters=(self.out_dim+3) * self.vote_factor, kernel_size=1)
-            
-                #self.conv3 = layers.Dense((self.out_dim+3) * self.vote_factor)
-            self.bn0 = layers.BatchNormalization(axis=-1)
-            self.bn1 = layers.BatchNormalization(axis=-1)
-            self.bn2 = layers.BatchNormalization(axis=-1)
-
-            self.relu0 = layers.ReLU(maxval)
-            self.relu1 = layers.ReLU(maxval)
-            self.relu2 = layers.ReLU(maxval)
-        
-        def call(self, voting_input):
-
-            num_seed = 1024
-            seed_features = voting_input            
-
-            if not self.use_fp_mlp:
-                net0 = self.relu0(self.bn0(self.conv0(seed_features)))
-            else:
-                net0 = seed_features
-            net = self.relu1(self.bn1(self.conv1(net0))) 
-            net = self.relu2(self.bn2(self.conv2(net))) 
-            net0 = layers.Reshape((num_seed, self.vote_factor, net0.shape[-1]))(net0)
-            
-            if self.q_gran=='channel':
-                out = []
-                for i in range((3 + self.out_dim) * self.vote_factor):
-                    out.append(self.conv3_chn_list[i](net))
-                # offset = layers.Concatenate(axis=-1)(out[:3])
-                # residual_features = layers.Concatenate(axis=-1)(out[3:])
-                # vote_features = net0 + residual_features 
-                # return [offset, vote_features]
-                out.append(net0)
-                return out
-
-            
-            elif self.q_gran=='semantic':
-                offset = self.conv3_1(net)
-                net = self.conv3_2(net) # (batch_size, num_seed, (3+out_dim)*vote_factor)
-                residual_features = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net)                
-                vote_features = net0 + residual_features 
-                #vote_xyz = xyz + offset 
-                #return [vote_xyz, vote_features]
-                return [offset, vote_features]
-
-            elif self.q_gran=='group':
-                out = []
-                for i in range(2):
-                    out.append(self.conv3_chn_list[i](net))
-                out.append(net0)
-                return out
-            
-            else:
-                net = self.conv3(net)
-                # offset = net[:,:,:,0:3]
-                # net = net[:,:,:,3:]                
-                
-                # residual_features = layers.Reshape((num_seed, self.vote_factor, self.out_dim))(net)                
-                # vote_features = net0 + residual_features 
-                # return [offset, vote_features]
-                return [net, net0]
-
-    class vaModule(tf.keras.Model):
-        def __init__(self, mlp_spec, input_shape, nsample=0, q_gran='semantic'):
-            super().__init__()
-            self.sharedMLP = tf_utils.SharedMLP(mlp_spec, bn=True, input_shape=input_shape)
-            self.npoint = 256
-            self.nsample = nsample            
-            self.q_gran = q_gran
-            self.max_pool = layers.MaxPooling2D(pool_size=(1, 16), strides=(1,16), data_format="channels_last")            
-
-            self.conv1 = layers.Conv2D(filters=128, kernel_size=1)        
-            self.conv2 = layers.Conv2D(filters=128, kernel_size=1)
-            #self.conv1 = layers.Dense(128)
-            #self.conv2 = layers.Dense(128)
-            self.NH = DATASET_CONFIG.num_heading_bin
-            self.NC = DATASET_CONFIG.num_size_cluster
-            self.num_class = DATASET_CONFIG.num_class
-                  
-            if self.q_gran=='channel':
-                self.conv3_chn_list = []
-                for i in range(2+3+self.NH*2+self.NC*4+self.num_class):
-                    self.conv3_chn_list.append(layers.Conv2D(filters=1, kernel_size=1))
-
-            elif self.q_gran=='semantic':
-                self.conv3_1 = layers.Conv2D(filters=3, kernel_size=1) 
-                self.conv3_2 = layers.Conv2D(filters=2 + self.NH + self.NC  + self.num_class, kernel_size=1) 
-                self.conv3_3 = layers.Conv2D(filters=self.NH + self.NC * 3, kernel_size=1)                
-                #self.conv3_2 = layers.Conv2D(filters=2+DATASET_CONFIG.num_heading_bin*2+DATASET_CONFIG.num_size_cluster*4+DATASET_CONFIG.num_class, kernel_size=1) 
-                #self.conv3_1 = layers.Dense(3)
-                #self.conv3_2 = layers.Dense(2 + DATASET_CONFIG.num_heading_bin*2 + DATASET_CONFIG.num_size_cluster*4 + DATASET_CONFIG.num_class)
-
-            elif self.q_gran=='group':
-                self.conv3_chn_list = []
-                grp1_size = (2+3+self.NH*2+self.NC*4+self.num_class) // 3
-                grp2_size = grp1_size
-                grp3_size = 2+3+self.NH*2+self.NC*4+self.num_class - grp1_size - grp2_size                
-                self.conv3_chn_list.append(layers.Conv2D(filters=grp1_size, kernel_size=1))
-                self.conv3_chn_list.append(layers.Conv2D(filters=grp2_size, kernel_size=1))
-                self.conv3_chn_list.append(layers.Conv2D(filters=grp3_size, kernel_size=1))
-
-            else:
-                self.conv3 = layers.Conv2D(filters=2+3+self.NH*2+self.NC*4+self.num_class, kernel_size=1)
-                #self.conv3 = layers.Dense(3 + 2 + DATASET_CONFIG.num_heading_bin*2 + DATASET_CONFIG.num_size_cluster*4 + DATASET_CONFIG.num_class)
-            self.bn1 = layers.BatchNormalization(axis=-1)
-            self.bn2 = layers.BatchNormalization(axis=-1)
-            self.relu1 = layers.ReLU(maxval)
-            self.relu2 = layers.ReLU(maxval)
-            
-        def call(self, va_input):            
-            
-            grouped_features = va_input            
-
-            new_features = self.max_pool(self.sharedMLP(grouped_features))     
-            
-            #For Dense Layer
-            #new_features = layers.Reshape((self.npoint, new_features.shape[-1]))(new_features)
-
-            # --------- PROPOSAL GENERATION ---------
-            net = self.relu1(self.bn1(self.conv1(new_features)))
-            net = self.relu2(self.bn2(self.conv2(net))) 
-
-            if self.q_gran=='channel':
-                out = []
-                for i in range(2+3+self.NH*2+self.NC*4+self.num_class):
-                    out.append(self.conv3_chn_list[i](net))
-                #offset = layers.Concatenate(axis=-1)(out[:3])
-
-                #net2 = layers.Concatenate(axis=-1)(out[3:3+2+self.NH+self.NC] + out[-self.num_class:])
-                #net3 = layers.Concatenate(axis=-1)(out[3+2+self.NH+self.NC:3+2+self.NH*2+self.NC*4])
-
-                #return [offset, net2, net3]            
-                return out
-
-            elif self.q_gran=='semantic':
-                offset = self.conv3_1(net)                                
-                offset = layers.Reshape((self.npoint,3))(offset)
-               
-                net2 = self.conv3_2(net)
-                net3 = self.conv3_3(net)
-
-                net2 = layers.Reshape((self.npoint, net2.shape[-1]))(net2)
-                net3 = layers.Reshape((self.npoint, net3.shape[-1]))(net3)                
-
-                return [offset, net2, net3] 
-
-            elif self.q_gran=='group':                
-                out = []
-                for i in range(3):
-                    out.append(self.conv3_chn_list[i](net))
-                return out
-
-            else:
-                net = self.conv3(net)
-                net = layers.Reshape((self.npoint, net.shape[-1]))(net)
-                return net
-
-    converting_layers = ['sa1','sa2','sa3','sa4','fp1','fp2','voting','va']
-    #converting_layers = ['voting','va']    
+    # Include modules you want to convert into tflite
+    converting_layers = ['sa1','sa2','sa3','sa4','fp1','fp2','voting','va']    
     model_list = []
 
+    # For each module, build each module as a separate model, load the trained weights and append to the model list
     if 'sa1' in converting_layers:    
         if not use_painted:
             sa1_mlp = SharedMLPModel(mlp_spec=[1, 64, 64, 128], nsample=64, input_shape=[2048,64,1+3])
@@ -611,11 +553,11 @@ if __name__=='__main__':
         # Copy weights from the base model    
         layer = sa1_mlp.sharedMLP
         if model_config['two_way']:
-            layer.set_weights(net.backbone_net.sa1_mlp.mlp_module.get_weights()) 
+            wght = net.backbone_net.sa1_mlp.mlp_module.get_weights()
+            layer.set_weights(wght) 
         else:
-            layer.set_weights(net.backbone_net.sa1.mlp_module.get_weights()) 
-        print("=" * 30, "Converting SA1 layer", "=" * 30)
-        #tflite_convert('sa1', sa1_mlp, net, OUT_DIR)
+            wght = net.backbone_net.sa1.mlp_module.get_weights()
+            layer.set_weights(wght)         
         model_list.append(sa1_mlp)
 
     if 'sa2' in converting_layers:
@@ -628,46 +570,48 @@ if __name__=='__main__':
         dummy_out = sa2_mlp(dummy_in_sa2)
         layer = sa2_mlp.sharedMLP
         if model_config['two_way']:
-            layer.set_weights(net.backbone_net.sa2_mlp.mlp_module.get_weights()) 
+            wght = net.backbone_net.sa2_mlp.mlp_module.get_weights()
+            layer.set_weights(wght) 
         else:
-            layer.set_weights(net.backbone_net.sa2.mlp_module.get_weights()) 
-        print("=" * 30, "Converting SA2 layer", "=" * 30)
-        #tflite_convert('sa2', sa2_mlp, net, OUT_DIR)
+            wght = net.backbone_net.sa2.mlp_module.get_weights()
+            layer.set_weights(wght)         
         model_list.append(sa2_mlp)
 
     if 'sa3' in converting_layers:
         if model_config['two_way']:
-            sa3_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16, input_shape=[256,16,256+3])
+            sa3_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16, input_shape=[256,16,256+3])            
             dummy_in_sa3 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,256+3])) # (B, npoint, nsample, C+3)
         else:
             sa3_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16, input_shape=[512,16,256+3])
             dummy_in_sa3 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,512,16,256+3])) # (B, npoint, nsample, C+3)
         dummy_out = sa3_mlp(dummy_in_sa3)
-        layer = sa3_mlp.sharedMLP
-        if model_config['two_way']:
-            layer.set_weights(net.backbone_net.sa3_mlp.mlp_module.get_weights()) 
+        
+        layer = sa3_mlp.sharedMLP        
+        if model_config['two_way']:            
+            wght = net.backbone_net.sa3_mlp.mlp_module.get_weights()
+            layer.set_weights(wght)             
         else:
-            layer.set_weights(net.backbone_net.sa3.mlp_module.get_weights()) 
-        print("=" * 30, "Converting SA3 layer", "=" * 30)
-        #tflite_convert('sa3', sa3_mlp, net, OUT_DIR)
+            wght = net.backbone_net.sa3.mlp_module.get_weights()
+            layer.set_weights(wght)         
+        
         model_list.append(sa3_mlp)
 
     if 'sa4' in converting_layers:
-        if model_config['two_way']:
-            sa4_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16, input_shape=[128,16,256+3])
-            dummy_in_sa4 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,128,16,256+3])) # (B, npoint, nsample, C+3)
-        else:
-            sa4_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16, input_shape=[256,16,256+3])
-            dummy_in_sa4 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,256+3])) # (B, npoint, nsample, C+3)
+        # if model_config['two_way']:
+        #     sa4_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16, input_shape=[128,16,256+3])
+        #     dummy_in_sa4 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,128,16,256+3])) # (B, npoint, nsample, C+3)
+        # else:
+        sa4_mlp = SharedMLPModel(mlp_spec=[256, 128, 128, 256], nsample=16, input_shape=[256,16,256+3])
+        dummy_in_sa4 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,256+3])) # (B, npoint, nsample, C+3)
 
         dummy_out = sa4_mlp(dummy_in_sa4)
         layer = sa4_mlp.sharedMLP
         if model_config['two_way']:
-            layer.set_weights(net.backbone_net.sa4_mlp.mlp_module.get_weights()) 
+            wght = net.backbone_net.sa4_mlp.mlp_module.get_weights()
+            layer.set_weights(wght) 
         else:
-            layer.set_weights(net.backbone_net.sa4.mlp_module.get_weights()) 
-        print("=" * 30, "Converting SA4 layer", "=" * 30)
-        #tflite_convert('sa4', sa4_mlp, net, OUT_DIR)
+            wght = net.backbone_net.sa4.mlp_module.get_weights()
+            layer.set_weights(wght)         
         model_list.append(sa4_mlp)
 
     if 'fp1' in converting_layers and model_config['use_fp_mlp']:
@@ -675,32 +619,28 @@ if __name__=='__main__':
         dummy_in_fp1 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,512,1,512])) # (B, npoint, nsample, C+3)
         dummy_out = fp1_mlp(dummy_in_fp1)
         layer = fp1_mlp.sharedMLP
-        layer.set_weights(net.backbone_net.fp1.mlp.get_weights())
-        print("=" * 30, "Converting FP1 layer", "=" * 30)
-        #tflite_convert('fp1', fp1_mlp, net, OUT_DIR)
+        layer.set_weights(net.backbone_net.fp1.mlp.get_weights())        
         model_list.append(fp1_mlp)
+    elif 'fp1' in converting_layers:
+        converting_layers.remove('fp1')
     
     if 'fp2' in converting_layers and model_config['use_fp_mlp']:
         fp2_mlp = SharedMLPModel(mlp_spec=[256+256,256,256], input_shape=[1024,1,512])
         dummy_in_fp2 = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,512])) # (B, npoint, nsample, C+3)
         dummy_out = fp2_mlp(dummy_in_fp2)
         layer = fp2_mlp.sharedMLP
-        layer.set_weights(net.backbone_net.fp2.mlp.get_weights())
-        print("=" * 30, "Converting FP2 layer", "=" * 30)
-        #tflite_convert('fp2', fp2_mlp, net, OUT_DIR)
+        layer.set_weights(net.backbone_net.fp2.mlp.get_weights())        
         model_list.append(fp2_mlp)
+    elif 'fp2' in converting_layers:
+        converting_layers.remove('fp2')
 
     if 'voting' in converting_layers:
         voting = nnInVotingModule(vote_factor=1, seed_feature_dim=256, q_gran=q_gran)        
         if model_config['use_fp_mlp']:
-            dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,256])) # (B, num_seed, 1, 256*3)
-            #dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,256]))
+            dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,256])) # (B, num_seed, 1, 256*3)            
         else: 
-            dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,256*3])) # (B, num_seed, 1, 256*3)
-            #dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,256*3]))
-        dummy_in_voting_xyz =  tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,3])) # (B, num_seed, 1, 3)        
-        #dummy_in_voting_xyz =  tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,3])) # (B, num_seed, 1, 3)        
-        #dummy_in_voting = [dummy_in_voting_features, dummy_in_voting_xyz]        
+            dummy_in_voting_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,256*3])) # (B, num_seed, 1, 256*3)            
+        dummy_in_voting_xyz =  tf.convert_to_tensor(np.random.random([BATCH_SIZE,1024,1,3])) # (B, num_seed, 1, 3)                     
         dummy_out = voting(dummy_in_voting_features)
         layer = voting
         layer.conv0.set_weights(net.vgen.conv0.get_weights())
@@ -715,8 +655,8 @@ if __name__=='__main__':
 
         elif q_gran=='semantic':
             w, b = net.vgen.conv3.get_weights()
-            layer.conv3_1.set_weights([w[:,:,:,:3], b[:3]])
-            layer.conv3_2.set_weights([w[:,:,:,3:], b[3:]]) 
+            layer.conv3_1.set_weights([w[0,0,:,:3], b[:3]])
+            layer.conv3_2.set_weights([w[0,0,:,3:], b[3:]]) 
 
         elif q_gran=='group':
             w, b = net.vgen.conv3.get_weights()                        
@@ -724,26 +664,22 @@ if __name__=='__main__':
             grp1_size = ((3+layer.out_dim) * layer.vote_factor) // 2
             grp2_size = (3+layer.out_dim) * layer.vote_factor  - grp1_size
             
-            layer.conv3_chn_list[0].set_weights([w[:,:,:,:grp1_size], b[:grp1_size]])                   
-            layer.conv3_chn_list[1].set_weights([w[:,:,:,grp1_size:], b[grp1_size:]])                               
+            layer.conv3_chn_list[0].set_weights([w[0,0,:,:grp1_size], b[:grp1_size]])                   
+            layer.conv3_chn_list[1].set_weights([w[0,0,:,grp1_size:], b[grp1_size:]])                               
 
         else:
             layer.conv3.set_weights(net.vgen.conv3.get_weights())
 
         layer.bn0.set_weights(net.vgen.bn0.get_weights())
         layer.bn1.set_weights(net.vgen.bn1.get_weights())
-        layer.bn2.set_weights(net.vgen.bn2.get_weights())
-        print("=" * 30, "Converting Voting layer", "=" * 30)
-        #tflite_convert('voting', voting, net, OUT_DIR, mlp=False)
+        layer.bn2.set_weights(net.vgen.bn2.get_weights())        
         model_list.append(voting)
 
 
     if 'va' in converting_layers:
         va_mlp = vaModule(mlp_spec=[128, 128, 128, 128], nsample=16, input_shape=[256,16,256+3], q_gran=q_gran)
-        #dummy_in_va = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,3 + (16*(128+3))]), dtype=tf.float32) # (B, npoint, nsample, C+3)
-        dummy_va_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,(256+3)]), dtype=tf.float32) # (B, npoint, 3 + nsample*(C+3)) 
-        #dummy_va_xyz = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,3]), dtype=tf.float32) # (B, npoint, 3 + nsample*(C+3)) 
-        #dummy_in_va = [dummy_va_features, dummy_va_xyz]
+        
+        dummy_va_features = tf.convert_to_tensor(np.random.random([BATCH_SIZE,256,16,(256+3)]), dtype=tf.float32) # (B, npoint, 3 + nsample*(C+3))         
         dummy_out = va_mlp(dummy_va_features)
         layer = va_mlp.sharedMLP
         layer.set_weights(net.pnet.mlp_module.get_weights())
@@ -763,17 +699,15 @@ if __name__=='__main__':
 
         elif q_gran=='semantic':
             w, b = net.pnet.conv3.get_weights()
-            layer.conv3_1.set_weights([w[:,:,:,:3], b[:3]])
-            #layer.conv3_2.set_weights([w[:,:,:,3:], b[3:]])
-            w_2 = np.concatenate([w[:,:,:,3:3+2+NH+NC], w[:,:,:,3+2+NH*2+NC*4:]], axis=-1)
+
+            layer.conv3_1.set_weights([w[0,0,:,:3], b[:3]])            
+            w_2 = np.concatenate([w[0,0,:,3:3+2+NH+NC], w[0,0,:,3+2+NH*2+NC*4:]], axis=-1)
             b_2 = np.concatenate([b[3:3+2+NH+NC], b[3+2+NH*2+NC*4:]], axis=-1)
             layer.conv3_2.set_weights([w_2, b_2])
-            w_3 = w[:,:,:,3+2+NH+NC:3+2+NH*2+NC*4]
+            w_3 = w[0,0,:,3+2+NH+NC:3+2+NH*2+NC*4]
             b_3 = b[3+2+NH+NC:3+2+NH*2+NC*4]
-            layer.conv3_3.set_weights([w_3, b_3])
-            
-            #layer.conv3_1.set_weights([w[:,:3], b[:3]])
-            #layer.conv3_2.set_weights([w[:,3:], b[3:]])     
+            layer.conv3_3.set_weights([w_3, b_3])           
+                 
         
         elif q_gran=='group':
             w, b = net.pnet.conv3.get_weights()
@@ -782,22 +716,22 @@ if __name__=='__main__':
             grp2_size = grp1_size
             grp3_size = 2+3+layer.NH*2+layer.NC*4+layer.num_class - grp1_size - grp2_size                
             
-            layer.conv3_chn_list[0].set_weights([w[:,:,:,:grp1_size], b[:grp1_size]])                   
-            layer.conv3_chn_list[1].set_weights([w[:,:,:,grp1_size:grp1_size+grp2_size], b[grp1_size:grp1_size+grp2_size]])                   
-            layer.conv3_chn_list[2].set_weights([w[:,:,:,-grp3_size:], b[-grp3_size:]])     
+            layer.conv3_chn_list[0].set_weights([w[0,0,:,:grp1_size], b[:grp1_size]])                   
+            layer.conv3_chn_list[1].set_weights([w[0,0,:,grp1_size:grp1_size+grp2_size], b[grp1_size:grp1_size+grp2_size]])                   
+            layer.conv3_chn_list[2].set_weights([w[0,0,:,-grp3_size:], b[-grp3_size:]])     
 
         else:
             layer.conv3.set_weights(net.pnet.conv3.get_weights())
         layer.bn1.set_weights(net.pnet.bn1.get_weights())
-        layer.bn2.set_weights(net.pnet.bn2.get_weights())
+        layer.bn2.set_weights(net.pnet.bn2.get_weights())        
         
-        print("=" * 30, "Converting VA layer", "=" * 30)
-        #tflite_convert('va', va_mlp, net, OUT_DIR)
         model_list.append(va_mlp)
         
     
-    if len(converting_layers) > 4:
-        tflite_convert_multi(converting_layers[:4], model_list[:4], net, OUT_DIR)
-        tflite_convert_multi(converting_layers[4:], model_list[4:], net, OUT_DIR)
+    
+    if len(converting_layers) > 2:        
+        tflite_convert_multi(converting_layers[:2], model_list[:2], net, OUT_DIR)                
+        tflite_convert_multi(converting_layers[2:], model_list[2:], net, OUT_DIR)
     else:
         tflite_convert_multi(converting_layers, model_list, net, OUT_DIR)
+    

@@ -172,9 +172,6 @@ class VotingModule(layers.Layer):
         vote_xyz = layers.Reshape((num_vote, 3))(vote_xyz)
         vote_features = layers.Reshape((num_vote, self.out_dim))(vote_features)
 
-        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_voting_xyz.txt'), vote_xyz[0].numpy())
-        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_voting_features.txt'), vote_features[0].numpy())
-
         return vote_xyz, vote_features
  
 if __name__=='__main__':

@@ -20,7 +20,7 @@ import tf_utils
 def decode_scores(net, end_points, num_class, num_heading_bin, num_size_cluster, mean_size_arr, num_proposal):
     """
     Args:
-        net: (B, num_proposal, 2+3+num_heading_bin*2+num_size_cluster*4)
+        net: (B, num_proposal, 2+num_heading_bin*2+num_size_cluster*4)
         end_points: dictionary of 'aggregated_vote_xyz', 'aggregated_vote_inds', 
                                   'fp2_xyz', 'fp2_features', 'seed_inds', 'seed_xyz', 'seed_features',
                                   'vote_xyz', 'vote_features'
@@ -53,24 +53,6 @@ def decode_scores(net, end_points, num_class, num_heading_bin, num_size_cluster,
     end_points['size_residuals_normalized'] = size_residuals_normalized
     end_points['size_residuals'] = size_residuals_normalized * tf.expand_dims(tf.expand_dims(tf.cast(mean_size_arr,dtype=tf.float32), axis=0), axis=0)
 
-    """
-    heading_scores = net[:,:,2:2+num_heading_bin]
-    heading_residuals_normalized = net[:,:,2+num_heading_bin:2+num_heading_bin*2]
-    pi = tf.constant(3.14159265359, dtype=tf.float32)
-    #heading_residuals = heading_residuals_normalized * (pi/tf.cast(num_heading_bin,tf.float32)) # B x num_proposal x num_heading_bin
-    end_points['heading_scores'] = heading_scores # B x num_proposal x num_heading_bin
-    end_points['heading_residuals_normalized'] = heading_residuals_normalized # Bxnum_proposalxnum_heading_bin (should be -1 to 1)
-    end_points['heading_residuals'] = heading_residuals_normalized * (pi/tf.cast(num_heading_bin,tf.float32)) # B x num_proposal x num_heading_bin
-    
-    size_scores = net[:,:,2+num_heading_bin*2:2+num_heading_bin*2+num_size_cluster]
-    size_residuals = net[:,:,2 + num_heading_bin*2 + num_size_cluster : 2 + num_heading_bin*2 + num_size_cluster*4]
-    #size_residuals_normalized = tf.reshape(size_residuals, tf.constant([batch_size, num_proposal, num_size_cluster, 3])) # B x num_proposal x num_size_cluster x 3
-    size_residuals_normalized = layers.Reshape((num_proposal, num_size_cluster, 3))(size_residuals) # B x num_proposal x num_size_cluster x 3    
-    end_points['size_scores'] = size_scores
-    end_points['size_residuals_normalized'] = size_residuals_normalized
-    end_points['size_residuals'] = size_residuals_normalized * tf.expand_dims(tf.expand_dims(tf.cast(mean_size_arr,dtype=tf.float32), axis=0), axis=0)
-    """
-
     sem_cls_scores = net[:,:,2+num_heading_bin*2+num_size_cluster*4:] # B x num_proposal x 10
     end_points['sem_cls_scores'] = sem_cls_scores    
     
@@ -87,13 +69,13 @@ class ProposalModule(layers.Layer):
         mean_size_arr: Average size of objects in each class
         num_proposal: Number of proposals
         sampling: sampling type
-        seed_feat_dim: Number of feature dimensions of votes        
-        sep_coords: boolean
-            If True, use separate layer for coordinate 
-        use_tflite: boolean
-            If True, use tflite
-        tflite_name: string
-            The name of tflite file
+        seed_feat_dim: Number of feature dimensions of votes                
+        model_config:
+            use_tflite: boolean, If True, use tflite
+            tflite_name: string, The name of tflite file
+            q_gran: Quantization granularity of the last layer in proposal module
+            activation: relu or relu6
+
         """
         self.num_class = num_class
         self.num_heading_bin = num_heading_bin
@@ -144,15 +126,12 @@ class ProposalModule(layers.Layer):
             # Objectness scores (2), center residual (3),
             # heading class+residual (num_heading_bin*2), size class+residual(num_size_cluster*4)            
             #### Changed to Conv2D to be compatible with EdgeTPU compiler
-            self.conv1 = layers.Conv2D(filters=128, kernel_size=1) #, kernel_initializer=tf.keras.initializers.Ones(), bias_initializer=tf.keras.initializers.Zeros())
-            self.conv2 = layers.Conv2D(filters=128, kernel_size=1) #, kernel_initializer=tf.keras.initializers.Ones(), bias_initializer=tf.keras.initializers.Zeros())
-            #self.conv1 = layers.Dense(128)
-            #self.conv2 = layers.Dense(128)
+            self.conv1 = layers.Conv2D(filters=128, kernel_size=1) 
+            self.conv2 = layers.Conv2D(filters=128, kernel_size=1) 
             
             # 2: objectness_scores, 3: offset(From vote to center), score/residuals for num_heading_bin(12),
             # score/(H,W,C) for size, Class score            
-            self.conv3 = layers.Conv2D(filters=2+3+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1) #, kernel_initializer=tf.keras.initializers.Ones(), bias_initializer=tf.keras.initializers.Zeros())
-            #self.conv3 = layers.Dense(2+3+num_heading_bin*2+num_size_cluster*4+self.num_class)
+            self.conv3 = layers.Conv2D(filters=2+3+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
             
             self.bn1 = layers.BatchNormalization(axis=-1)
             self.bn2 = layers.BatchNormalization(axis=-1)
@@ -176,8 +155,7 @@ class ProposalModule(layers.Layer):
         """
 
         if self.sampling == 'vote_fps':
-            # Farthest point sampling (FPS) on votes
-            #xyz, features, fps_inds, _, grouped_features = self.vote_aggregation(xyz, features, sample_type='fps')
+            # Farthest point sampling (FPS) on votes            
             xyz, fps_inds, va_grouped_features, _ = self.vote_aggregation(xyz, isPainted=None, features=features) #NoMLP version            
             end_points['va_grouped_features'] = va_grouped_features            
             sample_inds = fps_inds
@@ -206,10 +184,6 @@ class ProposalModule(layers.Layer):
                 offset = self.interpreter.get_tensor(self.output_details[0]['index'])
                 offset = tf.convert_to_tensor(offset)
                 center = xyz + offset
-                '''
-                net = self.interpreter.get_tensor(self.output_details[1]['index']) 
-                net = tf.convert_to_tensor(net)                  
-                '''
                 net2 = self.interpreter.get_tensor(self.output_details[1]['index']) 
                 net3 = self.interpreter.get_tensor(self.output_details[2]['index'])                 
 
@@ -223,7 +197,6 @@ class ProposalModule(layers.Layer):
 
                 net = np.concatenate([obj_score, head_score, cluster_score, head_residual, cluster_residual, class_score], axis=-1)
 
-                #net = np.concatenate([net2, net3], aixs=-1)
                 net = tf.convert_to_tensor(net)                  
 
             elif self.q_gran == 'channel':
@@ -234,9 +207,7 @@ class ProposalModule(layers.Layer):
                 offset = layers.Concatenate(axis=-1)(out[:3])
                 offset = layers.Reshape((self.npoint, 3))(offset)
                 net = layers.Concatenate(axis=-1)(out[3:])
-                net = layers.Reshape((self.npoint, net.shape[-1]))(net)
-                #net2 = layers.Concatenate(axis=-1)(out[3:3+2+self.num_heading_bin+self.num_size_cluster] + out[-self.num_class:])
-                #net3 = layers.Concatenate(axis=-1)(out[3+2+self.num_heading_bin+self.num_size_cluster:-self.num_class])
+                net = layers.Reshape((self.npoint, net.shape[-1]))(net)                
 
                 center = xyz + offset
 
@@ -255,16 +226,11 @@ class ProposalModule(layers.Layer):
                 net = self.interpreter.get_tensor(self.output_details[0]['index']) 
                 net = tf.convert_to_tensor(net)
                 offset = net[:,:,0:3]
-                net = net[:,:,3:]
-                #offset = layers.Reshape((self.npoint, 3))(offset)                
+                net = net[:,:,3:]                               
                 center = xyz + offset            
-                #net = layers.Reshape((self.npoint, net.shape[-1]))(net)
-
         else:
             new_features = self.mlp_module(va_grouped_features)
             features = self.max_pool(new_features)
-            
-            #features = layers.Reshape((self.npoint, features.shape[-1]))(features) 
             
             # --------- PROPOSAL GENERATION ---------
             net = self.relu1(self.bn1(self.conv1(features)))
@@ -272,9 +238,6 @@ class ProposalModule(layers.Layer):
             net = self.conv3(net)
             offset = net[:,:,:,0:3]
             net = net[:,:,:,3:]
-            
-            #offset = net[:,:,0:3]            
-            #net = net[:,:,3:]    
 
             offset = layers.Reshape((self.npoint, 3))(offset)                
             center = xyz + offset            
@@ -282,24 +245,12 @@ class ProposalModule(layers.Layer):
             
 
         # Return from expanded shape
-        #net = layers.Reshape((self.npoint, net.shape[-1]))(net)
-
         end_points['aggregated_vote_xyz'] = xyz # (batch_size, num_proposal, 3)
         end_points['aggregated_vote_inds'] = sample_inds # (batch_size, num_proposal,) # should be 0,1,2,...,num_proposal
         end_points['center'] = center # (batch_size, num_proposal, 3)
 
         end_points = decode_scores(net, end_points, self.num_class, self.num_heading_bin, self.num_size_cluster, self.mean_size_arr, self.num_proposal)        
 
-
-        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_proposal_xyz.txt'), xyz[0].numpy())
-        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_proposal_inds.txt'), sample_inds.numpy())
-        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_proposal_center.txt'), end_points['center'][0].numpy())
-        #np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_proposal_obj_scores.txt'), end_points['objectness_scores'][0].numpy())
-        # np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_proposal_head_scores.txt'), end_points['heading_scores'][0].numpy())
-        # np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_proposal_head_res.txt'), end_points['heading_residuals'][0].numpy())
-        # np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_proposal_size_scores.txt'), end_points['size_scores'][0].numpy())
-        # np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_proposal_size_res.txt'), end_points['size_residuals'][0,0].numpy())
-        # np.savetxt(os.path.join(ROOT_DIR, '..', 'votenet_test','tf_proposal_cls_scores.txt'), end_points['sem_cls_scores'][0].numpy())
 
         return end_points
 
@@ -316,17 +267,4 @@ if __name__=='__main__':
     out = net(xyz, features, end_points)
     for key in out:
         print(key, out[key].shape)
-'''
-seed_xyz (8, 1024, 3)
-aggregated_vote_xyz (8, 128, 3)
-aggregated_vote_inds (8, 128)
-objectness_scores (8, 128, 2)
-center (8, 128, 3) #(B, num_proposal, 3)
-heading_scores (8, 128, 12) #(B, num_proposal, num_heading_bin)
-heading_residuals_normalized (8, 128, 12) #(B, num_proposal, num_heading_bin)
-heading_residuals (8, 128, 12) #(B, num_proposal, num_heading_bin)
-size_scores (8, 128, 10) # (B, num_proposal, num_size_cluster)
-size_residuals_normalized (8, 128, 10, 3) # (B, num_proposal, num_size_cluster, 3)
-size_residuals (8, 128, 10, 3)
-sem_cls_scores (8, 128, 10)
-'''
+

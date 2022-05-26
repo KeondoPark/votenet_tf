@@ -293,20 +293,13 @@ __global__ void farthestpointsamplingBgKernel(int b,int n,int m,
 
         float d = (x2-x1)*(x2-x1) + (y2-y1)*(y2-y1) + (z2-z1)*(z2-z1);
         
-        if (wght > 1){
-        // if (painted[i*n + k] > 0 || painted[i*n+old] > 0){
+        if (wght > 1){        
           if (painted[i*n + k] > 0){
-            d = w * d;                
-          //} else if (painted[i*n + k] < 0 || painted[i*n+old] < 0) {
+            d = w * d;                          
           } else if (painted[i*n + k] < 0) {
             d = 0.01 * d;
           } 
-        }                  
-        
-        // Sample more unknown, when small weight is given(Neither painted nor unpainted)
-        //} else if (wght < 1 && painted[i*n + k] != 0){
-        //  d = w * d;          
-        //}
+        }                          
         
         float d2 = min(d,td);
         if (d2!=td)
