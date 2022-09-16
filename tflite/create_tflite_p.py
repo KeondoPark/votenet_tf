@@ -118,7 +118,7 @@ def simulate_run(base_model, keyword_list):
     '''
     output_dict = {}
 
-    for i in range(int(400 / BATCH_SIZE)):                               
+    for i in range(int(800 / BATCH_SIZE)):                               
         batch_data = next(iter(ds))
         
         if DATASET == 'sunrgbd':
@@ -134,6 +134,9 @@ def simulate_run(base_model, keyword_list):
             sa2_grouped_features = end_points['sa2_grouped_features1'] if rnd > 0.5  else end_points['sa2_grouped_features2']
             sa3_grouped_features = end_points['sa3_grouped_features1'] if rnd > 0.5  else end_points['sa3_grouped_features2']
             #sa4_grouped_features = end_points['sa4_grouped_features1'] if rnd > 0.5  else end_points['sa4_grouped_features2']
+            # sa4_grouped_features = end_points['sa4_grouped_features'][:,:128] if rnd > 0.5  else end_points['sa4_grouped_features'][:,128:]
+            # sa2_grouped_features = tf.concat([end_points['sa2_grouped_features1'], end_points['sa2_grouped_features2']], axis=1)
+            # sa3_grouped_features = tf.concat([end_points['sa3_grouped_features1'], end_points['sa3_grouped_features2']], axis=1)
         else:
             sa1_grouped_features = end_points['sa1_grouped_features']
             sa2_grouped_features = end_points['sa2_grouped_features']
@@ -186,9 +189,10 @@ def tflite_convert_multi(keyword_list, model_list, base_model, out_dir, mlp=True
         # This sets the representative dataset for quantization        
         converter.representative_dataset = data_gen_wrapper(k, features_dict)        
         # This ensures that if any ops can't be quantized, the converter throws an error
-        converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+        # converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
         # For full integer quantization, though supported types defaults to int8 only, we explicitly declare it for clarity.
-        converter.target_spec.supported_types = [tf.int8]
+        # converter.target_spec.supported_types = [tf.int8]
+        converter.target_spec.supported_types = [tf.float16]
         # These set the input and output tensors to uint8 (added in r2.3)
         converter.inference_input_type = tf.float32
         converter.inference_output_type = tf.float32
@@ -534,6 +538,7 @@ if __name__=='__main__':
 
     # Include modules you want to convert into tflite
     converting_layers = ['sa1','sa2','sa3','sa4','fp1','fp2','voting','va']    
+    # converting_layers = ['sa4']    
     model_list = []
 
     # For each module, build each module as a separate model, load the trained weights and append to the model list

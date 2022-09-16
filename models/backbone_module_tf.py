@@ -193,6 +193,7 @@ class Pointnet2Backbone_p(layers.Layer):
         super().__init__()
 
         use_fp_mlp = model_config['use_fp_mlp']
+        self.bfps_wght = model_config["bfps_wght"]
 
         self.sa1 = SamplingAndGrouping(
                 npoint=1024,
@@ -305,7 +306,7 @@ class Pointnet2Backbone_p(layers.Layer):
         sa1_features1 = self.sa1_mlp(sa1_grouped_features1)        
         time_record.append(("SA1 MLP 1:", time.time()))
         
-        sa1_xyz2, sa1_inds2, sa1_grouped_features2, sa1_painted2 = self.sa1(new_xyz, new_isPainted, new_features, bg1=True, wght1=4, xyz_ball=xyz, features_ball=features)        
+        sa1_xyz2, sa1_inds2, sa1_grouped_features2, sa1_painted2 = self.sa1(new_xyz, new_isPainted, new_features, bg1=True, wght1=self.bfps_wght[0], xyz_ball=xyz, features_ball=features)        
         time_record.append(("SA1 sampling and grouping 2:", time.time()))        
 
         sa1_features2 = self.sa1_mlp(sa1_grouped_features2)  
@@ -325,7 +326,7 @@ class Pointnet2Backbone_p(layers.Layer):
         sa1_xyz = layers.Concatenate(axis=1)([sa1_xyz1, sa1_xyz2])
         sa1_features = layers.Concatenate(axis=1)([sa1_features1, sa1_features2])        
 
-        sa2_xyz2, sa2_inds2, sa2_grouped_features2, sa2_painted2 = self.sa2(sa1_xyz2, sa1_painted2, sa1_features2, bg1=True, wght1=1, xyz_ball=sa1_xyz, features_ball=sa1_features)
+        sa2_xyz2, sa2_inds2, sa2_grouped_features2, sa2_painted2 = self.sa2(sa1_xyz2, sa1_painted2, sa1_features2, bg1=True, wght1=self.bfps_wght[1], xyz_ball=sa1_xyz, features_ball=sa1_features)
         time_record.append(("SA2 sampling and grouping 2:", time.time()))        
 
         sa2_features2 = self.sa2_mlp(sa2_grouped_features2)
@@ -341,7 +342,7 @@ class Pointnet2Backbone_p(layers.Layer):
         sa2_xyz = layers.Concatenate(axis=1)([sa2_xyz1, sa2_xyz2])
         sa2_features = layers.Concatenate(axis=1)([sa2_features1, sa2_features2])        
 
-        sa3_xyz2, sa3_inds2, sa3_grouped_features2, sa3_painted2 = self.sa3(sa2_xyz2, sa2_painted2, sa2_features2, bg1=True, wght1=1, xyz_ball=sa2_xyz, features_ball=sa2_features)        
+        sa3_xyz2, sa3_inds2, sa3_grouped_features2, sa3_painted2 = self.sa3(sa2_xyz2, sa2_painted2, sa2_features2, bg1=True, wght1=self.bfps_wght[2], xyz_ball=sa2_xyz, features_ball=sa2_features)        
         time_record.append(("SA3 sampling and grouping 2:", time.time()))
 
         sa3_features2 = self.sa3_mlp(sa3_grouped_features2)
@@ -353,7 +354,7 @@ class Pointnet2Backbone_p(layers.Layer):
         sa3_features = layers.Concatenate(axis=1)([sa3_features1, sa3_features2])        
         sa3_painted = layers.Concatenate(axis=1)([sa3_painted1, sa3_painted2])
 
-        sa4_xyz, sa4_inds, sa4_grouped_features, sa4_painted = self.sa4(sa3_xyz, sa3_painted, sa3_features, bg1=True, wght1=1)
+        sa4_xyz, sa4_inds, sa4_grouped_features, sa4_painted = self.sa4(sa3_xyz, sa3_painted, sa3_features, bg1=True, wght1=self.bfps_wght[3])
         sa4_features = self.sa4_mlp(sa4_grouped_features)
 
         end_points['sa1_grouped_features1'] = sa1_grouped_features1

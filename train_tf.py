@@ -388,6 +388,7 @@ def train(start_epoch):
             
 
             train_loss += distributed_train_step(batch_data)
+            
             #train_loss += train_one_epoch(batch_data)            
             
             # Accumulate statistics and print out

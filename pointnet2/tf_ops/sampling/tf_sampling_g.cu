@@ -293,12 +293,10 @@ __global__ void farthestpointsamplingBgKernel(int b,int n,int m,
 
         float d = (x2-x1)*(x2-x1) + (y2-y1)*(y2-y1) + (z2-z1)*(z2-z1);
         
-        if (wght > 1){        
+        if (wght != 1.0){        
           if (painted[i*n + k] > 0){
-            d = w * d;                          
-          } else if (painted[i*n + k] < 0) {
-            d = 0.01 * d;
-          } 
+            d = w * d;
+          }
         }                          
         
         float d2 = min(d,td);

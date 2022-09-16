@@ -208,7 +208,7 @@ def evaluate_one_epoch():
     start = time.time()    
     total_start = start
     for batch_idx, batch_data in enumerate(test_ds):        
-        #if batch_idx*BATCH_SIZE >= 100: break
+        # if batch_idx*BATCH_SIZE >= 100: break
         if DATASET == 'scannet':                
             point_clouds = tf.convert_to_tensor(batch_data['point_clouds'], dtype=tf.float32)
             center_label = tf.convert_to_tensor(batch_data['center_label'], dtype=tf.float32)
