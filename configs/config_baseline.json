@@ -4,7 +4,7 @@
     "use_painted": false,   
     "two_way": false,       
     "use_fp_mlp": true, 
-    "q_gran": "semantic",
+    "q_gran": "layerwise",
     "use_tflite": false,
     "activation": "relu6",
     "tflite_folder": "tflite/tflite_models/baseline",    
