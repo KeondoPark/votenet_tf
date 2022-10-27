@@ -1,6 +1,6 @@
 #!/bin/bash
 
-TFLITE_DIR="tflite_models/2way_nofp_sep9"
+TFLITE_DIR="tflite_models/baseline"
 
 for entry in "$TFLITE_DIR"/*
 do    

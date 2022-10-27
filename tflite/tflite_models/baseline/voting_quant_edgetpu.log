@@ -5,6 +5,6 @@ Output: tflite_models/baseline/voting_quant_edgetpu.tflite
 Operator                       Count      Status
 
 ADD                            1          Mapped to Edge TPU
-QUANTIZE                       1          Operation is otherwise supported, but not mapped due to some unspecified limitation
 CONV_2D                        4          Mapped to Edge TPU
+QUANTIZE                       1          Operation is otherwise supported, but not mapped due to some unspecified limitation
 DEQUANTIZE                     2          Operation is working on an unsupported data type

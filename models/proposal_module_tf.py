@@ -100,7 +100,8 @@ class ProposalModule(layers.Layer):
         mlp_spec = [self.seed_feat_dim, 128, 128, 128]
         mlp_spec[0] += 3  
 
-        if self.use_tflite:
+        # if self.use_tflite:  
+        if False:      
             self.use_edgetpu = model_config['use_edgetpu']
             tflite_folder = model_config['tflite_folder']
             tflite_file = 'va_quant'
@@ -145,6 +146,32 @@ class ProposalModule(layers.Layer):
             self.relu1 = layers.ReLU(maxval)
             self.relu2 = layers.ReLU(maxval)
 
+        # self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=True, input_shape=[self.npoint, self.nsample, 3+mlp_spec[0]])        
+        # self.max_pool = layers.MaxPooling2D(pool_size=(1, self.nsample), strides=1, data_format="channels_last")
+        
+        # # Object proposal/detection
+        # # Objectness scores (2), center residual (3),
+        # # heading class+residual (num_heading_bin*2), size class+residual(num_size_cluster*4)            
+        # #### Changed to Conv2D to be compatible with EdgeTPU compiler
+        # self.conv1 = layers.Conv2D(filters=128, kernel_size=1) 
+        # self.conv2 = layers.Conv2D(filters=128, kernel_size=1) 
+        
+        # # 2: objectness_scores, 3: offset(From vote to center), score/residuals for num_heading_bin(12),
+        # # score/(H,W,C) for size, Class score            
+        # self.conv3 = layers.Conv2D(filters=2+3+num_heading_bin*2+num_size_cluster*4+self.num_class, kernel_size=1)
+        
+        # self.bn1 = layers.BatchNormalization(axis=-1)
+        # self.bn2 = layers.BatchNormalization(axis=-1)
+
+        # act = model_config['activation'] if 'activation' in model_config['activation'] else 'relu6'
+        # if act == 'relu6':
+        #     maxval = 6
+        # else:
+        #     maxval = None
+
+        # self.relu1 = layers.ReLU(maxval)
+        # self.relu2 = layers.ReLU(maxval)
+
     def call(self, xyz, features, end_points):
         """
         Args:
@@ -175,7 +202,8 @@ class ProposalModule(layers.Layer):
             log_string('Unknown sampling strategy: %s. Exiting!'%(self.sampling))
             exit()        
         
-        if self.use_tflite:
+        # if self.use_tflite:
+        if False:        
             self.interpreter.set_tensor(self.input_details[0]['index'], va_grouped_features)            
             if len(self.input_details) > 1:
                 self.interpreter.set_tensor(self.input_details[1]['index'], xyz)
@@ -197,7 +225,9 @@ class ProposalModule(layers.Layer):
 
                 net = np.concatenate([obj_score, head_score, cluster_score, head_residual, cluster_residual, class_score], axis=-1)
 
-                net = tf.convert_to_tensor(net)                  
+                net = tf.convert_to_tensor(net)       
+                print("Center tflite", center[0,0])
+                print("net tflite", net[0,0])
 
             elif self.q_gran == 'channel':
                 out = []
@@ -241,7 +271,26 @@ class ProposalModule(layers.Layer):
 
             offset = layers.Reshape((self.npoint, 3))(offset)                
             center = xyz + offset            
-            net = layers.Reshape((self.npoint, net.shape[-1]))(net)            
+            net = layers.Reshape((self.npoint, net.shape[-1]))(net)      
+
+        # new_features = self.mlp_module(va_grouped_features)
+        # features = self.max_pool(new_features)
+        
+        # # --------- PROPOSAL GENERATION ---------
+        # net = self.relu1(self.bn1(self.conv1(features)))
+        # net = self.relu2(self.bn2(self.conv2(net)))
+        # net = self.conv3(net)
+        # offset = net[:,:,:,0:3]
+        # net = net[:,:,:,3:]
+        # w, b = self.conv3.get_weights()
+        # # print("Weight", w[0,0,0,3:3+2+self.num_heading_bin+self.num_size_cluster])
+        # # exit(0)
+
+        # offset = layers.Reshape((self.npoint, 3))(offset)                
+        # center = xyz + offset            
+        # net = layers.Reshape((self.npoint, net.shape[-1]))(net) 
+        # print("Center", center[0,0]) 
+        # print("net", net[0,0])       
             
 
         # Return from expanded shape

@@ -4,9 +4,9 @@
     "use_painted": false,   
     "two_way": false,       
     "use_fp_mlp": true, 
-    "q_gran": "semantic",
+    "q_gran": "channel",
     "activation": "relu6",
-    "use_tflite": false,
+    "use_tflite": true,
     "tflite_folder": "tflite/tflite_models/scannet_baseline",    
     "use_edgetpu": false,        
     "use_multiThr": false

@@ -174,7 +174,8 @@ it = -1 # for the initialize value of `LambdaLR` and `BNMomentumScheduler`
 start_epoch = 0
 ckpt = tf.train.Checkpoint(epoch=tf.Variable(0), optimizer=optimizer, net=net)
 
-if not model_config['use_tflite']:
+# if not model_config['use_tflite']:
+if True:
     manager = tf.train.CheckpointManager(ckpt, CHECKPOINT_PATH, max_to_keep=3)
     ckpt.restore(manager.latest_checkpoint)
 
@@ -208,7 +209,7 @@ def evaluate_one_epoch():
     start = time.time()    
     total_start = start
     for batch_idx, batch_data in enumerate(test_ds):        
-        # if batch_idx*BATCH_SIZE >= 100: break
+        if batch_idx*BATCH_SIZE >= 400: break
         if DATASET == 'scannet':                
             point_clouds = tf.convert_to_tensor(batch_data['point_clouds'], dtype=tf.float32)
             center_label = tf.convert_to_tensor(batch_data['center_label'], dtype=tf.float32)

@@ -191,14 +191,14 @@ def tflite_convert_multi(keyword_list, model_list, base_model, out_dir, mlp=True
         # This ensures that if any ops can't be quantized, the converter throws an error
         # converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
         # For full integer quantization, though supported types defaults to int8 only, we explicitly declare it for clarity.
-        # converter.target_spec.supported_types = [tf.int8]
-        converter.target_spec.supported_types = [tf.float16]
+        converter.target_spec.supported_types = [tf.int8]
+        # converter.target_spec.supported_types = [tf.float16]
         # These set the input and output tensors to uint8 (added in r2.3)
         converter.inference_input_type = tf.float32
         converter.inference_output_type = tf.float32
         tflite_model = converter.convert()
 
-        if q_gran != 'semantic':
+        if q_gran != 'semantic' and k in ['va','voting']:
             tflite_name = k + '_quant_%s.tflite'%(q_gran)
         else:
             tflite_name = k + '_quant.tflite'
@@ -281,9 +281,8 @@ class nnInVotingModule(tf.keras.Model):
             self.conv3_chn_list.append(layers.Dense(grp2_size))
 
         else:
-            self.conv3 = layers.Conv2D(filters=(self.out_dim+3) * self.vote_factor, kernel_size=1)
-        
-            #self.conv3 = layers.Dense((self.out_dim+3) * self.vote_factor)
+            # self.conv3 = layers.Conv2D(filters=(self.out_dim+3) * self.vote_factor, kernel_size=1)        
+            self.conv3 = layers.Dense((self.out_dim+3) * self.vote_factor)
         self.bn0 = layers.BatchNormalization(axis=-1)
         self.bn1 = layers.BatchNormalization(axis=-1)
         self.bn2 = layers.BatchNormalization(axis=-1)
@@ -298,29 +297,23 @@ class nnInVotingModule(tf.keras.Model):
         seed_features = voting_input            
 
         if not self.use_fp_mlp:
-            net0 = self.relu0(self.bn0(self.conv0(seed_features)))
-            # net0_2 = self.relu0(self.bn0(self.conv0(seed_features*0.67)))
+            net0 = self.relu0(self.bn0(self.conv0(seed_features)))            
         else:
-            net0 = seed_features
-            # net0_2 = seed_features*0.5
+            net0 = seed_features            
         net = self.relu1(self.bn1(self.conv1(net0))) 
         net = self.relu2(self.bn2(self.conv2(net))) 
-        net0 = layers.Reshape((num_seed, self.vote_factor, net0.shape[-1]))(net0)
-
-        # net2 = self.relu1(self.bn1(self.conv1(net0_2))) 
-        # net2 = self.relu2(self.bn2(self.conv2(net2))) 
-        # net0_2 = layers.Reshape((num_seed, self.vote_factor, net0_2.shape[-1]))(net0_2)
+        net0 = layers.Reshape((num_seed, self.vote_factor, net0.shape[-1]))(net0)        
         
         if self.q_gran=='channel':
             out = []
             for i in range((3 + self.out_dim) * self.vote_factor):
                 out.append(self.conv3_chn_list[i](net))
-            # offset = layers.Concatenate(axis=-1)(out[:3])
-            # residual_features = layers.Concatenate(axis=-1)(out[3:])
-            # vote_features = net0 + residual_features 
-            # return [offset, vote_features]
-            out.append(net0)
-            return out
+            offset = layers.Concatenate(axis=-1)(out[:3])
+            residual_features = layers.Concatenate(axis=-1)(out[3:])
+            vote_features = net0 + residual_features 
+            return [offset, vote_features]
+            # out.append(net0)
+            # return out
 
         
         elif self.q_gran=='semantic':
@@ -358,7 +351,8 @@ class nnInVotingModule(tf.keras.Model):
             return out
         
         else:
-            net = self.conv3(net)
+            net = layers.Reshape((num_seed, net.shape[-1]))(net)
+            net = self.conv3(net)            
 
             return [net, net0]
 
@@ -386,7 +380,7 @@ class vaModule(tf.keras.Model):
         elif self.q_gran=='semantic':
             self.conv3_1 = layers.Dense(3) 
             self.conv3_2 = layers.Dense(2 + self.NH + self.NC  + self.num_class) 
-            self.conv3_3 = layers.Dense(self.NH + self.NC * 3)                
+            self.conv3_3 = layers.Dense(self.NH + self.NC * 3)                            
             
 
         elif self.q_gran=='group':
@@ -399,7 +393,8 @@ class vaModule(tf.keras.Model):
             self.conv3_chn_list.append(layers.Dense(grp3_size))
 
         else:
-            self.conv3 = layers.Conv2D(filters=2+3+self.NH*2+self.NC*4+self.num_class, kernel_size=1)            
+            # self.conv3 = layers.Conv2D(filters=2+3+self.NH*2+self.NC*4+self.num_class, kernel_size=1)            
+            self.conv3 = layers.Dense(2+3+self.NH*2+self.NC*4+self.num_class)            
         self.bn1 = layers.BatchNormalization(axis=-1)
         self.bn2 = layers.BatchNormalization(axis=-1)
         self.relu1 = layers.ReLU(maxval)
@@ -431,31 +426,11 @@ class vaModule(tf.keras.Model):
             #return [offset, net2, net3]            
             return out
 
-        elif self.q_gran=='semantic':
+        elif self.q_gran=='semantic':            
             net = layers.Reshape((self.npoint, net.shape[-1]))(net)
             offset = self.conv3_1(net)                                
             net2 = self.conv3_2(net)
-            net3 = self.conv3_3(net)
-
-            '''
-            net_2 = layers.Reshape((self.npoint, net.shape[-1]))(net_2)
-            offset_2 = self.conv3_1(net_2)                                
-            net2_2 = self.conv3_2(net_2)
-            net3_2 = self.conv3_3(net_2)
-
-            
-            offset = layers.Concatenate(axis=-1)([offset, offset_2])
-            offset = layers.Reshape((self.npoint, 2, 3))(offset)
-            offset = tf.nn.max_pool(offset, ksize=(1,2), strides=(1,2), padding="SAME")
-
-            net2 = layers.Concatenate(axis=-1)([net2, net2_2])
-            net2 = layers.Reshape((self.npoint, 2, net2_2.shape[-1]))(net2)
-            net2 = tf.nn.max_pool(net2, ksize=(1,2), strides=(1,2), padding="SAME")
-
-            net3 = layers.Concatenate(axis=-1)([net3, net3_2])
-            net3 = layers.Reshape((self.npoint, 2, net3_2.shape[-1]))(net3)
-            net3 = tf.nn.max_pool(net3, ksize=(1,2), strides=(1,2), padding="SAME")
-            '''
+            net3 = self.conv3_3(net)            
 
             offset = layers.Reshape((self.npoint,3))(offset)
             net2 = layers.Reshape((self.npoint, net2.shape[-1]))(net2)
@@ -471,6 +446,7 @@ class vaModule(tf.keras.Model):
             return out
 
         else:
+            net = layers.Reshape((self.npoint, net.shape[-1]))(net)
             net = self.conv3(net)
             net = layers.Reshape((self.npoint, net.shape[-1]))(net)
             return net
@@ -538,7 +514,7 @@ if __name__=='__main__':
 
     # Include modules you want to convert into tflite
     converting_layers = ['sa1','sa2','sa3','sa4','fp1','fp2','voting','va']    
-    # converting_layers = ['sa4']    
+    # converting_layers = ['voting','va']    
     model_list = []
 
     # For each module, build each module as a separate model, load the trained weights and append to the model list
@@ -673,7 +649,8 @@ if __name__=='__main__':
             layer.conv3_chn_list[1].set_weights([w[0,0,:,grp1_size:], b[grp1_size:]])                               
 
         else:
-            layer.conv3.set_weights(net.vgen.conv3.get_weights())
+            w,b = net.vgen.conv3.get_weights()
+            layer.conv3.set_weights([w[0,0], b])
 
         layer.bn0.set_weights(net.vgen.bn0.get_weights())
         layer.bn1.set_weights(net.vgen.bn1.get_weights())
@@ -703,11 +680,12 @@ if __name__=='__main__':
                 layer.conv3_chn_list[i].set_weights([w[:,:,:,i:i+1], b[i:i+1]])
 
         elif q_gran=='semantic':
+            # Separate the layer into 3 groups with their roles taken into account
             w, b = net.pnet.conv3.get_weights()
-
+            
             layer.conv3_1.set_weights([w[0,0,:,:3], b[:3]])            
             w_2 = np.concatenate([w[0,0,:,3:3+2+NH+NC], w[0,0,:,3+2+NH*2+NC*4:]], axis=-1)
-            b_2 = np.concatenate([b[3:3+2+NH+NC], b[3+2+NH*2+NC*4:]], axis=-1)
+            b_2 = np.concatenate([b[3:3+2+NH+NC], b[3+2+NH*2+NC*4:]], axis=-1)            
             layer.conv3_2.set_weights([w_2, b_2])
             w_3 = w[0,0,:,3+2+NH+NC:3+2+NH*2+NC*4]
             b_3 = b[3+2+NH+NC:3+2+NH*2+NC*4]
@@ -715,6 +693,7 @@ if __name__=='__main__':
                  
         
         elif q_gran=='group':
+            #Equally separate the entire layer into 3 groups
             w, b = net.pnet.conv3.get_weights()
 
             grp1_size = (2+3+layer.NH*2+layer.NC*4+layer.num_class) // 3
@@ -726,7 +705,8 @@ if __name__=='__main__':
             layer.conv3_chn_list[2].set_weights([w[0,0,:,-grp3_size:], b[-grp3_size:]])     
 
         else:
-            layer.conv3.set_weights(net.pnet.conv3.get_weights())
+            w, b = net.pnet.conv3.get_weights()
+            layer.conv3.set_weights([w[0,0], b])
         layer.bn1.set_weights(net.pnet.bn1.get_weights())
         layer.bn2.set_weights(net.pnet.bn2.get_weights())        
         

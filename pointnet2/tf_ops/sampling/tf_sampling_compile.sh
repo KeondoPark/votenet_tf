@@ -16,5 +16,8 @@ TF_LFLAGS=( $(python -c 'import tensorflow as tf; print(" ".join(tf.sysconfig.ge
 
 
 #${CUDA_ROOT}/bin/nvcc -std=c++11 -c -o tf_sampling_g.cu.o tf_sampling_g.cu ${TF_CFALGS[@]} -D GOOGLE_CUDA=1 -x cu -Xcompiler -fPIC
-${CUDA_ROOT}/bin/nvcc -std=c++11 -c -o tf_sampling_g_server.cu.o tf_sampling_g.cu ${TF_CFALGS[@]} -D GOOGLE_CUDA=1 -x cu -Xcompiler -fPIC
-g++ -std=c++11 -shared -o tf_sampling_so_server.so tf_sampling.cpp tf_sampling_g_server.cu.o ${TF_CFLAGS[@]} -fPIC -L${CUDA_ROOT}/lib64 -lcudart ${TF_LFLAGS[@]} -I ${CUDA_ROOT}/include
+${CUDA_ROOT}/bin/nvcc -std=c++11 -c -o tf_sampling_g_server.cu.o tf_sampling_g.cu \
+    ${TF_CFALGS[@]} -D GOOGLE_CUDA=1 -x cu -Xcompiler -fPIC
+
+g++ -std=c++11 -shared -o tf_sampling_so_server.so tf_sampling.cpp tf_sampling_g_server.cu.o \
+    ${TF_CFLAGS[@]} -fPIC -L${CUDA_ROOT}/lib64 -lcudart ${TF_LFLAGS[@]} -I ${CUDA_ROOT}/include

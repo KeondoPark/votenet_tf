@@ -46,7 +46,8 @@ class VotingModule(layers.Layer):
         self.q_gran = model_config['q_gran']
         self.use_fp_mlp = model_config['use_fp_mlp']
 
-        if self.use_tflite:
+        # if self.use_tflite:      
+        if False:  
             self.use_edgetpu = model_config['use_edgetpu']
             tflite_folder = model_config['tflite_folder']   
 
@@ -105,7 +106,8 @@ class VotingModule(layers.Layer):
         seed_xyz = layers.Reshape((num_seed, 1, 3))(seed_xyz)
         seed_features = layers.Reshape((num_seed, 1, seed_features.shape[-1]))(seed_features) # Expand to use Conv2D               
 
-        if self.use_tflite:
+        # if self.use_tflite:
+        if False:        
             self.interpreter.set_tensor(self.input_details[0]['index'], seed_features)
             if len(self.input_details) > 1:
                 self.interpreter.set_tensor(self.input_details[1]['index'], seed_xyz)
@@ -116,17 +118,23 @@ class VotingModule(layers.Layer):
                 vote_features = self.interpreter.get_tensor(self.output_details[1]['index'])                                
 
             elif self.q_gran == 'channel':
-                out = []
-                for i in range((self.out_dim+3) * self.vote_factor + 1):
-                    out.append(self.interpreter.get_tensor(self.output_details[i]['index']))                
-
-                offset = layers.Concatenate(axis=-1)(out[:3])
+                offset = self.interpreter.get_tensor(self.output_details[0]['index'])
                 vote_xyz = seed_xyz + offset
+                vote_features = self.interpreter.get_tensor(self.output_details[1]['index'])  
+                # out = []
+                # for i in range((self.out_dim+3) * self.vote_factor + 1):
+                #     out.append(self.interpreter.get_tensor(self.output_details[i]['index']))                
 
-                residual_features = layers.Concatenate(axis=-1)(out[3:-1])
-                net0 = out[-1]
-                net0 = layers.Reshape((num_seed, self.vote_factor, net0.shape[-1]))(net0)
-                vote_features = net0 + residual_features 
+                # offset = layers.Concatenate(axis=-1)(out[:3])
+                # vote_xyz = seed_xyz + offset
+
+                # residual_features = layers.Concatenate(axis=-1)(out[3:-1])
+                # net0 = out[-1]
+                # net0 = layers.Reshape((num_seed, self.vote_factor, net0.shape[-1]))(net0)
+                # print("net0 shape", net0.shape)
+                # print("residual_features shape", residual_features.shape)
+                # exit(0)
+                # vote_features = net0 + residual_features 
 
             elif self.q_gran == 'group':
                 out = []
@@ -146,6 +154,7 @@ class VotingModule(layers.Layer):
                 net = self.interpreter.get_tensor(self.output_details[0]['index'])
                 net0 = self.interpreter.get_tensor(self.output_details[1]['index'])
 
+                net = layers.Reshape((num_seed, self.vote_factor, net.shape[-1]))(net)
                 offset = net[:,:,:,0:3]            
                 vote_xyz = seed_xyz + offset
 
