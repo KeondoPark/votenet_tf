@@ -1,0 +1,12 @@
+Edge TPU Compiler version 16.0.384591198
+Input: fp2_quant_double.tflite
+Output: ./fp2_quant_double_edgetpu.tflite
+
+Operator                       Count      Status
+
+DEQUANTIZE                     1          Operation is working on an unsupported data type
+CONV_2D                        4          Mapped to Edge TPU
+QUANTIZE                       1          Operation is otherwise supported, but not mapped due to some unspecified limitation
+RESHAPE                        1          Operation is otherwise supported, but not mapped due to some unspecified limitation
+CONCATENATION                  1          Mapped to Edge TPU
+MAX_POOL_2D                    1          Mapped to Edge TPU

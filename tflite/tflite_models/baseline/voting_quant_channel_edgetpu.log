@@ -1,0 +1,11 @@
+Edge TPU Compiler version 16.0.384591198
+Input: tflite_models/baseline/voting_quant_channel.tflite
+Output: tflite_models/baseline/voting_quant_channel_edgetpu.tflite
+
+Operator                       Count      Status
+
+QUANTIZE                       1          Operation is otherwise supported, but not mapped due to some unspecified limitation
+CONV_2D                        261        Mapped to Edge TPU
+ADD                            1          Mapped to Edge TPU
+DEQUANTIZE                     2          Operation is working on an unsupported data type
+CONCATENATION                  2          Mapped to Edge TPU

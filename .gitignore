@@ -1,0 +1,17 @@
+*.py[cod]
+log*/
+slurm*
+eval*/
+tflite_rep_data/
+test/
+votenet_tf/
+tf_ckpt/
+logs/
+configs/environ*
+sunrgbd/pred_error
+sunrgbd/pred_error.csv
+scannet/scans
+scannet/scannet_train_detection_data*
+scannet/frames_square
+scannet/semantic_2d_results
+figs/*

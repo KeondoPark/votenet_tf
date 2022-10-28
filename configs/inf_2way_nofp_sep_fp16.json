@@ -1,0 +1,14 @@
+{    
+    "model_id": "2way_nofp_sep", 
+    "use_painted": true,   
+    "two_way": true,       
+    "use_fp_mlp": false, 
+    "sep_coords": true,
+    "use_tflite": true,
+    "activation": "relu6",
+    "q_gran": "semantic",
+    "tflite_folder": "tflite/tflite_models/2way_nofp_sep_fp16",    
+    "use_edgetpu": false,    
+    "use_multiThr": false,
+    "bfps_wght": [4,4,1,1]
+}
