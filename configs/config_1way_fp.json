@@ -4,9 +4,9 @@
     "two_way": false,       
     "use_fp_mlp": true, 
     "activation":"relu6",
-    "q_gran": "semantic",
+    "q_gran": "layer",
     "use_tflite": false,
-    "tflite_folder": "tflite/tflite_models/1way_fp",    
+    "tflite_folder": "tflite/tflite_models/1way_fp_2",    
     "use_edgetpu": false,        
     "use_multiThr": false
 }

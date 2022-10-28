@@ -118,7 +118,7 @@ def simulate_run(base_model, keyword_list):
     '''
     output_dict = {}
 
-    for i in range(int(800 / BATCH_SIZE)):                               
+    for i in range(int(600 / BATCH_SIZE)):                               
         batch_data = next(iter(ds))
         
         if DATASET == 'sunrgbd':

@@ -100,8 +100,8 @@ class ProposalModule(layers.Layer):
         mlp_spec = [self.seed_feat_dim, 128, 128, 128]
         mlp_spec[0] += 3  
 
-        # if self.use_tflite:  
-        if False:      
+        if self.use_tflite:  
+        # if False:      
             self.use_edgetpu = model_config['use_edgetpu']
             tflite_folder = model_config['tflite_folder']
             tflite_file = 'va_quant'
@@ -202,8 +202,8 @@ class ProposalModule(layers.Layer):
             log_string('Unknown sampling strategy: %s. Exiting!'%(self.sampling))
             exit()        
         
-        # if self.use_tflite:
-        if False:        
+        if self.use_tflite:
+        # if False:        
             self.interpreter.set_tensor(self.input_details[0]['index'], va_grouped_features)            
             if len(self.input_details) > 1:
                 self.interpreter.set_tensor(self.input_details[1]['index'], xyz)

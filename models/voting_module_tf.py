@@ -46,8 +46,8 @@ class VotingModule(layers.Layer):
         self.q_gran = model_config['q_gran']
         self.use_fp_mlp = model_config['use_fp_mlp']
 
-        # if self.use_tflite:      
-        if False:  
+        if self.use_tflite:      
+        # if False:  
             self.use_edgetpu = model_config['use_edgetpu']
             tflite_folder = model_config['tflite_folder']   
 
@@ -106,8 +106,8 @@ class VotingModule(layers.Layer):
         seed_xyz = layers.Reshape((num_seed, 1, 3))(seed_xyz)
         seed_features = layers.Reshape((num_seed, 1, seed_features.shape[-1]))(seed_features) # Expand to use Conv2D               
 
-        # if self.use_tflite:
-        if False:        
+        if self.use_tflite:
+        # if False:        
             self.interpreter.set_tensor(self.input_details[0]['index'], seed_features)
             if len(self.input_details) > 1:
                 self.interpreter.set_tensor(self.input_details[1]['index'], seed_xyz)
