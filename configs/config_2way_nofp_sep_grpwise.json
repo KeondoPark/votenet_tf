@@ -7,7 +7,8 @@
     "use_tflite": false,
     "activation": "relu6",
     "q_gran": "group",
-    "tflite_folder": "tflite/tflite_models/2way_nofp_sep",    
+    "tflite_folder": "tflite/tflite_models/2way_nofp_sep_2",    
     "use_edgetpu": false,    
-    "use_multiThr": false
+    "use_multiThr": false,
+    "bfps_wght": [4,4,1,1]
 }
