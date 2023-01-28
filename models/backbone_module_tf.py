@@ -600,7 +600,7 @@ class Pointnet2Backbone_tflite(layers.Layer):
                 # 0 is background class, (height, width, num_class)
                 pred_prob = pred_prob[:,:(self.num_class+1)] # (npoint, num_class+1)
                 isPainted[0, filter_idx] = _isPainted
-                features[0, filter_idx, :-1] = pred_prob
+                features[0, filter_idx, :-1] = pred_prob/255
             
             time_record.append(('Pointpainting time:', time.time()))
         else:

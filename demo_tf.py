@@ -28,15 +28,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
 
 import json
-# environ_file = os.path.join(ROOT_DIR,'configs','environ.json')
-# environ = json.load(open(environ_file))['environ']
-
-# if environ == 'server':    
-#     DATA_DIR = '/home/aiot/data'
-# elif environ == 'jetson':
-#     DATA_DIR= 'sunrgbd'
-# elif environ == 'server2':    
-#     DATA_DIR = '/data'
 DATA_DIR = 'sunrgbd'
 
 
@@ -50,8 +41,6 @@ from votenet_tf import dump_results
 from PIL import Image
 from deeplab.deeplab import run_semantic_seg, run_semantic_seg_tflite
 import json
-from concurrent.futures import ThreadPoolExecutor
-#from torch.utils.data import DataLoader
 
 model_config = json.load(open(FLAGS.config_path))
 DEFAULT_CHECKPOINT_PATH = os.path.join('tf_ckpt', model_config['model_id'])
@@ -168,8 +157,6 @@ if __name__=='__main__':
     time_record = [('Start: ', time.time())]
     point_cloud_sampled = random_sampling(point_cloud[:,0:3], NUM_POINT)
     pc = preprocess_point_cloud(point_cloud_sampled)    
-    
-    # threadpool = ThreadPoolExecutor(2)
 
     time_record.append(('Votenet data preprocessing time:', time.time()))
 
@@ -182,8 +169,6 @@ if __name__=='__main__':
                 end_points = net(inputs['point_clouds'], training=False, imgs=imgs, calibs=calibs, deeplab_tflite_file=deeplab_tflite_file)        
             else:            
                 if model_config['use_edgetpu']:                    
-                    # future0 = threadpool.submit(run_semantic_seg_tflite, imgs, False, deeplab_tflite_file)
-                    # pred_prob_list = future0.result()
                     
                     pred_prob_list = run_semantic_seg_tflite(imgs, tflite_file=deeplab_tflite_file, save_result=False)                
                 else:     
@@ -205,14 +190,14 @@ if __name__=='__main__':
                     # 0 is background class, deeplab is trained with "person" included, (height, width, num_class)
                     pred_prob = pred_prob[:,:(DATASET_CONFIG.num_class+1)] #(npoint, num_class)
                     painted_pc[filter_idx, 3] = isPainted
-                    painted_pc[filter_idx, 4:-1] = pred_prob
+                    painted_pc[filter_idx, 4:-1] = pred_prob/255
 
                 #pointcloud = np.concatenate([xyz, isPainted, pred_prob, pc[0,:,3:]], axis=-1)
                 time_record.append(('Pointpainting time:', time.time()))
 
                 inputs['point_clouds'] = tf.convert_to_tensor(np.expand_dims(painted_pc, axis=0))
-                # del painted_pc
-                # del pred_prob_list
+                del painted_pc
+                del pred_prob_list
                 
                 end_points = net(inputs['point_clouds'], training=False)        
             
