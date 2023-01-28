@@ -50,6 +50,7 @@ from votenet_tf import dump_results
 from PIL import Image
 from deeplab.deeplab import run_semantic_seg, run_semantic_seg_tflite
 import json
+from concurrent.futures import ThreadPoolExecutor
 #from torch.utils.data import DataLoader
 
 model_config = json.load(open(FLAGS.config_path))
@@ -142,10 +143,7 @@ if __name__=='__main__':
         mean_size_arr=DATASET_CONFIG.mean_size_arr,
         model_config=model_config)
     print('Constructed model.')
-    
-    # Load checkpoint
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)    
-
+        
     if model_config['use_tflite']:          
         restore_list = []  
         
@@ -154,6 +152,9 @@ if __name__=='__main__':
             new_root.restore(tf.train.latest_checkpoint(checkpoint_path)).expect_partial()
 
     else:    
+        # Load checkpoint
+        optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)  
+          
         ckpt = tf.train.Checkpoint(epoch=tf.Variable(1), optimizer=optimizer, net=net)
         manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=3)
         ckpt.restore(manager.latest_checkpoint)
@@ -161,11 +162,15 @@ if __name__=='__main__':
 
         print("Loaded checkpoint %s (epoch: %d)"%(checkpoint_path, epoch))  
    
+    start_all = time.time()
+
     # Load and preprocess input point cloud     
     time_record = [('Start: ', time.time())]
     point_cloud_sampled = random_sampling(point_cloud[:,0:3], NUM_POINT)
     pc = preprocess_point_cloud(point_cloud_sampled)    
-        
+    
+    # threadpool = ThreadPoolExecutor(2)
+
     time_record.append(('Votenet data preprocessing time:', time.time()))
 
     inputs = {'point_clouds': tf.convert_to_tensor(pc)}
@@ -176,7 +181,10 @@ if __name__=='__main__':
             if model_config['use_multiThr']:
                 end_points = net(inputs['point_clouds'], training=False, imgs=imgs, calibs=calibs, deeplab_tflite_file=deeplab_tflite_file)        
             else:            
-                if model_config['use_edgetpu']:
+                if model_config['use_edgetpu']:                    
+                    # future0 = threadpool.submit(run_semantic_seg_tflite, imgs, False, deeplab_tflite_file)
+                    # pred_prob_list = future0.result()
+                    
                     pred_prob_list = run_semantic_seg_tflite(imgs, tflite_file=deeplab_tflite_file, save_result=False)                
                 else:     
                     pred_prob_list, _ = run_semantic_seg(imgs, graph_file=deeplab_pb, input_size=img_input_size, save_result=False)                  
@@ -203,6 +211,8 @@ if __name__=='__main__':
                 time_record.append(('Pointpainting time:', time.time()))
 
                 inputs['point_clouds'] = tf.convert_to_tensor(np.expand_dims(painted_pc, axis=0))
+                # del painted_pc
+                # del pred_prob_list
                 
                 end_points = net(inputs['point_clouds'], training=False)        
             
@@ -214,7 +224,6 @@ if __name__=='__main__':
         time_record = time_record + [('Voting and Proposal time:', time.time())]
     
     print(net.summary())
-
     
     time_dict = {}
 
@@ -272,7 +281,8 @@ if __name__=='__main__':
     #    print('class:', class2type[pred[0].numpy()])
     #    print('conf:', pred[2])
         #print('coords', pred[1])
-
+    
+    print("All processes", time.time() - start_all)
     print('Finished detection. %d object detected.'%(len(pred_map_cls[0][0])))
   
     dump_dir = os.path.join(demo_dir, '%s_results'%(DATASET))

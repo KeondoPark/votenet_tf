@@ -226,8 +226,6 @@ class ProposalModule(layers.Layer):
                 net = np.concatenate([obj_score, head_score, cluster_score, head_residual, cluster_residual, class_score], axis=-1)
 
                 net = tf.convert_to_tensor(net)       
-                print("Center tflite", center[0,0])
-                print("net tflite", net[0,0])
 
             elif self.q_gran == 'channel':
                 out = []

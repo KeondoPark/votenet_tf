@@ -136,12 +136,17 @@ def run_semantic_seg_tflite(img_list, save_result=False, tflite_file='sunrgbd_CO
     from pycoral.utils.edgetpu import make_interpreter
     from pycoral.adapters import common
     from pycoral.adapters import segment
+    from psutil import Process
+    print("****1. Memory, deeplab start")
+    print(Process().memory_info().rss)
+
+    start = time.perf_counter()
 
     #Initialize interpreter    
     interpreter = make_interpreter(os.path.join(BASE_DIR,'saved_model', tflite_file))
     interpreter.allocate_tensors()
-    width, height = common.input_size(interpreter)   
-    
+    width, height = common.input_size(interpreter)          
+
     #Get input size
     orig_w, orig_h = img_list[0].size  
 
@@ -152,19 +157,33 @@ def run_semantic_seg_tflite(img_list, save_result=False, tflite_file='sunrgbd_CO
           interpreter, img.size, lambda size: img.resize(size, Image.ANTIALIAS))    
       
       interpreter.invoke()          
-
-      result = segment.get_output(interpreter)        
+      result = segment.get_output(interpreter)              
+      print("2. Memory, after EdgeTPU output")
+      print(Process().memory_info().rss)
       result = result/255 # Output is int8, not dequantized output
       
+      print("3. Memory, after dequantize")
+      print(Process().memory_info().rss)
+
       new_width, new_height = resized_img.size
+      # print("new size", new_width, new_height)      
       pred_prob = result[:new_height, :new_width, :]    
+      # print("pred_prob shape", pred_prob.shape)
       
+
+      # start = time.perf_counter()
       # Return to original image size
       x = (np.array(range(orig_h)) * scale1).astype(np.int)
       y = (np.array(range(orig_w)) * scale2).astype(np.int)
       xv, yv = np.meshgrid(x, y, indexing='ij')      
-
-      pred_prob_list.append(pred_prob[xv, yv]) # height, width
+      print("4. Memory, after meshgrid")
+      print(Process().memory_info().rss)
+      # print("Prepare index", time.perf_counter() - start)
+      # start = time.perf_counter()
+      pred_prob_list.append(pred_prob[xv, yv]) # height, width      
+      print("5. Memory, after probability allocate")
+      print(Process().memory_info().rss)
+      # print("Allocate", time.perf_counter() - start)         
 
     # Save semantic segmentation result as image file(Original vs Semantic result)
     if save_result:
