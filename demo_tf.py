@@ -86,6 +86,7 @@ if __name__=='__main__':
             except RuntimeError as e:
                 print(e)
 
+
     # Set file paths and dataset config
     demo_dir = os.path.join(BASE_DIR, 'demo_files') 
     if DATASET == 'sunrgbd':

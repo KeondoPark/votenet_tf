@@ -192,25 +192,25 @@ if __name__ == '__main__':
   elif environ == 'server2':    
       DATA_DIR = '/data'
 
-  '''
+  
   data_idx = 5051
   #dataset = sunrgbd_object(os.path.join(DATA_DIR,'sunrgbd_trainval'), 'training', use_v1=True)
   dataset = sunrgbd_object(os.path.join(ROOT_DIR,'sunrgbd','sunrgbd_trainval'), 'training', use_v1=True)
   img = dataset.get_image2(data_idx)
   start = time.time()  
-  pred_prob = run_semantic_seg_tflite(img, tflite_file='sunrgbd_COCO_15_quant_edgetpu.tflite')
-  print("Deeplab inference time", time.time() - start)
-  #pred_prob, pred_class = run_semantic_seg(img, save_result=True, save_name=str(data_idx))  
-  #print(np.unique(pred_class))
+  # pred_prob = run_semantic_seg_tflite(img, tflite_file='sunrgbd_COCO_15_quant_edgetpu.tflite')
+  # print("Deeplab inference time", time.time() - start)
+  pred_prob, pred_class = run_semantic_seg([img], save_result=True, save_name=str(data_idx))  
+  print(np.unique(pred_class))
   
-  '''
-  dataobj = scannet_object()
-  img, pose = dataobj.get_image_and_pose(0)
-  start = time.time()  
-  pred_prob = run_semantic_seg_tflite(img, tflite_file='scannet_2_quant_edgetpu.tflite')
-  pred_prob = run_semantic_seg_tflite(img, tflite_file='scannet_2_quant_edgetpu.tflite')
-  pred_prob = run_semantic_seg_tflite(img, tflite_file='scannet_2_quant_edgetpu.tflite')
-  print("Deeplab inference time", time.time() - start)
+  
+  # dataobj = scannet_object()
+  # img, pose = dataobj.get_image_and_pose(0)
+  # start = time.time()  
+  # pred_prob = run_semantic_seg_tflite(img, tflite_file='scannet_2_quant_edgetpu.tflite')
+  # pred_prob = run_semantic_seg_tflite(img, tflite_file='scannet_2_quant_edgetpu.tflite')
+  # pred_prob = run_semantic_seg_tflite(img, tflite_file='scannet_2_quant_edgetpu.tflite')
+  # print("Deeplab inference time", time.time() - start)
   
 
 
