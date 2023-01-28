@@ -136,12 +136,15 @@ def run_semantic_seg_tflite(img_list, save_result=False, tflite_file='sunrgbd_CO
     from pycoral.utils.edgetpu import make_interpreter
     from pycoral.adapters import common
     from pycoral.adapters import segment
+    from psutil import Process
+    # print("****1. Memory, deeplab start")
+    # print(Process().memory_info().rss)    
 
     #Initialize interpreter    
     interpreter = make_interpreter(os.path.join(BASE_DIR,'saved_model', tflite_file))
     interpreter.allocate_tensors()
-    width, height = common.input_size(interpreter)   
-    
+    width, height = common.input_size(interpreter)          
+
     #Get input size
     orig_w, orig_h = img_list[0].size  
 
@@ -152,19 +155,18 @@ def run_semantic_seg_tflite(img_list, save_result=False, tflite_file='sunrgbd_CO
           interpreter, img.size, lambda size: img.resize(size, Image.ANTIALIAS))    
       
       interpreter.invoke()          
-
-      result = segment.get_output(interpreter)        
-      result = result/255 # Output is int8, not dequantized output
-      
-      new_width, new_height = resized_img.size
+      result = segment.get_output(interpreter)                    
+      # result = result/255 # Output is int8, not dequantized output, but dequantizing later reduces CPU workload.
+            
+      new_width, new_height = resized_img.size      
       pred_prob = result[:new_height, :new_width, :]    
       
       # Return to original image size
       x = (np.array(range(orig_h)) * scale1).astype(np.int)
       y = (np.array(range(orig_w)) * scale2).astype(np.int)
       xv, yv = np.meshgrid(x, y, indexing='ij')      
-
-      pred_prob_list.append(pred_prob[xv, yv]) # height, width
+      
+      pred_prob_list.append(pred_prob[xv, yv]) # height, width            
 
     # Save semantic segmentation result as image file(Original vs Semantic result)
     if save_result:
@@ -185,14 +187,8 @@ if __name__ == '__main__':
   environ_file = os.path.join(ROOT_DIR,'configs','environ.json')
   environ = json.load(open(environ_file))['environ']
 
-  if environ == 'server':    
-      DATA_DIR = '/home/aiot/data'
-  elif environ == 'jetson':
-      DATA_DIR= 'sunrgbd'
-  elif environ == 'server2':    
-      DATA_DIR = '/data'
-
-  
+  DATA_DIR = 'sunrgbd'
+  '''
   data_idx = 5051
   #dataset = sunrgbd_object(os.path.join(DATA_DIR,'sunrgbd_trainval'), 'training', use_v1=True)
   dataset = sunrgbd_object(os.path.join(ROOT_DIR,'sunrgbd','sunrgbd_trainval'), 'training', use_v1=True)

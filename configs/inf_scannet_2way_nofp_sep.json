@@ -8,6 +8,6 @@
     "use_tflite": true,
     "activation": "relu",
     "tflite_folder": "tflite/tflite_models/scannet_2way_nofp_sep",    
-    "use_edgetpu": false,    
-    "use_multiThr": false
+    "use_edgetpu": true,    
+    "use_multiThr": true
 }

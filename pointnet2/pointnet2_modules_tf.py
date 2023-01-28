@@ -82,7 +82,7 @@ class PointnetSAModuleVotes(layers.Layer):
             self.use_edgetpu = model_config['use_edgetpu']
             tflite_folder = model_config['tflite_folder']
             
-            if self.use_edgetpu:            
+            if self.use_edgetpu: 
                 tflite_file = layer_name + '_quant_edgetpu.tflite'
                 from pycoral.utils.edgetpu import make_interpreter
                 self.interpreter = make_interpreter(os.path.join(ROOT_DIR,os.path.join(tflite_folder, tflite_file)))
@@ -144,13 +144,20 @@ class PointnetSAModuleVotes(layers.Layer):
             grouped_features, unique_cnt = self.grouper(            
                 xyz, new_xyz, features
             )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)        
-        time_record.append((f"{self.layer_name} Runtime for Sampling and Grouping:", time.time()))
+       
          
         if self.use_tflite:
-            self.interpreter.set_tensor(self.input_details[0]['index'], grouped_features)
-            self.interpreter.invoke()
-            new_features = self.interpreter.get_tensor(self.output_details[0]['index'])
+            with tf.device('cpu'):
+                grouped_features = tf.identity(grouped_features)                
+            time_record.append((f"{self.layer_name} Runtime for Sampling and Grouping:", time.time()))
+            
+            self.interpreter.set_tensor(self.input_details[0]['index'], grouped_features)            
+            start_tflite = time.time()
+            self.interpreter.invoke()            
+            new_features = self.interpreter.get_tensor(self.output_details[0]['index'])            
+            
         else:              
+            time_record.append((f"{self.layer_name} Runtime for Sampling and Grouping:", time.time()))
             new_features = self.mlp_module(
                     grouped_features
                 )  # (B, npoint, nsample, mlp[-1])
@@ -169,8 +176,9 @@ class PointnetSAModuleVotes(layers.Layer):
                 rbf = tf.math.exp(-1 * grouped_xyz.pow(2).sum(1,keepdim=False) / (self.sigma**2) / 2) # (B, npoint, nsample)
                 new_features = tf.reduce_sum(new_features * rbf.unsqueeze(1), axis=-1, keepdims=True) / float(self.nsample) # (B, mlp[-1], npoint, 1)
             '''        
-        new_features = layers.Reshape((self.npoint, new_features.shape[-1]))(new_features)        
         time_record.append((f"{self.layer_name} Runtime for shared MLP:", time.time()))
+        new_features = layers.Reshape((self.npoint, new_features.shape[-1]))(new_features)        
+        
 
         if not self.ret_unique_cnt:            
             return new_xyz, new_features, inds, grouped_features
