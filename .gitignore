@@ -15,4 +15,4 @@ scannet/scannet_train_detection_data*
 scannet/frames_square
 scannet/semantic_2d_results
 figs/*
-models/test/*
+models/temp/*
