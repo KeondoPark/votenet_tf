@@ -311,7 +311,7 @@ class ScannetDetectionDataset(Dataset):
             
         ret_dict = {}
         ret_dict['point_clouds'] = point_cloud.astype(np.float32)
-        ret_dict['center_label'] = gt_centers.astype(np.float32)[:,0:3]
+        ret_dict['center_label'] = gt_centers.astype(np.float32)
         ret_dict['heading_class_label'] = angle_classes.astype(np.int64)
         ret_dict['heading_residual_label'] = angle_residuals.astype(np.float32)
         ret_dict['size_class_label'] = size_classes.astype(np.int64)
@@ -321,7 +321,7 @@ class ScannetDetectionDataset(Dataset):
             [DC.nyu40id2class[x] for x in instance_bboxes[:,-1][0:instance_bboxes.shape[0]]]                
         ret_dict['sem_cls_label'] = target_bboxes_semcls.astype(np.int64)
         ret_dict['box_label_mask'] = target_bboxes_mask.astype(np.float32)
-        ret_dict['point_obj_mask'] = point_obj_mask.astype(np.float32)
+        ret_dict['point_obj_mask'] = point_obj_mask.astype(np.int64)
         ret_dict['point_instance_label'] = point_instance_label.astype(np.int64)
         ret_dict['size_gts'] = size_gts.astype(np.float32)
         ret_dict['scan_idx'] = np.array(idx).astype(np.int64)

@@ -128,7 +128,7 @@ class GroupFreeDetector(layers.Layer):
         """        
         
         N = seed_features.shape[1]
-        C = seed_features.shape[2]
+        C = seed_features.shape[-1]
         seed_features = layers.Reshape((N, 1, C))(seed_features)
 
 

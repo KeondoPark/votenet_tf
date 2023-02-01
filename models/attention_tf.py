@@ -13,16 +13,16 @@ import numpy as np
 from modules_tf import PositionEmbeddingLearned
 
 class MultiheadAttention(tf.keras.layers.Layer):
-    def __init__(self, embed_dim=288, nheads=8, dropout=0.1):
+    def __init__(self, embed_dim=288, nheads=8, dropout=0.0):
         super().__init__()        
         self.nheads = nheads
         self.embed_dim = embed_dim
         self.head_dim = embed_dim // nheads
-        self.emb_q = layers.Dense(embed_dim, use_bias=True, kernel_initializer=tf.keras.initializers.he_normal())
-        self.emb_k = layers.Dense(embed_dim, use_bias=True, kernel_initializer=tf.keras.initializers.he_normal())
-        self.emb_v = layers.Dense(embed_dim, use_bias=True, kernel_initializer=tf.keras.initializers.he_normal())   
-        self.scaling = 0.40824829 #tf.math.sqrt(1.0/6.0) # 1/tf.math.sqrt(embed_dim // n_heads)
-        self.out_proj = layers.Dense(embed_dim, use_bias=True, kernel_initializer=tf.keras.initializers.he_normal())
+        self.emb_q = layers.Dense(embed_dim, use_bias=True, kernel_initializer=tf.keras.initializers.he_uniform())
+        self.emb_k = layers.Dense(embed_dim, use_bias=True, kernel_initializer=tf.keras.initializers.he_uniform())
+        self.emb_v = layers.Dense(embed_dim, use_bias=True, kernel_initializer=tf.keras.initializers.he_uniform())   
+        self.scaling = float(head_dim) ** -0.5
+        self.out_proj = layers.Dense(embed_dim, use_bias=True, kernel_initializer=tf.keras.initializers.he_uniform())
         self.dropout = dropout
 
     def call(self, query, key, value):    
@@ -30,13 +30,13 @@ class MultiheadAttention(tf.keras.layers.Layer):
         query, key, value dim: (B, N, d*nhead)
         """
         #num_seed = tf.shape(inputs)[1]
-        embedding_q = self.emb_q(query) # (B, nq, d*h)
+        embedding_q = self.emb_q(query) * self.scaling # (B, nq, d*h)
         embedding_k = self.emb_k(key)  # (B, nk, d*h)
         embedding_v = self.emb_v(value)  # (B, nv, d*h)
         # attn = [tf.keras.backend.softmax(tf.matmul(q, k, transpose_b=True)) for q, k in zip(embedding_q, embedding_k)]
         attn = [tf.matmul(embedding_q[:,:,i*self.head_dim:(i+1)*self.head_dim], 
                           embedding_k[:,:,i*self.head_dim:(i+1)*self.head_dim], transpose_b=True)
-                * self.scaling for i in range(self.nheads)] # h * (B, nq, nk)
+                for i in range(self.nheads)] # h * (B, nq, nk)
 
         attn = [tf.keras.backend.softmax(a) for a in attn]
 
@@ -49,7 +49,7 @@ class MultiheadAttention(tf.keras.layers.Layer):
         return output
 
 class InducedSetAttention(tf.keras.layers.Layer):
-    def __init__(self, embed_dim=288, nheads=8, dropout=0.1):
+    def __init__(self, embed_dim=288, nheads=8, dropout=0.0):
         super().__init__()
         
         self.mab0 = MultiheadAttention(embed_dim, nheads, dropout)

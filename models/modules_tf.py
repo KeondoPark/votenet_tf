@@ -77,11 +77,11 @@ class PredictHead(tf.keras.layers.Layer):
         # Object proposal/detection
         # Objectness scores (1), center residual (3),
         # heading class+residual (num_heading_bin*2), size class+residual(num_size_cluster*4)
-        self.conv1 = layers.Conv2D(filters=seed_feat_dim, kernel_size=1, kernel_initializer=tf.keras.initializers.he_normal())
+        self.conv1 = layers.Conv2D(filters=seed_feat_dim, kernel_size=1, kernel_initializer=tf.keras.initializers.he_uniform())
         self.bn1 = layers.BatchNormalization(axis=-1)
-        self.conv2 = layers.Conv2D(filters=seed_feat_dim, kernel_size=1, kernel_initializer=tf.keras.initializers.he_normal())
+        self.conv2 = layers.Conv2D(filters=seed_feat_dim, kernel_size=1, kernel_initializer=tf.keras.initializers.he_uniform())
         self.bn2 = layers.BatchNormalization(axis=-1)
-        self.conv3 = layers.Conv2D(filters=1 + 3 + self.NH*2 + self.NC*4 + self.nc, kernel_size=1, kernel_initializer=tf.keras.initializers.he_normal())
+        self.conv3 = layers.Conv2D(filters=1 + 3 + self.NH*2 + self.NC*4 + self.nc, kernel_size=1, kernel_initializer=tf.keras.initializers.he_uniform())
 
         maxval = None if activation=='relu' else 6
         self.relu1 = layers.ReLU(maxval)
@@ -158,7 +158,7 @@ class PredictHead(tf.keras.layers.Layer):
         features = layers.Reshape((num_proposal, 1, num_features))(features)
 
         net = self.relu1(self.bn1(self.conv1(features)))
-        net = self.relu1(self.bn2(self.conv2(net)))
+        net = self.relu2(self.bn2(self.conv2(net)))
         net = self.conv3(net)
 
         offset = net[:,:,:,0:3]
@@ -189,11 +189,11 @@ class ClsAgnosticPredictHead(tf.keras.layers.Layer):
         # Object proposal/detection
         # Objectness scores (1), center residual (3),
         # heading class+residual (num_heading_bin*2), size class+residual(num_size_cluster*4)
-        self.conv1 = layers.Conv2D(filters=seed_feat_dim, kernel_size=1, kernel_initializer=tf.keras.initializers.he_normal())
+        self.conv1 = layers.Conv2D(filters=seed_feat_dim, kernel_size=1, kernel_initializer=tf.keras.initializers.he_uniform())
         self.bn1 = layers.BatchNormalization(axis=-1)
-        self.conv2 = layers.Conv2D(filters=seed_feat_dim, kernel_size=1, kernel_initializer=tf.keras.initializers.he_normal())
+        self.conv2 = layers.Conv2D(filters=seed_feat_dim, kernel_size=1, kernel_initializer=tf.keras.initializers.he_uniform())
         self.bn2 = layers.BatchNormalization(axis=-1)
-        self.conv3 = layers.Conv2D(filters=1 + 3 + self.NH*2 + 3 + self.nc, kernel_size=1, kernel_initializer=tf.keras.initializers.he_normal())
+        self.conv3 = layers.Conv2D(filters=1 + 3 + self.NH*2 + 3 + self.nc, kernel_size=1, kernel_initializer=tf.keras.initializers.he_uniform())
 
         maxval = None if activation=='relu' else 6
         self.relu1 = layers.ReLU(maxval)
@@ -236,7 +236,7 @@ class ClsAgnosticPredictHead(tf.keras.layers.Layer):
         features = layers.Reshape((num_proposal, 1, num_features))(features)
 
         net = self.relu1(self.bn1(self.conv1(features)))
-        net = self.relu1(self.bn2(self.conv2(net)))
+        net = self.relu2(self.bn2(self.conv2(net)))
         net = self.conv3(net)
 
         offset = net[:,:,:,0:3]

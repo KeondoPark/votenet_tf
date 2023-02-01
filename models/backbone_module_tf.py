@@ -86,7 +86,7 @@ class Pointnet2Backbone(layers.Layer):
 
         if use_fp_mlp:
             self.fp1 = PointnetFPModule(mlp=[256+256,256,256], m=512, model_config=model_config, layer_name='fp1')
-            self.fp2 = PointnetFPModule(mlp=[256+256,256,256], m=1024, model_config=model_config, layer_name='fp2')
+            self.fp2 = PointnetFPModule(mlp=[256+256,256,288], m=1024, model_config=model_config, layer_name='fp2')
         else:
             self.fp1 = PointnetFPModule(mlp=None, m=512, model_config=model_config)
             self.fp2 = PointnetFPModule(mlp=None, m=1024, model_config=model_config)
