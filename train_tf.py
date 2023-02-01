@@ -333,13 +333,13 @@ def train_one_epoch(batch_data):
     grads = tape.gradient(loss, net.trainable_weights)
     # grads = [tf.clip_by_norm(g, FLAGS.clip_norm) for g in grads]
 
-    shapes = [g.shape for g in grads]
-    grads_flatten = [tf.reshape(g, (-1,)) for g in grads]
-    grads_flatten, global_norm = tf.clip_by_global_norm(grads_flatten, FLAGS.clip_norm)
+    # shapes = [g.shape for g in grads]
+    # grads_flatten = [tf.reshape(g, (-1,)) for g in grads]
+    # grads_flatten, global_norm = tf.clip_by_global_norm(grads_flatten, FLAGS.clip_norm)
 
-    grads = []
-    for g, s in zip(grads_flatten, shapes):                        
-        grads.append(tf.reshape(g, s))
+    # grads = []
+    # for g, s in zip(grads_flatten, shapes):                        
+    #     grads.append(tf.reshape(g, s))
 
     # DIfferent learning rate by layers
     varlist1, varlist2 = [], []
