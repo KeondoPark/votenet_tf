@@ -96,7 +96,7 @@ class PointnetSAModuleVotes(layers.Layer):
             self.input_details = self.interpreter.get_input_details()
             self.output_details = self.interpreter.get_output_details()
         else:
-            act = model_config['activation'] if 'activation' in model_config['activation'] else 'relu6'
+            act = model_config['activation'] if 'activation' in model_config else 'relu6'
             self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=bn, activation=act, input_shape=[npoint, nsample, mlp_spec[0]])        
             
             #This is to make it EdgeTPU-compatible
@@ -351,7 +351,7 @@ class PointnetFPModule(layers.Layer):
                 self.input_details = self.interpreter.get_input_details()
                 self.output_details = self.interpreter.get_output_details()
             else:
-                act = model_config['activation'] if 'activation' in model_config['activation'] else 'relu6'
+                act = model_config['activation'] if 'activation' in model_config else 'relu6'
                 self.mlp = tf_utils.SharedMLP(mlp, bn=bn, activation=act, input_shape=[m,1,mlp[0]])
         else: 
             self.mlp = None

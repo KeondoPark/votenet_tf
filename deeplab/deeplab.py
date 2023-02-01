@@ -207,7 +207,7 @@ if __name__ == '__main__':
   # pred_prob = run_semantic_seg_tflite(img, tflite_file='scannet_2_quant_edgetpu.tflite')
   # pred_prob = run_semantic_seg_tflite(img, tflite_file='scannet_2_quant_edgetpu.tflite')
   # print("Deeplab inference time", time.time() - start)
-  
+  '''
 
 
 

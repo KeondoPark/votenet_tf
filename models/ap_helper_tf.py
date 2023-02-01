@@ -13,7 +13,7 @@ from tensorflow.keras import layers
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
-from eval_det import eval_det_cls, eval_det_multiprocessing
+from eval_det import eval_det_cls, eval_det_multiprocessing, eval_det
 from eval_det import get_iou_obb
 from nms import nms_2d_faster, nms_3d_faster, nms_3d_faster_samecls
 from box_util import get_3d_box
@@ -44,7 +44,7 @@ def softmax(x):
     probs /= np.sum(probs, axis=len(shape)-1, keepdims=True)
     return probs
 
-def parse_predictions(end_points, config_dict):
+def parse_predictions(end_points, config_dict, prefix="", size_cls_agnostic=False):
     """ Parse predictions to OBB parameters and suppress overlapping boxes
     
     Args:
@@ -62,63 +62,26 @@ def parse_predictions(end_points, config_dict):
             where j = 0, ..., num of valid detections - 1 from sample input i
     """    
 
-    pred_center = end_points['center'] # B,num_proposal,3
-    K = tf.shape(end_points['heading_scores'])[1] #num_proposal
+    pred_center = end_points[f'{prefix}center'] # B,num_proposal,3
+    K = tf.shape(end_points[f'{prefix}heading_scores'])[1] #num_proposal
     
-    pred_heading_class = tf.math.argmax(end_points['heading_scores'], axis = -1) #(B, K)        
-    pred_heading_residual = tf.gather(end_points['heading_residuals'], axis=2, 
+    pred_heading_class = tf.math.argmax(end_points[f'{prefix}heading_scores'], axis = -1) #(B, K)        
+    pred_heading_residual = tf.gather(end_points[f'{prefix}heading_residuals'], axis=2, 
                                     indices=tf.expand_dims(pred_heading_class, axis=-1), batch_dims=2) #(B, K, num_heading_bin) -> (B, K, 1)    
     pred_heading_residual = tf.squeeze(pred_heading_residual, axis=[2])       
 
-    pred_size_class = tf.math.argmax(end_points['size_scores'], axis=-1) # B,num_proposal
+    if size_cls_agnostic:
+        pred_size = end_points[f'{prefix}pred_size']  # B, num_proposal, 3
+    else:
+        pred_size_class = tf.math.argmax(end_points[f'{prefix}size_scores'], axis=-1) # B,num_proposal
+        # (B, K, 10, 3) -> (B, K, 1, 3)
+        pred_size_residual = tf.gather(end_points[f'{prefix}size_residuals'], axis=2, 
+                                    indices=tf.expand_dims(pred_size_class, axis=-1), batch_dims=2)        
+        pred_size_residual = tf.squeeze(pred_size_residual, axis=[2]) # B,num_proposal,3            
     
-    # (B, K, 10, 3) -> (B, K, 1, 3)
-    pred_size_residual = tf.gather(end_points['size_residuals'], axis=2, 
-                                indices=tf.expand_dims(pred_size_class, axis=-1), batch_dims=2)        
-    pred_size_residual = tf.squeeze(pred_size_residual, axis=[2]) # B,num_proposal,3            
-    
-    pred_sem_cls = tf.math.argmax(end_points['sem_cls_scores'], axis=-1) # B,num_proposal
-    sem_cls_probs = softmax(end_points['sem_cls_scores'].numpy()) # B,num_proposal,10
-    pred_sem_cls_prob = np.max(sem_cls_probs,-1) # B,num_proposal
-
-
-    """
-    Pytorch validation    
-
-    pred_center_torch = torch.tensor(end_points['center'].numpy()) # B,num_proposal,3
-    heading_scores_torch = torch.tensor(end_points['heading_scores'].numpy())
-    pred_heading_class_torch = torch.argmax(heading_scores_torch, -1) # B,num_proposal
-    heading_residuals_torch = torch.tensor(end_points['heading_residuals'].numpy())
-    pred_heading_residual_torch = torch.gather(heading_residuals_torch, 2,
-        pred_heading_class_torch.unsqueeze(-1)) # B,num_proposal,1
-    pred_heading_residual_torch.squeeze_(2)
-    print("Heading scores:", end_points['heading_scores'][0])
-    print("(Tensorflow)Heading class:", pred_heading_class[0])
-    print("(Torch)Heading class:", pred_heading_class_torch[0])
-    
-    print("(Tensorflow)Heading residual:", pred_heading_residual[0])
-    print("(Torch)Heading residual:", pred_heading_residual_torch[0])
-
-    size_scores_torch  = torch.tensor(end_points['size_scores'].numpy())
-    pred_size_class_torch = torch.argmax(size_scores_torch, -1) # B,num_proposal
-    print("Size scores:", end_points['size_scores'][0])
-    print("(Tensorflow)Size class:", pred_size_class[0])
-    print("(Torch)Size class:", pred_size_class_torch[0])
-    print("(Tensorflow)Size residual before gather:", end_points['size_residuals'][0])    
-    size_residuals_torch = torch.tensor(end_points['size_residuals'].numpy())
-    pred_size_residual_torch = torch.gather(size_residuals_torch, 2,
-        pred_size_class_torch.unsqueeze(-1).unsqueeze(-1).repeat(1,1,1,3)) # B,num_proposal,1,3
-    pred_size_residual_torch.squeeze_(2)    
-    print("(Tensorflow)Size residual:", pred_size_residual[0])
-    print("(Torch)Size residual:", pred_size_residual_torch[0])
-
-    sem_cls_scores_torch  = torch.tensor(end_points['sem_cls_scores'].numpy())
-    pred_sem_cls_torch = torch.argmax(sem_cls_scores_torch, -1) # B,num_proposal
-    sem_cls_probs_torch = softmax(sem_cls_scores_torch.detach().cpu().numpy()) # B,num_proposal,10
-    pred_sem_cls_prob_torch = np.max(sem_cls_probs_torch,-1) # B,num_proposal
-    print("(Tensorflow)pred_sem_cls_prob:", pred_sem_cls_prob[0])
-    print("(Torch)pred_sem_cls_prob:", pred_sem_cls_prob_torch[0])
-    """
+    pred_sem_cls = tf.math.argmax(end_points[f'{prefix}sem_cls_scores'], axis=-1) # B,num_proposal
+    sem_cls_probs = softmax(end_points[f'{prefix}sem_cls_scores'].numpy()) # B,num_proposal,10
+    # pred_sem_cls_prob = np.max(sem_cls_probs,-1) # B,num_proposal
 
     num_proposal = tf.shape(pred_center)[1] 
     # Since we operate in upright_depth coord for points, while util functions
@@ -131,11 +94,18 @@ def parse_predictions(end_points, config_dict):
         for j in range(num_proposal):
             heading_angle = config_dict['dataset_config'].class2angle(\
                 pred_heading_class[i,j].numpy(), pred_heading_residual[i,j].numpy())
-            box_size = config_dict['dataset_config'].class2size(\
-                int(pred_size_class[i,j].numpy()), pred_size_residual[i,j].numpy())
+            
+            if size_cls_agnostic:
+                box_size = pred_size[i, j].numpy()
+            else:
+                box_size = config_dict['dataset_config'].class2size(\
+                    int(pred_size_class[i,j].numpy()), pred_size_residual[i,j].numpy())
+
             corners_3d_upright_camera = get_3d_box(box_size, heading_angle, pred_center_upright_camera[i,j,:])
             pred_corners_3d_upright_camera[i,j] = corners_3d_upright_camera
             pred_heading_angle[i,j] = heading_angle
+
+
 
     K = tf.shape(pred_center)[1] # K==num_proposal
     nonempty_box_mask = np.ones((bsize, K))
@@ -158,8 +128,8 @@ def parse_predictions(end_points, config_dict):
     # #============= Validation =======================
     #print("end_points['objectness_scores'][5]:", end_points['objectness_scores'][5])
     #============= Validation =======================  
-    obj_logits = tf.stop_gradient(end_points['objectness_scores']).numpy()
-    obj_prob = softmax(obj_logits)[:,:,1] # (B,K)
+    obj_logits = tf.stop_gradient(end_points[f'{prefix}objectness_scores']).numpy()
+    obj_prob = tf.math.sigmoid(obj_logits)[:,:,0] # (B,K)
     #============= Validation =======================
     #print("obj_prob[5]:", obj_prob[5])
     #============= Validation =======================
@@ -243,7 +213,7 @@ def parse_predictions(end_points, config_dict):
 
     return batch_pred_map_cls, pred_mask
 
-def parse_groundtruths(end_points, config_dict):
+def parse_groundtruths(end_points, config_dict, size_cls_agnostic=False):
     """ Parse groundtruth labels to OBB parameters.
     
     Args:
@@ -263,6 +233,13 @@ def parse_groundtruths(end_points, config_dict):
 
     bsize = end_points['center_label'].shape[0]
     K2 = end_points['center_label'].shape[1] # K2==MAX_NUM_OBJ
+
+    if size_cls_agnostic:
+        size_gts = end_points['size_gts']
+    else:
+        size_class_label = end_points['size_class_label']
+        size_residual_label = end_points['size_residual_label']
+
     box_label_mask = end_points['box_label_mask']
 
     gt_corners_3d_upright_camera = np.zeros((bsize, K2, 8, 3))
@@ -271,7 +248,10 @@ def parse_groundtruths(end_points, config_dict):
         for j in range(K2):
             if box_label_mask[i,j] == 0: continue
             heading_angle = config_dict['dataset_config'].class2angle(end_points['heading_class_label'][i,j].numpy(), end_points['heading_residual_label'][i,j].numpy())
-            box_size = config_dict['dataset_config'].class2size(int(end_points['size_class_label'][i,j].numpy()), end_points['size_residual_label'][i,j].numpy())
+            if size_cls_agnostic:
+                box_size = size_gts[i, j].numpy()
+            else:
+                box_size = config_dict['dataset_config'].class2size(int(size_class_label[i,j].numpy()), size_residual_label[i,j].numpy())
             corners_3d_upright_camera = get_3d_box(box_size, heading_angle, gt_center_upright_camera[i,j,:])
             gt_corners_3d_upright_camera[i,j] = corners_3d_upright_camera
 
@@ -316,6 +296,7 @@ class APCalculator(object):
         """
         
         rec, prec, ap = eval_det_multiprocessing(self.pred_map_cls, self.gt_map_cls, ovthresh=self.ap_iou_thresh, get_iou_func=get_iou_obb)
+        # rec, prec, ap = eval_det(self.pred_map_cls, self.gt_map_cls, ovthresh=self.ap_iou_thresh, get_iou_func=get_iou_obb)
         ret_dict = {} 
         for key in sorted(ap.keys()):
             clsname = self.class2type_map[key] if self.class2type_map else str(key)

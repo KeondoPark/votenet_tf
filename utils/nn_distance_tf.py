@@ -27,9 +27,10 @@ def huber_loss(error, delta=1.0):
     """
     abs_error = tf.abs(error)
     #quadratic = torch.min(abs_error, torch.FloatTensor([delta]))
-    quadratic = tf.clip_by_value(abs_error, clip_value_min = 0, clip_value_max=delta)
-    linear = (abs_error - quadratic)
-    loss = 0.5 * quadratic**2 + delta * linear
+    # quadratic = tf.clip_by_value(abs_error, clip_value_min = 0, clip_value_max=delta)
+    # linear = (abs_error - quadratic)
+    # loss = 0.5 * quadratic**2 + delta * linear
+    loss = tf.where(abs_error < delta, 0.5 * abs_error * abs_error / delta, abs_error - 0.5*delta)
     return loss
 
 def huber_loss_torch(error, delta=1.0):
@@ -64,8 +65,8 @@ def nn_distance(pc1, pc2, l1smooth=False, delta=1.0, l1=False):
         dist2: (B,M) torch float32 tensor
         idx2: (B,M) torch int64 tensor
     """
-    N = tf.shape(pc1)[1]
-    M = tf.shape(pc2)[1]
+    N = pc1.shape[1]
+    M = pc2.shape[1]
     pc1_expand_tile = tf.tile(tf.expand_dims(pc1, axis=2), multiples=[1,1,M,1])
     pc2_expand_tile = tf.tile(tf.expand_dims(pc2, axis=1), multiples=[1,N,1,1])
     pc_diff = pc1_expand_tile - pc2_expand_tile
@@ -111,6 +112,79 @@ def demo_nn_distance():
             dist[i,j] = np.sum(loss)
     print(dist)
 
+
+# class SigmoidFocalClassificationLoss(tf.keras.losses.Loss):
+class SigmoidFocalClassificationLoss():
+    """
+    Sigmoid focal cross entropy loss.
+    """
+
+    def __init__(self, gamma: float = 2.0, alpha: float = 0.25):
+        """
+        Args:
+            gamma: Weighting parameter to balance loss for hard and easy examples.
+            alpha: Weighting parameter to balance loss for positive and negative examples.
+        """
+        super(SigmoidFocalClassificationLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+
+    @staticmethod
+    def sigmoid_cross_entropy_with_logits(input_tensor, target):
+        """ PyTorch Implementation for tf.nn.sigmoid_cross_entropy_with_logits:
+            max(x, 0) - x * z + log(1 + exp(-abs(x))) in
+            https://www.tensorflow.org/api_docs/python/tf/nn/sigmoid_cross_entropy_with_logits
+
+        Args:
+            input: (B, #proposals, #classes) float tensor.
+                Predicted logits for each class
+            target: (B, #proposals, #classes) float tensor.
+                One-hot encoded classification targets
+
+        Returns:
+            loss: (B, #proposals, #classes) float tensor.
+                Sigmoid cross entropy loss without reduction
+        """
+        loss = tf.clip_by_value(input_tensor, clip_value_min=0, clip_value_max=tf.float32.max) - input_tensor * target + \
+               tf.math.log1p(tf.math.exp(-tf.abs(input_tensor)))
+        return loss
+
+    def forward(self, input_tensor, target, weights):
+        """
+        Args:
+            input: (B, #proposals, #classes) float tensor.
+                Predicted logits for each class
+            target: (B, #proposals, #classes) float tensor.
+                One-hot encoded classification targets
+            weights: (B, #proposals) float tensor.
+                Anchor-wise weights.
+
+        Returns:
+            weighted_loss: (B, #proposals, #classes) float tensor after weighting.
+        """
+
+
+        pred_sigmoid = tf.math.sigmoid(input_tensor)
+        alpha_weight = target * self.alpha + (1 - target) * (1 - self.alpha)
+        pt = target * (1.0 - pred_sigmoid) + (1.0 - target) * pred_sigmoid
+        focal_weight = alpha_weight * tf.math.pow(pt, self.gamma)
+
+        bce_loss = self.sigmoid_cross_entropy_with_logits(input_tensor, target)
+
+        loss = focal_weight * bce_loss
+
+        weights = tf.expand_dims(weights, -1)
+        assert weights.shape.__len__() == loss.shape.__len__()
+
+        # if tf.reduce_sum(loss * weights) < 0:
+        #     print("input tensor", input_tensor)
+        #     print("target", target)
+        #     print("weights", weights)
+        #     print("bce loss", tf.reduce_sum(bce_loss))
+        #     print("focal_weight", tf.reduce_sum(focal_weight))
+        #     print("weights", tf.reduce_sum(weights))
+
+        return loss * weights
 
 if __name__ == '__main__':
     demo_nn_distance()

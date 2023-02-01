@@ -24,16 +24,12 @@ from datetime import datetime
 import argparse
 import importlib
 
-#import torch
-#import torch.nn as nn
-#import torch.optim as optim
-#from torch.optim import lr_scheduler
-#from torch.utils.data import DataLoader
-
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 import time
+
+import tensorflow_addons as tfa
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
@@ -46,7 +42,7 @@ from ap_helper_tf import APCalculator, parse_predictions, parse_groundtruths
 from collections import defaultdict
 from torch.utils.data import DataLoader
 
-import votenet_tf
+import groupfree_tf
 import json
 
 parser = argparse.ArgumentParser()
@@ -59,20 +55,39 @@ parser.add_argument('--num_target', type=int, default=256, help='Proposal number
 parser.add_argument('--vote_factor', type=int, default=1, help='Vote factor [default: 1]')
 parser.add_argument('--cluster_sampling', default='vote_fps', help='Sampling strategy for vote clusters: vote_fps, seed_fps, random [default: vote_fps]')
 parser.add_argument('--ap_iou_thresh', type=float, default=0.25, help='AP IoU threshold [default: 0.25]')
-parser.add_argument('--max_epoch', type=int, default=180, help='Epoch to run [default: 180]')
+parser.add_argument('--max_epoch', type=int, default=400, help='Epoch to run [default: 400]')
 parser.add_argument('--batch_size', type=int, default=8, help='Batch Size during training [default: 8]')
-parser.add_argument('--learning_rate', type=float, default=0.001, help='Initial learning rate [default: 0.001]')
-parser.add_argument('--weight_decay', type=float, default=0, help='Optimization L2 weight decay [default: 0]')
-parser.add_argument('--bn_decay_step', type=int, default=20, help='Period of BN decay (in epochs) [default: 20]')
+
+parser.add_argument('--bn_decay_step', type=int, default=40, help='Period of BN decay (in epochs) [default: 20]')
 parser.add_argument('--bn_decay_rate', type=float, default=0.5, help='Decay rate for BN decay [default: 0.5]')
-parser.add_argument('--lr_decay_steps', default='80,120,160', help='When to decay the learning rate (in epochs) [default: 80,120,160]')
-parser.add_argument('--lr_decay_rates', default='0.1,0.1,0.1', help='Decay rates for lr decay [default: 0.1,0.1,0.1]')
+parser.add_argument('--lr_decay_steps', default='280,340', help='When to decay the learning rate (in epochs) [default: 280,340]')
+parser.add_argument('--lr_decay_rates', default='0.1,0.1', help='Decay rates for lr decay [default: 0.1,0.1]')
 parser.add_argument('--no_height', action='store_true', help='Do NOT use height signal in input.')
 parser.add_argument('--use_color', action='store_true', help='Use RGB color in input.')
 parser.add_argument('--use_sunrgbd_v2', action='store_true', help='Use V2 box labels for SUN RGB-D dataset')
 parser.add_argument('--overwrite', action='store_true', help='Overwrite existing log and dump folders.')
 parser.add_argument('--dump_results', action='store_true', help='Dump results.')
 parser.add_argument('--config_path', default=None, required=True, help='Model configuration path')
+
+parser.add_argument('--optimizer', default='adam', help='Which optimizer to use [adam or adamw]')
+parser.add_argument('--learning_rate', type=float, default=0.004, help='Initial learning rate [default: 0.001]')
+parser.add_argument('--weight_decay', type=float, default=0.0005, help='Optimization L2 weight decay [default: 0]')
+parser.add_argument('--decoder_learning_rate', type=float, default=0.0004, help='Initial learning rate for decoder [default: 0.0004]')
+
+parser.add_argument('--num_decoder_layers', default=6, type=int, help='number of decoder layers')
+parser.add_argument('--size_delta', default=1.0, type=float, help='delta for smoothl1 loss in size loss')
+parser.add_argument('--center_delta', default=1.0, type=float, help='delta for smoothl1 loss in center loss')
+parser.add_argument('--heading_delta', default=1.0, type=float, help='delta for smoothl1 loss in heading loss')
+parser.add_argument('--size_cls_agnostic', action='store_true', help='Use class-agnostic size prediction.')
+parser.add_argument('--query_points_generator_loss_coef', default=0.8, type=float)
+parser.add_argument('--obj_loss_coef', default=0.1, type=float, help='Loss weight for objectness loss')
+parser.add_argument('--box_loss_coef', default=1, type=float, help='Loss weight for box loss')
+parser.add_argument('--sem_cls_loss_coef', default=0.1, type=float, help='Loss weight for classification loss')
+parser.add_argument('--query_points_obj_topk', default=4, type=int, help='query_points_obj_topk')
+parser.add_argument('--clip_norm', default=0.1, type=float,
+                        help='gradient clipping max norm')
+
+
 FLAGS = parser.parse_args()
 
 # ------------------------------------------------------------------------- GLOBAL CONFIG BEG
@@ -84,9 +99,11 @@ MAX_EPOCH = FLAGS.max_epoch
 BASE_LEARNING_RATE = FLAGS.learning_rate
 BN_DECAY_STEP = FLAGS.bn_decay_step
 BN_DECAY_RATE = FLAGS.bn_decay_rate
+
 LR_DECAY_STEPS = [int(x) for x in FLAGS.lr_decay_steps.split(',')]
 LR_DECAY_RATES = [float(x) for x in FLAGS.lr_decay_rates.split(',')]
 assert(len(LR_DECAY_STEPS)==len(LR_DECAY_RATES))
+
 if FLAGS.log_dir is None:
     LOG_DIR = os.path.join('logs', model_config['model_id'])
 else:
@@ -103,7 +120,6 @@ if 'dataset' in model_config:
     DATASET = model_config['dataset']
 else:
     DATASET =  FLAGS.dataset
-
 
 # Prepare LOG_DIR and DUMP_DIR
 if os.path.exists(LOG_DIR) and FLAGS.overwrite:
@@ -135,16 +151,16 @@ def my_worker_init_fn(worker_id):
 # Create Dataset and Dataloader
 if DATASET == 'sunrgbd':
     sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
-    from sunrgbd_detection_dataset_tf import SunrgbdDetectionVotesDataset_tfrecord, MAX_NUM_OBJ
+    from sunrgbd_detection_dataset_tf import SunrgbdDetectionDataset_tfrecord, MAX_NUM_OBJ
     from model_util_sunrgbd import SunrgbdDatasetConfig
     include_person = 'include_person' in model_config and model_config['include_person']
     include_small = 'include_small' in model_config and model_config['include_small']
     DATASET_CONFIG = SunrgbdDatasetConfig(include_person=include_person, include_small=include_small)
-    TRAIN_DATASET = SunrgbdDetectionVotesDataset_tfrecord('train', num_points=NUM_POINT,
+    TRAIN_DATASET = SunrgbdDetectionDataset_tfrecord('train', num_points=NUM_POINT,
         augment=True, shuffle=True, batch_size=BATCH_SIZE,
         use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
         use_painted=use_painted, DC=DATASET_CONFIG)
-    TEST_DATASET = SunrgbdDetectionVotesDataset_tfrecord('val', num_points=NUM_POINT,
+    TEST_DATASET = SunrgbdDetectionDataset_tfrecord('val', num_points=NUM_POINT,
         augment=False,  shuffle=False, batch_size=BATCH_SIZE,
         use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
         use_painted=use_painted, DC=DATASET_CONFIG)
@@ -153,7 +169,7 @@ elif DATASET == 'scannet':
     from scannet_detection_dataset import ScannetDetectionDataset, MAX_NUM_OBJ
     from model_util_scannet import ScannetDatasetConfig
     DATASET_CONFIG = ScannetDatasetConfig()
-    NUM_POINT = 40000
+    # NUM_POINT = 40000
     TRAIN_DATASET = ScannetDetectionDataset('train', num_points=NUM_POINT,
         augment=True,
         use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
@@ -184,29 +200,43 @@ if use_painted:
     # Probabilties that each point belongs to each class + is the point belong to background(Boolean)
     num_input_channel += DATASET_CONFIG.num_class + 1 + 1
 
-mirrored_strategy = tf.distribute.MirroredStrategy()
-with mirrored_strategy.scope():
-    net = votenet_tf.VoteNet(num_class=DATASET_CONFIG.num_class,
-                num_heading_bin=DATASET_CONFIG.num_heading_bin,
-                num_size_cluster=DATASET_CONFIG.num_size_cluster,
-                mean_size_arr=DATASET_CONFIG.mean_size_arr,
-                num_proposal=FLAGS.num_target,
-                input_feature_dim=num_input_channel,
-                vote_factor=FLAGS.vote_factor,
-                sampling=FLAGS.cluster_sampling,
-                model_config=model_config)
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    try:
+        tf.config.experimental.set_memory_growth(gpus[0], True)
+    except RuntimeError as e:    
+        print(e)
+
+# mirrored_strategy = tf.distribute.MirroredStrategy()
+# with mirrored_strategy.scope():
+net = groupfree_tf.GroupFreeNet(num_class=DATASET_CONFIG.num_class,
+            num_heading_bin=DATASET_CONFIG.num_heading_bin,
+            num_size_cluster=DATASET_CONFIG.num_size_cluster,
+            mean_size_arr=DATASET_CONFIG.mean_size_arr,
+            num_proposal=FLAGS.num_target,
+            input_feature_dim=num_input_channel,                                
+            model_config=model_config,
+            size_cls_agnostic=FLAGS.size_cls_agnostic)
 
 import loss_helper_tf
-with mirrored_strategy.scope():
-    criterion = loss_helper_tf.get_loss
+# with mirrored_strategy.scope():
+criterion = loss_helper_tf.get_loss
 
-    # Load the Adam optimizer # No weight decay in tf basic adam optimizer... so ignore
-    optimizer = tf.keras.optimizers.Adam(learning_rate=BASE_LEARNING_RATE)
+# Load the optimizer
+if FLAGS.optimizer == 'adamw':
+    optimizer1 = tfa.optimizers.AdamW(learning_rate=FLAGS.learning_rate, weight_decay=FLAGS.weight_decay)
+    optimizer2 = tfa.optimizers.AdamW(learning_rate=FLAGS.decoder_learning_rate, weight_decay=FLAGS.weight_decay)
+    # optimizer1 = tf.keras.optimizers.experimental.AdamW(learning_rate=FLAGS.learning_rate, weight_decay=FLAGS.weight_decay)
+    # optimizer2 = tf.keras.optimizers.experimental.AdamW(learning_rate=FLAGS.decoder_learning_rate, weight_decay=FLAGS.weight_decay)
+else:
+    optimizer1 = tf.keras.optimizers.Adam(learning_rate=FLAGS.learning_rate)
+    optimizer2 = tf.keras.optimizers.Adam(learning_rate=FLAGS.decoder_learning_rate)
+
 
 # Load checkpoint if there is any
 it = -1 # for the initialize value of `LambdaLR` and `BNMomentumScheduler`
 start_epoch = 0
-ckpt = tf.train.Checkpoint(epoch=tf.Variable(0), optimizer=optimizer, net=net)
+ckpt = tf.train.Checkpoint(epoch=tf.Variable(0), optimizer1=optimizer1, optimizer2=optimizer2, net=net)
 
 if CHECKPOINT_PATH is None:
     print("Use defualt checkpoint path")
@@ -216,36 +246,34 @@ if not os.path.exists(CHECKPOINT_PATH):
     os.mkdir(CHECKPOINT_PATH)
 
 
-with mirrored_strategy.scope():
-    manager = tf.train.CheckpointManager(ckpt, CHECKPOINT_PATH, max_to_keep=3)
-    ckpt.restore(manager.latest_checkpoint)
-    print("Start epoch:", ckpt.epoch)
-    if manager.latest_checkpoint:
-        print("Restored from {}".format(manager.latest_checkpoint))
-        start_epoch = ckpt.epoch.numpy()
-    else:
-        print("Initializing from scratch.")
+# with mirrored_strategy.scope():
+manager = tf.train.CheckpointManager(ckpt, CHECKPOINT_PATH, max_to_keep=3)
+ckpt.restore(manager.latest_checkpoint)
+print("Start epoch:", ckpt.epoch)
+if manager.latest_checkpoint:
+    print("Restored from {}".format(manager.latest_checkpoint))
+    start_epoch = ckpt.epoch.numpy()
+else:
+    print("Initializing from scratch.")
 
-        #net.load_weights(CHECKPOINT_PATH)    
-        #log_string("-> loaded checkpoint %s"%(CHECKPOINT_PATH))
-
-
+        
 # Decay Batchnorm momentum from 0.5 to 0.001
 # note: pytorch's BN momentum (default 0.1)= 1 - tensorflow's BN momentum
 BN_MOMENTUM_INIT = 0.5
 BN_MOMENTUM_MAX = 0.001
-bn_lbmd = lambda it: 1 - max(BN_MOMENTUM_INIT * BN_DECAY_RATE**(int(it / BN_DECAY_STEP)), BN_MOMENTUM_MAX)
-bnm_scheduler = BNMomentumScheduler(net, bn_lambda=bn_lbmd, last_epoch=start_epoch-1)
+# bn_lmbd = lambda it: 1 - max(BN_MOMENTUM_INIT * BN_DECAY_RATE**(int(it / BN_DECAY_STEP)), BN_MOMENTUM_MAX)
+bn_lmbd = lambda it: 0.9
+bnm_scheduler = BNMomentumScheduler(net, bn_lambda=bn_lmbd, last_epoch=start_epoch-1)
 
-def get_current_lr(epoch):
-    lr = BASE_LEARNING_RATE
+def get_current_lr(epoch, base_lr):
+    lr = base_lr
     for i,lr_decay_epoch in enumerate(LR_DECAY_STEPS):
         if epoch >= lr_decay_epoch:
             lr *= LR_DECAY_RATES[i]
     return lr
 
-def adjust_learning_rate(optimizer, epoch):
-    lr = get_current_lr(epoch)
+def adjust_learning_rate(optimizer, epoch, base_lr):
+    lr = get_current_lr(epoch, base_lr)
     optimizer.learning_rate = lr
 
 if DATASET == 'sunrgbd':
@@ -267,10 +295,11 @@ CONFIG_DICT = {'remove_empty_box':False, 'use_3d_nms':True,
     'dataset_config':DATASET_CONFIG}
 
 label_dict = {0:'point_cloud', 1:'center_label', 2:'heading_class_label', 3:'heading_residual_label', 4:'size_class_label',\
-    5:'size_residual_label', 6:'sem_cls_label', 7:'box_label_mask', 8:'vote_label', 9:'vote_label_mask', 10: 'max_gt_bboxes'}
+    5:'size_residual_label', 6:'sem_cls_label', 7:'box_label_mask', 8:'point_obj_mask', 9:'point_instance_label', 10: 'max_gt_bboxes', 11: 'size_gts'}
 
 # ------------------------------------------------------------------------- GLOBAL CONFIG END
 
+@tf.function
 def train_one_epoch(batch_data):     
 
     # For type match 
@@ -278,7 +307,7 @@ def train_one_epoch(batch_data):
         tf.constant(DATASET_CONFIG.num_size_cluster, dtype=tf.int32), \
         tf.constant(DATASET_CONFIG.num_class, dtype=tf.int32), \
         tf.constant(DATASET_CONFIG.mean_size_arr, dtype=tf.float32)
-    
+
     # Forward pass
     with tf.GradientTape() as tape:
 
@@ -290,11 +319,41 @@ def train_one_epoch(batch_data):
             if label_dict[i] not in end_points:
                 end_points[label_dict[i]] = batch_data[i]        
         
-        loss, end_points = criterion(end_points, config)        
+        loss, end_points = criterion(end_points, config, num_decoder_layers=FLAGS.num_decoder_layers,
+                                     query_points_generator_loss_coef=FLAGS.query_points_generator_loss_coef,
+                                     obj_loss_coef=FLAGS.obj_loss_coef,
+                                     box_loss_coef=FLAGS.box_loss_coef,
+                                     sem_cls_loss_coef=FLAGS.sem_cls_loss_coef,
+                                     query_points_obj_topk=FLAGS.query_points_obj_topk,
+                                     center_delta=FLAGS.center_delta,                                     
+                                     size_delta=FLAGS.size_delta,                                     
+                                     heading_delta=FLAGS.heading_delta,
+                                     size_cls_agnostic=FLAGS.size_cls_agnostic)    
 
     grads = tape.gradient(loss, net.trainable_weights)
+    # grads = [tf.clip_by_norm(g, FLAGS.clip_norm) for g in grads]
 
-    optimizer.apply_gradients(zip(grads, net.trainable_weights))
+    shapes = [g.shape for g in grads]
+    grads_flatten = [tf.reshape(g, (-1,)) for g in grads]
+    grads_flatten, global_norm = tf.clip_by_global_norm(grads_flatten, FLAGS.clip_norm)
+
+    grads = []
+    for g, s in zip(grads_flatten, shapes):                        
+        grads.append(tf.reshape(g, s))
+
+    # DIfferent learning rate by layers
+    varlist1, varlist2 = [], []
+    gradlist1, gradlist2 = [], []
+    for v, g in zip(net.trainable_weights, grads):  
+        if 'decoder' in v.name:
+            varlist2.append(v)
+            gradlist2.append(g)
+        else:
+            varlist1.append(v)
+            gradlist1.append(g)
+    # optimizer1.apply_gradients(zip(grads, net.trainable_weights))      
+    optimizer1.apply_gradients(zip(gradlist1, varlist1))    
+    optimizer2.apply_gradients(zip(gradlist2, varlist2))
 
     return loss
 
@@ -315,7 +374,16 @@ def evaluate_one_epoch(batch_data):
         tf.constant(DATASET_CONFIG.num_class, dtype=tf.int32), \
         tf.constant(DATASET_CONFIG.mean_size_arr, dtype=tf.float32)
 
-    loss, end_points = criterion(end_points, config)        
+    loss, end_points = criterion(end_points, config, num_decoder_layers=FLAGS.num_decoder_layers,
+                                     query_points_generator_loss_coef=FLAGS.query_points_generator_loss_coef,
+                                     obj_loss_coef=FLAGS.obj_loss_coef,
+                                     box_loss_coef=FLAGS.box_loss_coef,
+                                     sem_cls_loss_coef=FLAGS.sem_cls_loss_coef,
+                                     query_points_obj_topk=FLAGS.query_points_obj_topk,
+                                     center_delta=FLAGS.center_delta,                                     
+                                     size_delta=FLAGS.size_delta,                                     
+                                     heading_delta=FLAGS.heading_delta,
+                                     size_cls_agnostic=FLAGS.size_cls_agnostic)     
 
     return loss, end_points
          
@@ -331,34 +399,39 @@ def train(start_epoch):
         tf.TensorSpec(shape=(None, 64, 3), dtype=tf.float32), #size_residual_label
         tf.TensorSpec(shape=(None, 64), dtype=tf.int64), #sem_cls_label
         tf.TensorSpec(shape=(None, 64), dtype=tf.float32), #box_label_mask
-        tf.TensorSpec(shape=(None, NUM_POINT,9), dtype=tf.float32), #vote_label
-        tf.TensorSpec(shape=(None, NUM_POINT,), dtype=tf.int64), #vote_label_mask
+        tf.TensorSpec(shape=(None, NUM_POINT), dtype=tf.float32), #point_obj_mask
+        tf.TensorSpec(shape=(None, NUM_POINT), dtype=tf.int64), #point_instance_label
         tf.TensorSpec(shape=(None, 64,8), dtype=tf.float32), #max_gt_bboxes                           
+        tf.TensorSpec(shape=(None, 64,3), dtype=tf.float32), #size_gts
     ]]
 
     # `run` replicates the provided computation and runs it
     # with the distributed input.
-    @tf.function(experimental_relax_shapes=True, input_signature=input_signature)
-    def distributed_train_step(batch_data):
-        per_replica_losses = mirrored_strategy.run(train_one_epoch, args=(batch_data, ))
-        return mirrored_strategy.reduce(tf.distribute.ReduceOp.MEAN, per_replica_losses, axis=None)
+    # @tf.function(experimental_relax_shapes=True, input_signature=input_signature)
+    # def distributed_train_step(batch_data):
+    #     per_replica_losses = mirrored_strategy.run(train_one_epoch, args=(batch_data, ))
+    #     return mirrored_strategy.reduce(tf.distribute.ReduceOp.MEAN, per_replica_losses, axis=None)
         
 
-    @tf.function(experimental_relax_shapes=True)
-    def distributed_eval_step(batch_data):
-        per_replica_losses, end_points = mirrored_strategy.run(evaluate_one_epoch, args=(batch_data,))
-        return mirrored_strategy.reduce(tf.distribute.ReduceOp.MEAN, per_replica_losses, axis=None), end_points
+    # @tf.function(experimental_relax_shapes=True)
+    # def distributed_eval_step(batch_data):
+    #     per_replica_losses, end_points = mirrored_strategy.run(evaluate_one_epoch, args=(batch_data,))
+    #     return mirrored_strategy.reduce(tf.distribute.ReduceOp.MEAN, per_replica_losses, axis=None), end_points
     
     best_eval_mAP = 0.0
     
     for epoch in range(start_epoch, MAX_EPOCH):
         EPOCH_CNT = epoch
         log_string('**** EPOCH %03d ****' % (epoch))
-        log_string('Current learning rate: %f'%(get_current_lr(epoch)))
+        log_string('Current learning rate: %f'%(get_current_lr(epoch, FLAGS.learning_rate)))
+        log_string('Current decoder learning rate: %f'%(get_current_lr(epoch, FLAGS.decoder_learning_rate)))
         log_string('Current BN decay momentum: %f'%(bnm_scheduler.lmbd(bnm_scheduler.last_epoch)))
         log_string(str(datetime.now()))  
                 
-        adjust_learning_rate(optimizer, EPOCH_CNT)
+        adjust_learning_rate(optimizer1, EPOCH_CNT, FLAGS.learning_rate)
+        adjust_learning_rate(optimizer2, EPOCH_CNT, FLAGS.decoder_learning_rate)
+        # adjust_learning_rate(optimizer, EPOCH_CNT)
+
         bnm_scheduler.step() # decay BN momentum  
         train_loss = tf.constant(0.0, tf.float32)
         eval_loss = tf.constant(0.0, tf.float32)
@@ -374,22 +447,23 @@ def train(start_epoch):
                 heading_class_label = tf.convert_to_tensor(batch_data['heading_class_label'], dtype=tf.int64)
                 heading_residual_label = tf.convert_to_tensor(batch_data['heading_residual_label'],dtype=tf.float32)
                 size_class_label = tf.convert_to_tensor(batch_data['size_class_label'], dtype=tf.int64)
-                size_residual_label = tf.convert_to_tensor(batch_data['size_residual_label'], dtype=tf.float32)
+                size_residual_label = tf.convert_to_tensor(batch_data['size_residual_label'], dtype=tf.float32)                
                 sem_cls_label = tf.convert_to_tensor(batch_data['sem_cls_label'], dtype=tf.int64)
                 box_label_mask = tf.convert_to_tensor(batch_data['box_label_mask'], dtype=tf.float32)
-                vote_label = tf.convert_to_tensor(batch_data['vote_label'], tf.float32)
-                vote_label_mask = tf.convert_to_tensor(batch_data['vote_label_mask'], tf.int64)
+                point_obj_mask = tf.convert_to_tensor(batch_data['point_obj_mask'], tf.float32)
+                point_instance_label = tf.convert_to_tensor(batch_data['point_instance_label'], tf.int64)
                 max_gt_bboxes = tf.convert_to_tensor(np.zeros((BATCH_SIZE, 64, 8)), dtype=tf.float32) 
+                size_gts = tf.convert_to_tensor(batch_data['size_gts'], dtype=tf.float32)
                 batch_data = point_clouds, center_label, heading_class_label, heading_residual_label, size_class_label, \
-                    size_residual_label, sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes                
+                    size_residual_label, sem_cls_label, box_label_mask, point_obj_mask, point_instance_label, max_gt_bboxes, size_gts                            
             else:                
                 point_cloud = batch_data[0]    
                 if point_cloud.shape[0] < BATCH_SIZE: continue
             
 
-            train_loss += distributed_train_step(batch_data)
+            # train_loss += distributed_train_step(batch_data)
             
-            #train_loss += train_one_epoch(batch_data)            
+            train_loss += train_one_epoch(batch_data)            
             
             # Accumulate statistics and print out
             #for key in end_points:
@@ -410,7 +484,8 @@ def train(start_epoch):
         t_epoch = time.time() - start
         log_string("1 Epoch training time:" + str(t_epoch))        
                
-        if EPOCH_CNT+1 >= 100 and (EPOCH_CNT % 10 == 9 or EPOCH_CNT == 0): # Eval every 10 epochs                                
+        # if EPOCH_CNT+1 >= 100 and (EPOCH_CNT % 10 == 9 or EPOCH_CNT == 0): # Eval every 10 epochs                                
+        if (EPOCH_CNT % 10 == 9 or EPOCH_CNT == 0): # Eval every 10 epochs                                
             stat_dict = defaultdict(float) # collect statistics            
             ap_calculator = APCalculator(ap_iou_thresh=FLAGS.ap_iou_thresh,
                 class2type_map=DATASET_CONFIG.class2type)     
@@ -424,30 +499,40 @@ def train(start_epoch):
                     size_residual_label = tf.convert_to_tensor(batch_data['size_residual_label'], dtype=tf.float32)
                     sem_cls_label = tf.convert_to_tensor(batch_data['sem_cls_label'], dtype=tf.int64)
                     box_label_mask = tf.convert_to_tensor(batch_data['box_label_mask'], dtype=tf.float32)
-                    vote_label = tf.convert_to_tensor(batch_data['vote_label'], tf.float32)
-                    vote_label_mask = tf.convert_to_tensor(batch_data['vote_label_mask'], tf.int64)
+                    point_obj_mask = tf.convert_to_tensor(batch_data['point_obj_mask'], tf.float32)
+                    point_instance_label = tf.convert_to_tensor(batch_data['point_instance_label'], tf.int64)
                     max_gt_bboxes = tf.convert_to_tensor(np.zeros((BATCH_SIZE, 64, 8)), dtype=tf.float32) 
+                    size_gts = tf.convert_to_tensor(batch_data['size_gts'], dtype=tf.float32)
                     batch_data = point_clouds, center_label, heading_class_label, heading_residual_label, size_class_label, \
-                        size_residual_label, sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes  
+                    size_residual_label, sem_cls_label, box_label_mask, point_obj_mask, point_instance_label, max_gt_bboxes, size_gts
                 if batch_idx % 10 == 0:
                     print('Eval batch: %d'%(batch_idx)) 
                 
-                curr_loss, end_points = distributed_eval_step(batch_data)
-                #curr_loss, end_points = evaluate_one_epoch(batch_data)
+                # curr_loss, end_points = distributed_eval_step(batch_data)
+                curr_loss, end_points = evaluate_one_epoch(batch_data)
                 eval_loss += curr_loss
 
-                stat_dict['box_loss'] += end_points['box_loss']
-                stat_dict['heading_reg_loss'] += end_points['heading_reg_loss']
-                stat_dict['vote_loss'] += end_points['vote_loss']
-                stat_dict['objectness_loss'] += end_points['objectness_loss']
-                stat_dict['sem_cls_loss'] += end_points['sem_cls_loss']
-                stat_dict['loss'] += end_points['loss']
-                stat_dict['obj_acc'] += end_points['obj_acc']
-                stat_dict['pos_ratio'] += end_points['pos_ratio']
-                stat_dict['neg_ratio'] += end_points['neg_ratio']
+                # stat_dict['box_loss'] += end_points['box_loss']
+                # stat_dict['heading_reg_loss'] += end_points['heading_reg_loss']
+                # stat_dict['vote_loss'] += end_points['vote_loss']
+                # stat_dict['objectness_loss'] += end_points['objectness_loss']
+                # stat_dict['sem_cls_loss'] += end_points['sem_cls_loss']
+                # stat_dict['loss'] += end_points['loss']
+                # stat_dict['obj_acc'] += end_points['obj_acc']
+                # stat_dict['pos_ratio'] += end_points['pos_ratio']
+                # stat_dict['neg_ratio'] += end_points['neg_ratio']
 
-                batch_pred_map_cls, pred_mask = parse_predictions(end_points, CONFIG_DICT)        
-                batch_gt_map_cls = parse_groundtruths(end_points, CONFIG_DICT) 
+                # Accumulate statistics and print out
+                for key in end_points:
+                    if 'loss' in key or 'acc' in key or 'ratio' in key:
+                        if key not in stat_dict: stat_dict[key] = 0
+                        if isinstance(end_points[key], float) or isinstance(end_points[key], int):
+                            stat_dict[key] += end_points[key]
+                        else:
+                            stat_dict[key] += end_points[key].numpy()
+
+                batch_pred_map_cls, pred_mask = parse_predictions(end_points, CONFIG_DICT, prefix='last_', size_cls_agnostic=FLAGS.size_cls_agnostic)        
+                batch_gt_map_cls = parse_groundtruths(end_points, CONFIG_DICT)
                 ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)    
 
 
@@ -464,7 +549,7 @@ def train(start_epoch):
 
             
             eval_mAP = metrics_dict['mAP']
-            if eval_mAP > best_eval_mAP:
+            if eval_mAP > best_eval_mAP:                
                 save_path = manager.save(checkpoint_number=ckpt.epoch)
                 log_string("Saved checkpoint for step {}: {}".format(int(ckpt.epoch), save_path))
                 best_eval_mAP = eval_mAP

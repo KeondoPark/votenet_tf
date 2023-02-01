@@ -135,7 +135,7 @@ class ProposalModule(layers.Layer):
             self.bn1 = layers.BatchNormalization(axis=-1)
             self.bn2 = layers.BatchNormalization(axis=-1)
 
-            act = model_config['activation'] if 'activation' in model_config['activation'] else 'relu6'
+            act = model_config['activation'] if 'activation' in model_config else 'relu6'
             if act == 'relu6':
                 maxval = 6
             else:

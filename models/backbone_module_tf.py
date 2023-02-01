@@ -512,8 +512,8 @@ class Pointnet2Backbone_tflite(layers.Layer):
         B = tf.shape(xyz)[0]
         N = tf.shape(xyz)[1]
         npoint = tf.shape(inds)[1]
-        batch_inds = tf.expand_dims(tf.tile(tf.expand_dims(tf.range(B),-1), [1,npoint]), -1)
-        new_inds = tf.concat([batch_inds, tf.expand_dims(inds, -1)], -1)
+        batch_inds = tf.expand_dims(tf.tile(tf.expand_dims(tf.range(B),-1), [1,npoint]), -1) # (B, npoint,1)
+        new_inds = tf.concat([batch_inds, tf.expand_dims(inds, -1)], -1) # (B, npoint, 2)
         updates = tf.cast(tf.ones([B,npoint]), tf.bool)
         mask = tf.scatter_nd(new_inds, updates, [B,N]) # mask where sa1_inds = True
 

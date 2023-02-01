@@ -37,10 +37,7 @@ import deeplab
 
 import json
 ROOT_DIR = os.path.dirname(BASE_DIR)
-environ_file = os.path.join(ROOT_DIR,'configs','environ.json')
-environ = json.load(open(environ_file))['environ']
-
-DATA_DIR = BASE_DIR
+DATA_DIR = 'data_dir'
 
 DEFAULT_TYPE_WHITELIST = ['bed','table','sofa','chair','toilet','desk','dresser','night_stand','bookshelf','bathtub']
 
@@ -297,7 +294,7 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
             for XYZ and RGB (in 0~1) in upright depth coord
         bboxes: (K,8) where K is the number of objects, 8 is for
             centroids (cx,cy,cz), dimension (l,w,h), heanding_angle and semantic_class
-        point_votes: (N,10) with 0/1 indicating whether the point belongs to an object,
+        point_votes: (N,2) with 0/1 indicating whether the point belongs to an object,
             then three sets of GT votes for up to three objects. If the point is only in one
             object's OBB, then the three GT votes are the same.
     """
@@ -315,11 +312,11 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
         """Returns an int64_list from a bool / enum / int / uint."""
         return tf.train.Feature(int64_list=tf.train.Int64List(value=input_list))
     
-    def create_example(point_cloud, bboxes, point_votes, n_valid_box):    
+    def create_example(point_cloud, bboxes, point_labels, n_valid_box):    
         feature = {        
             'point_cloud': _float_feature(list(point_cloud.reshape((-1)))),
             'bboxes': _float_feature(list(bboxes.reshape((-1)))),
-            'point_votes':_float_feature(list(point_votes.reshape((-1)))),
+            'point_labels':_float_feature(list(point_labels.reshape((-1)))),
             'n_valid_box':_int64_feature([n_valid_box])
         }
 
@@ -486,9 +483,11 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                     ######################################################################################################
             
                 N = pc_upright_depth_subsampled.shape[0]
-                point_votes = np.zeros((N,10)) # 3 votes and 1 vote mask 
-                point_vote_idx = np.zeros((N)).astype(np.int32) # in the range of [0,2]
+                point_votes = np.zeros((N,13)) # 3 votes and 1 vote mask 
+                point_votes[:, 10:13] = -1
+                point_vote_idx = np.zeros((N)).astype(np.int32)                
                 indices = np.arange(N)
+                i_obj = 0
                 for obj in objects:
                     if obj.classname not in type_whitelist: continue
                     try:
@@ -505,21 +504,65 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                         for i in range(len(sparse_inds)):
                             j = sparse_inds[i]
                             point_votes[j, int(point_vote_idx[j]*3+1):int((point_vote_idx[j]+1)*3+1)] = votes[i,:]
+                            point_votes[j, point_vote_idx[j] + 10] = i_obj
+
                             # Populate votes with the fisrt vote
                             if point_vote_idx[j] == 0:
                                 point_votes[j,4:7] = votes[i,:]
                                 point_votes[j,7:10] = votes[i,:]
+                                point_votes[j, 10] = i_obj
+                                point_votes[j, 11] = i_obj
+                                point_votes[j, 12] = i_obj
                         point_vote_idx[inds] = np.minimum(2, point_vote_idx[inds]+1)
+                        i_obj += 1
                     except:
-                        print('ERROR ----',  data_idx, obj.classname)                
+                        print('ERROR ----',  data_idx, obj.classname)         
+
+                # choose the nearest as the first gt for each point
+                for ip in range(N):
+                    is_pos = (point_votes[ip, 0] > 0)
+                    if is_pos:
+                        vote_delta1 = point_votes[ip, 1:4].copy()
+                        vote_delta2 = point_votes[ip, 4:7].copy()
+                        vote_delta3 = point_votes[ip, 7:10].copy()
+                        dist1 = np.sum(vote_delta1 ** 2)
+                        dist2 = np.sum(vote_delta2 ** 2)
+                        dist3 = np.sum(vote_delta3 ** 2)
+
+                        gt_ind1 = int(point_votes[ip, 10].copy())
+                        # gt_ind2 = int(point_votes[ip, 11].copy())
+                        # gt_ind3 = int(point_votes[ip, 12].copy())
+                        # gt1 = obbs[gt_ind1]
+                        # gt2 = obbs[gt_ind2]
+                        # gt3 = obbs[gt_ind3]
+                        # size_norm_vote_delta1 = vote_delta1 / gt1[3:6]
+                        # size_norm_vote_delta2 = vote_delta2 / gt2[3:6]
+                        # size_norm_vote_delta3 = vote_delta3 / gt3[3:6]
+                        # size_norm_dist1 = np.sum(size_norm_vote_delta1 ** 2)
+                        # size_norm_dist2 = np.sum(size_norm_vote_delta2 ** 2)
+                        # size_norm_dist3 = np.sum(size_norm_vote_delta3 ** 2)
+
+                        near_ind = np.argmin([dist1, dist2, dist3])
+                        # near_ind = np.argmin([size_norm_dist1, size_norm_dist2, size_norm_dist3])
+
+                        point_votes[ip, 10] = point_votes[ip, 10 + near_ind].copy()
+                        point_votes[ip, 10 + near_ind] = gt_ind1
+                        point_votes[ip, 1:4] = point_votes[ip, int(near_ind * 3 + 1):int((near_ind + 1) * 3 + 1)].copy()
+                        point_votes[ip, int(near_ind * 3 + 1):int((near_ind + 1) * 3 + 1)] = vote_delta1
+                    else:
+                        assert point_votes[ip, 10] == -1, "error"
+                        assert point_votes[ip, 11] == -1, "error"
+                        assert point_votes[ip, 12] == -1, "error" 
+
+                point_labels = point_votes[:,[0,10]]
                 
 
                 #f.write(str(data_idx) + '\t' + str(np.sum(isPainted)) + '\t' 
                 #        + str(np.sum(point_votes[:,0])) + '\t' + str(np.sum(point_votes[:,0] * isPainted)) +'\n')                                
                 if pointpainting:
-                    tf_example = create_example(painted_pc, obbs, point_votes, n_valid_box) 
+                    tf_example = create_example(painted_pc, obbs, point_labels, n_valid_box) 
                 else:
-                    tf_example = create_example(pc_upright_depth_subsampled, obbs, point_votes, n_valid_box)
+                    tf_example = create_example(pc_upright_depth_subsampled, obbs, point_labels, n_valid_box)
                                 
                 writer.write(tf_example.SerializeToString())                
                 
@@ -916,33 +959,33 @@ if __name__=='__main__':
         exit()
 
     if args.gen_v1_data:
-        extract_sunrgbd_data(os.path.join(BASE_DIR, 'sunrgbd_trainval/train_data_idx.txt'),
+        extract_sunrgbd_data(os.path.join(DATA_DIR, 'sunrgbd_trainval/train_data_idx.txt'),
             split = 'training',
-            output_folder = os.path.join(BASE_DIR, 'sunrgbd_pc_bbox_votes_50k_v1_train'),
+            output_folder = os.path.join(DATA_DIR, 'sunrgbd_pc_bbox_votes_50k_v1_train'),
             save_votes=True, num_point=50000, use_v1=True, skip_empty_scene=False)
-        extract_sunrgbd_data(os.path.join(BASE_DIR, 'sunrgbd_trainval/val_data_idx.txt'),
+        extract_sunrgbd_data(os.path.join(DATA_DIR, 'sunrgbd_trainval/val_data_idx.txt'),
             split = 'training',
-            output_folder = os.path.join(BASE_DIR, 'sunrgbd_pc_bbox_votes_50k_v1_val'),
+            output_folder = os.path.join(DATA_DIR, 'sunrgbd_pc_bbox_votes_50k_v1_val'),
             save_votes=True, num_point=50000, use_v1=True, skip_empty_scene=False)
     
     if args.gen_v2_data:
-        extract_sunrgbd_data(os.path.join(BASE_DIR, 'sunrgbd_trainval/train_data_idx.txt'),
+        extract_sunrgbd_data(os.path.join(DATA_DIR, 'sunrgbd_trainval/train_data_idx.txt'),
             split = 'training',
-            output_folder = os.path.join(BASE_DIR, 'sunrgbd_pc_bbox_votes_50k_v2_train'),
+            output_folder = os.path.join(DATA_DIR, 'sunrgbd_pc_bbox_votes_50k_v2_train'),
             save_votes=True, num_point=50000, use_v1=False, skip_empty_scene=False)
-        extract_sunrgbd_data(os.path.join(BASE_DIR, 'sunrgbd_trainval/val_data_idx.txt'),
+        extract_sunrgbd_data(os.path.join(DATA_DIR, 'sunrgbd_trainval/val_data_idx.txt'),
             split = 'training',
-            output_folder = os.path.join(BASE_DIR, 'sunrgbd_pc_bbox_votes_50k_v2_val'),
+            output_folder = os.path.join(DATA_DIR, 'sunrgbd_pc_bbox_votes_50k_v2_val'),
             save_votes=True, num_point=50000, use_v1=False, skip_empty_scene=False)
 
     if args.tfrecord and not args.painted:
         extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/train_data_idx.txt'),
             split = 'training',
-            output_folder = os.path.join(os.path.dirname(os.path.dirname(BASE_DIR)), 'sunrgbd_pc_train_tf'),
+            output_folder = os.path.join(DATA_DIR, 'gf_sunrgbd_pc_train_tf'),
             num_point=50000, use_v1=True, skip_empty_scene=False)
         extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/val_data_idx.txt'),
             split = 'training',
-            output_folder = os.path.join(os.path.dirname(os.path.dirname(BASE_DIR)), 'sunrgbd_pc_val_tf'),
+            output_folder = os.path.join(DATA_DIR, 'gf_sunrgbd_pc_val_tf'),
             num_point=50000, use_v1=True, skip_empty_scene=False)
 
     if args.painted:
@@ -956,8 +999,8 @@ if __name__=='__main__':
         else:
             train_data_idx_file = 'train_data_idx.txt'
             val_data_idx_file = 'val_data_idx.txt'
-            output_folder_train = 'sunrgbd_pc_train_painted_tf4'
-            output_folder_val = 'sunrgbd_pc_val_painted_tf4'
+            output_folder_train = 'gf_sunrgbd_pc_train_painted_tf'
+            output_folder_val = 'gf_sunrgbd_pc_val_painted_tf'
 
         if args.include_small:
             output_folder_train += '_sm'

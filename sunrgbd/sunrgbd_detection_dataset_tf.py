@@ -30,15 +30,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
 
 import json
-environ_file = os.path.join(ROOT_DIR,'configs','environ.json')
-environ = json.load(open(environ_file))['environ']
-
-#DATA_DIR = os.path.dirname(ROOT_DIR)
-if environ == 'server':    
-    DATA_DIR = '/home/aiot/data'
-
-elif environ in ['server2', 'jetson']:    
-    DATA_DIR = '/data'
+DATA_DIR = os.path.join(BASE_DIR, 'data_dir')
     
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
@@ -91,18 +83,18 @@ class SunrgbdDetectionVotesDataset(keras.utils.Sequence):
             size_classe_label: (MAX_NUM_OBJ,) with int values in 0,...,NUM_SIZE_CLUSTER
             size_residual_label: (MAX_NUM_OBJ,3)
             sem_cls_label: (MAX_NUM_OBJ,) semantic class index
-            box_label_mask: (MAX_NUM_OBJ) as 0/1 with 1 indicating a unique box
-            vote_label: (N,9) with votes XYZ (3 votes: X1Y1Z1, X2Y2Z2, X3Y3Z3)
-                if there is only one vote than X1==X2==X3 etc.
-            vote_label_mask: (N,) with 0/1 with 1 indicating the point
-                is in one of the object's OBB.
+            box_label_mask: (MAX_NUM_OBJ) as 0/1 with 1 indicating a unique box            
             scan_idx: int scan index in scan_names list
             max_gt_bboxes: unused
         """
         scan_name = self.scan_names[idx]
         point_cloud = np.load(os.path.join(self.data_path, scan_name)+'_pc.npz')['pc'] # Nx6
         bboxes = np.load(os.path.join(self.data_path, scan_name)+'_bbox.npy') # K,8
-        point_votes = np.load(os.path.join(self.data_path, scan_name)+'_votes.npz')['point_votes'] # Nx10
+        
+        ############### NEED IMPLEMENTATION
+        point_obj_mask = self.point_labels_list[idx][:, 0]
+        point_instance_label = self.point_labels_list[idx][:, -1]
+
 
         if not self.use_color:
             point_cloud = point_cloud[:,0:3]
@@ -126,19 +118,11 @@ class SunrgbdDetectionVotesDataset(keras.utils.Sequence):
 
             # Rotation along up-axis/Z-axis
             rot_angle = (np.random.random()*np.pi/3) - np.pi/6 # -30 ~ +30 degree
-            rot_mat = sunrgbd_utils.rotz(rot_angle)
-
-            point_votes_end = np.zeros_like(point_votes)
-            point_votes_end[:,1:4] = np.dot(point_cloud[:,0:3] + point_votes[:,1:4], np.transpose(rot_mat))
-            point_votes_end[:,4:7] = np.dot(point_cloud[:,0:3] + point_votes[:,4:7], np.transpose(rot_mat))
-            point_votes_end[:,7:10] = np.dot(point_cloud[:,0:3] + point_votes[:,7:10], np.transpose(rot_mat))
+            rot_mat = sunrgbd_utils.rotz(rot_angle)            
 
             point_cloud[:,0:3] = np.dot(point_cloud[:,0:3], np.transpose(rot_mat))
             bboxes[:,0:3] = np.dot(bboxes[:,0:3], np.transpose(rot_mat))
-            bboxes[:,6] -= rot_angle
-            point_votes[:,1:4] = point_votes_end[:,1:4] - point_cloud[:,0:3]
-            point_votes[:,4:7] = point_votes_end[:,4:7] - point_cloud[:,0:3]
-            point_votes[:,7:10] = point_votes_end[:,7:10] - point_cloud[:,0:3]
+            bboxes[:,6] -= rot_angle            
 
             # Augment RGB color
             if self.use_color:
@@ -157,9 +141,7 @@ class SunrgbdDetectionVotesDataset(keras.utils.Sequence):
             point_cloud[:,0:3] *= scale_ratio
             bboxes[:,0:3] *= scale_ratio
             bboxes[:,3:6] *= scale_ratio
-            point_votes[:,1:4] *= scale_ratio
-            point_votes[:,4:7] *= scale_ratio
-            point_votes[:,7:10] *= scale_ratio
+            
             if self.use_height:
                 point_cloud[:,-1] *= scale_ratio[0,0]
 
@@ -207,8 +189,8 @@ class SunrgbdDetectionVotesDataset(keras.utils.Sequence):
             target_bboxes[i,:] = target_bbox
 
         point_cloud, choices = pc_util.random_sampling(point_cloud, self.num_points, return_choices=True)
-        point_votes_mask = point_votes[choices,0]
-        point_votes = point_votes[choices,1:]
+        point_obj_mask = point_obj_mask[choices]
+        point_instance_label = point_instance_label[choices]
         
         target_bboxes_semcls = np.zeros((MAX_NUM_OBJ))
         target_bboxes_semcls[0:bboxes.shape[0]] = bboxes[:,-1] # from 0 to 9
@@ -224,8 +206,8 @@ class SunrgbdDetectionVotesDataset(keras.utils.Sequence):
         target_bboxes_semcls[0:bboxes.shape[0]] = bboxes[:,-1] # from 0 to 9
         ret_dict['sem_cls_label'] = tf.convert_to_tensor(target_bboxes_semcls, dtype=tf.int32)
         ret_dict['box_label_mask'] = tf.convert_to_tensor(target_bboxes_mask, dtype=tf.float32)
-        ret_dict['vote_label'] = tf.convert_to_tensor(point_votes, dtype=tf.float32)
-        ret_dict['vote_label_mask'] = tf.convert_to_tensor(point_votes_mask, dtype=tf.int32)
+        ret_dict['point_obj_mask'] = tf.convert_to_tensor(point_obj_mask, dtype=tf.float32)
+        ret_dict['point_instance_label'] = tf.convert_to_tensor(point_instance_label, dtype=tf.int32)
         ret_dict['scan_idx'] = tf.convert_to_tensor(np.array(idx), dtype=tf.int32)
         ret_dict['max_gt_bboxes'] = tf.convert_to_tensor(max_bboxes, dtype=tf.float32)
         return ret_dict
@@ -235,7 +217,7 @@ class SunrgbdDetectionVotesDataset(keras.utils.Sequence):
 N_POINT = 50000
 N_BOX = MAX_NUM_OBJ = 64 # same as MAX_NUM_OBJ in sunrgbd_data.py
 
-class SunrgbdDetectionVotesDataset_tfrecord():
+class SunrgbdDetectionDataset_tfrecord():
     def __init__(self, split_set='train', num_points=20000,
         use_color=False, use_height=False, 
         augment=False, batch_size=8, shuffle=True,
@@ -253,9 +235,9 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         if DC.include_person:
             self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf_person2'%(split_set))
         elif self.use_painted:
-            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf4'%(split_set))
+            self.data_path = os.path.join(DATA_DIR,'gf_sunrgbd_pc_%s_painted_tf'%(split_set))
         else:
-            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_tf'%(split_set))
+            self.data_path = os.path.join(DATA_DIR,'gf_sunrgbd_pc_%s_tf'%(split_set))
 
         if DC.include_small:
             self.data_path += '_sm'
@@ -317,7 +299,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         feature_description = {    
             'point_cloud': tf.io.FixedLenFeature([N_POINT*(self.dim_features)], tf.float32),                
             'bboxes': tf.io.FixedLenFeature([N_BOX*8],tf.float32),
-            'point_votes': tf.io.FixedLenFeature([N_POINT*10], tf.float32),    
+            'point_labels': tf.io.FixedLenFeature([N_POINT*2], tf.float32),    
             'n_valid_box': tf.io.FixedLenFeature([], tf.int64)
         }
         # Parse the input tf.train.Example proto using the dictionary above.
@@ -326,32 +308,32 @@ class SunrgbdDetectionVotesDataset_tfrecord():
     def reshape_tensor(self, features):        
         point_cloud = tf.reshape(features['point_cloud'], [-1, N_POINT, self.dim_features])            
         bboxes = tf.reshape(features['bboxes'], [-1, N_BOX, 8])
-        point_votes = tf.reshape(features['point_votes'], [-1, N_POINT, 10])
+        point_labels = tf.reshape(features['point_labels'], [-1, N_POINT, 2])
         n_valid_box = tf.reshape(features['n_valid_box'], [-1])
         
-        return point_cloud, bboxes, point_votes, n_valid_box
+        return point_cloud, bboxes, point_labels, n_valid_box
 
-    def sample_points(self, point_cloud, bboxes, point_votes, n_valid_box):        
+    def sample_points(self, point_cloud, bboxes, point_labels, n_valid_box):        
         n_pc = point_cloud.shape[1]        
 
         choice_indices = tf.random.uniform([self.num_points], minval=0, maxval=n_pc, dtype=tf.int64)
         choice_indices = tf.tile(tf.expand_dims(choice_indices,0), [tf.shape(point_cloud)[0],1])
         
         point_cloud = tf.gather(point_cloud, choice_indices, axis=1, batch_dims=1)
-        point_votes = tf.gather(point_votes, choice_indices, axis=1, batch_dims=1)        
+        point_labels = tf.gather(point_labels, choice_indices, axis=1, batch_dims=1)        
     
-        return point_cloud, bboxes, point_votes, n_valid_box
+        return point_cloud, bboxes, point_labels, n_valid_box
 
-    def preprocess_color(self, point_cloud, bboxes, point_votes, n_valid_box):    
+    def preprocess_color(self, point_cloud, bboxes, point_labels, n_valid_box):    
         # Not used
         MEAN_COLOR_RGB=tf.constant([0.5,0.5,0.5])
         point_cloud = point_cloud[:,:,0:6]
         pc_coord = point_cloud[:,:,:3]
         pc_RGB = point_cloud[:,:,3:]-MEAN_COLOR_RGB
         point_cloud = tf.concat((pc_coord, pc_RGB), axis=-1)
-        return point_cloud, bboxes, point_votes, n_valid_box
+        return point_cloud, bboxes, point_labels, n_valid_box
 
-    def preprocess_height(self, point_cloud, bboxes, votes, n_valid_box):
+    def preprocess_height(self, point_cloud, bboxes, point_labels, n_valid_box):
         y_coords = point_cloud[:, :, 2]
         y_coords = tf.sort(y_coords, direction='DESCENDING', axis=-1)
         floor_height = y_coords[:, int(0.99*self.num_points), None]         
@@ -361,9 +343,9 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         #elif not self.augment:
         else:
             point_cloud = tf.concat([point_cloud[:,:,:3], tf.expand_dims(height, axis=-1)], axis=-1) # (N,4)
-        return point_cloud, bboxes, votes, n_valid_box
+        return point_cloud, bboxes, point_labels, n_valid_box
     
-    def augment_tensor(self, point_cloud, bboxes, point_votes, n_valid_box):
+    def augment_tensor(self, point_cloud, bboxes, point_labels, n_valid_box):
         pi = 3.141592653589793
         # Flipping along the YZ plane
         if tf.random.uniform(shape=[]) > 0.5:        
@@ -372,11 +354,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
             point_cloud = tf.concat((pc_flip, point_cloud[:,:,1:]), axis=-1)
             bboxes_flip = -1 * bboxes[:,:,0,None]
             bboxes_angle = pi -1 * bboxes[:,:,6,None]
-            bboxes = tf.concat((bboxes_flip, bboxes[:,:,1:6], bboxes_angle, bboxes[:,:,7:]), axis=-1)  
-            votes1_flip = -1 * point_votes[:,:,1,None]
-            votes4_flip = -1 * point_votes[:,:,4,None]
-            votes7_flip = -1 * point_votes[:,:,7,None]
-            point_votes = tf.concat((point_votes[:,:,0,None], votes1_flip, point_votes[:,:,2:4], votes4_flip, point_votes[:,:,5:7], votes7_flip, point_votes[:,:,8:]), axis=-1)
+            bboxes = tf.concat((bboxes_flip, bboxes[:,:,1:6], bboxes_angle, bboxes[:,:,7:]), axis=-1)              
             
         pc_coords = point_cloud[:,:,0:3]    
         pc_height = point_cloud[:,:,-1,None]
@@ -391,20 +369,12 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         c = tf.math.cos(rot_angle)
         s = tf.math.sin(rot_angle)
         rot_mat = tf.transpose(tf.convert_to_tensor([[c, -s, 0], [s, c, 0], [0,0,1]]), [1,0])
-            
-        point_votes_end1 = tf.matmul(pc_coords + point_votes[:,:,1:4], rot_mat)
-        point_votes_end2 = tf.matmul(pc_coords + point_votes[:,:,4:7], rot_mat)
-        point_votes_end3 = tf.matmul(pc_coords + point_votes[:,:,7:10], rot_mat)
         
         pc_coords = tf.matmul(pc_coords, rot_mat)    
         
         bboxes_coords = tf.matmul(bboxes[:,:,0:3], rot_mat)
-        bboxes_angle = bboxes[:,:,6,None] - rot_angle    
+        bboxes_angle = bboxes[:,:,6,None] - rot_angle           
         
-        votes0 = point_votes[:,:,0,None]
-        votes1 = point_votes_end1 - pc_coords
-        votes2 = point_votes_end2 - pc_coords
-        votes3 = point_votes_end3 - pc_coords
 
         # Augment point cloud scale: 0.85x-1.15x
         scale_ratio = tf.random.uniform(shape=[])*0.3+0.85
@@ -413,9 +383,6 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         bboxes_coords = bboxes_coords * scale_ratio
         bboxes_edges = bboxes[:,:,3:6]
         bboxes_edges = bboxes_edges * scale_ratio
-        votes1 = votes1 * scale_ratio
-        votes2 = votes2 * scale_ratio
-        votes3 = votes3 * scale_ratio    
         
         if self.use_height:
             pc_height = pc_height * scale_ratio
@@ -439,11 +406,11 @@ class SunrgbdDetectionVotesDataset_tfrecord():
                 point_cloud = tf.concat((pc_coords, pc_height), axis=-1)
         
         bboxes = tf.concat((bboxes_coords, bboxes_edges, bboxes_angle, bboxes[:,:,7:]), axis=-1)
-        point_votes = tf.concat((votes0, votes1, votes2, votes3, point_votes[:,:,10:]), axis=-1)           
+        # point_votes = tf.concat((votes0, votes1, votes2, votes3, point_votes[:,:,10:]), axis=-1)           
         
-        return point_cloud, bboxes, point_votes, n_valid_box
+        return point_cloud, bboxes, point_labels, n_valid_box
 
-    def _get_output(self, point_cloud, bboxes, point_votes, n_valid_box):
+    def _get_output(self, point_cloud, bboxes, point_labels, n_valid_box):
         #print(point_cloud.shape)
         B = point_cloud.shape[0]
         
@@ -458,6 +425,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         max_bboxes = np.zeros((B, MAX_NUM_OBJ, 8))
         target_bboxes = np.zeros((B, MAX_NUM_OBJ, 6)) 
         target_bboxes_semcls = np.zeros((B, MAX_NUM_OBJ))
+        size_gts = np.zeros((B, MAX_NUM_OBJ, 3))
 
         #point_cloud_sampled = np.zeros((B, self.num_points, point_cloud.shape[2]))
         #point_votes_sampled = np.zeros((B, self.num_points, point_votes.shape[2]-1))
@@ -492,6 +460,8 @@ class SunrgbdDetectionVotesDataset_tfrecord():
                 box3d_sizes[b,i,:] = 2 * box3d_size
             
             target_bboxes_mask = label_mask 
+            target_bboxes[b,0:3] += 1000.0
+
                    
             
             for i in range(n_box):
@@ -506,6 +476,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
                 zmax = np.max(corners_3d[:,2])
                 target_bbox = np.array([(xmin+xmax)/2, (ymin+ymax)/2, (zmin+zmax)/2, xmax-xmin, ymax-ymin, zmax-zmin])
                 target_bboxes[b,i,:] = target_bbox
+                size_gts[b, i, :] = target_bbox[3:6]
 
             target_bboxes_semcls[b,:n_box] = bboxes[b,:n_box,-1] # from 0 to 9
         
@@ -518,26 +489,26 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         size_residual_label = tf.constant(size_residuals, dtype=tf.float32)
         sem_cls_label = tf.constant(target_bboxes_semcls, dtype=tf.int64)
         box_label_mask = tf.constant(target_bboxes_mask, dtype=tf.float32)
-        vote_label = tf.constant(point_votes[:,:,1:], dtype=tf.float32)
-        vote_label_mask = tf.constant(tf.cast(point_votes[:,:,0],dtype=tf.int64), dtype=tf.int64)
+        
+        point_obj_mask = tf.constant(point_labels[:,:,0], dtype=tf.float32)
+        point_instance_label = tf.constant(tf.cast(point_labels[:,:,-1],dtype=tf.int64), dtype=tf.int64)
         
         max_gt_bboxes = tf.constant(max_bboxes, dtype=tf.float32) 
         
-        output = point_cloud, center_label, heading_class_label, heading_residual_label, size_class_label, \
-            size_residual_label, sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes
-        return output
+        return point_cloud, center_label, heading_class_label, heading_residual_label, size_class_label, \
+            size_residual_label, sem_cls_label, box_label_mask, point_obj_mask, point_instance_label, max_gt_bboxes, size_gts
+        # return output
 
-    def tf_get_output(self, point_cloud, bboxes, point_votes, n_valid_box):
+    def tf_get_output(self, point_cloud, bboxes, point_labels, n_valid_box):
 
         [point_cloud, center_label, heading_class_label, heading_residual_label, size_class_label, \
-            size_residual_label, sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes] \
-                = tf.py_function(func=self._get_output, inp=[point_cloud, bboxes, point_votes, n_valid_box],
+            size_residual_label, sem_cls_label, box_label_mask, point_obj_mask, point_instance_label, max_gt_bboxes, size_gts] \
+                = tf.py_function(func=self._get_output, inp=[point_cloud, bboxes, point_labels, n_valid_box],
                                  Tout= [tf.float32, tf.float32, tf.int64, tf.float32, tf.int64,  
                                         tf.float32, tf.int64, tf.float32, tf.float32, tf.int64,
-                                        tf.float32])
-        #return tuple(output)
+                                        tf.float32, tf.float32])
         return point_cloud, center_label, heading_class_label, heading_residual_label, size_class_label, \
-            size_residual_label, sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes
+            size_residual_label, sem_cls_label, box_label_mask, point_obj_mask, point_instance_label, max_gt_bboxes, size_gts
     
 
 

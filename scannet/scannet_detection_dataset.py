@@ -60,10 +60,27 @@ class ScannetDetectionDataset(Dataset):
             print('illegal split name')
             return
 
-        if split_set in ['val', 'test']:
-            self.seed = 1111
-        else:
-            self.seed = None
+        mesh_vertices_list = []
+        instance_labels_list = []
+        semantic_labels_list = []
+        instance_bboxes_list = []
+        for scan_name in self.scan_names:
+            mesh_vertices = np.load(os.path.join(self.data_path, scan_name) + '_vert.npy')
+            instance_labels = np.load(os.path.join(self.data_path, scan_name) + '_ins_label.npy')
+            semantic_labels = np.load(os.path.join(self.data_path, scan_name) + '_sem_label.npy')
+            instance_bboxes = np.load(os.path.join(self.data_path, scan_name) + '_bbox.npy')
+            mesh_vertices_list.append(mesh_vertices)
+            instance_labels_list.append(instance_labels)
+            semantic_labels_list.append(semantic_labels)
+            instance_bboxes_list.append(instance_bboxes)
+
+        self.mesh_vertices_list = mesh_vertices_list
+        self.instance_labels_list = instance_labels_list
+        self.semantic_labels_list = semantic_labels_list
+        self.instance_bboxes_list = instance_bboxes_list
+        
+        self.seed = 1111
+        
         
         self.num_points = num_points
         self.use_color = use_color        
@@ -89,13 +106,13 @@ class ScannetDetectionDataset(Dataset):
             scan_idx: int scan index in scan_names list
             pcl_color: unused
         """
-        np.random.seed(self.seed)
+        # np.random.seed(self.seed)
 
-        scan_name = self.scan_names[idx]        
-        mesh_vertices = np.load(os.path.join(self.data_path, scan_name)+'_vert.npy')
-        instance_labels = np.load(os.path.join(self.data_path, scan_name)+'_ins_label.npy')
-        semantic_labels = np.load(os.path.join(self.data_path, scan_name)+'_sem_label.npy')
-        instance_bboxes = np.load(os.path.join(self.data_path, scan_name)+'_bbox.npy')       
+        mesh_vertices = self.mesh_vertices_list[idx]
+        instance_labels = self.instance_labels_list[idx]
+        semantic_labels = self.semantic_labels_list[idx]
+        instance_bboxes = self.instance_bboxes_list[idx]   
+        scan_name = self.scan_names[idx]
 
         if not self.use_color:
             point_cloud = mesh_vertices[:,0:3]  #[:,0:3] # do not use color for now
@@ -118,6 +135,7 @@ class ScannetDetectionDataset(Dataset):
         angle_residuals = np.zeros((MAX_NUM_OBJ,))
         size_classes = np.zeros((MAX_NUM_OBJ,))
         size_residuals = np.zeros((MAX_NUM_OBJ, 3))
+        size_gts = np.zeros((MAX_NUM_OBJ, 3))
         
         point_cloud, choices = pc_util.random_sampling(point_cloud,
             self.num_points, return_choices=True, seed=self.seed)        
@@ -261,14 +279,17 @@ class ScannetDetectionDataset(Dataset):
             point_cloud[:,0:3] = np.dot(point_cloud[:,0:3], np.transpose(rot_mat))
             target_bboxes = rotate_aligned_boxes(target_bboxes, rot_mat)
 
+        gt_centers = target_bboxes[:, 0:3]
+        gt_centers[instance_bboxes.shape[0]:, :] += 1000.0  # padding centers with a large number
+
         # compute votes *AFTER* augmentation
         # generate votes
         # Note: since there's no map between bbox instance labels and
         # pc instance_labels (it had been filtered 
         # in the data preparation step) we'll compute the instance bbox
         # from the points sharing the same instance label. 
-        point_votes = np.zeros([self.num_points, 3])
-        point_votes_mask = np.zeros(self.num_points)
+        point_obj_mask = np.zeros(self.num_points)
+        point_instance_label = np.zeros(self.num_points) - 1
         for i_instance in np.unique(instance_labels):            
             # find all points belong to that instance
             ind = np.where(instance_labels == i_instance)[0]
@@ -276,30 +297,33 @@ class ScannetDetectionDataset(Dataset):
             if semantic_labels[ind[0]] in DC.nyu40ids:
                 x = point_cloud[ind,:3]
                 center = 0.5*(x.min(0) + x.max(0))
-                point_votes[ind, :] = center - x
-                point_votes_mask[ind] = 1.0
-        point_votes = np.tile(point_votes, (1, 3)) # make 3 votes identical 
+                ilabel = np.argmin(((center - gt_centers) ** 2).sum(-1))
+                point_instance_label[ind] = ilabel
+                point_obj_mask[ind] = 1.0
+         
         
         class_ind = [np.where(DC.nyu40ids == x)[0][0] for x in instance_bboxes[:,-1]]   
         # NOTE: set size class as semantic class. Consider use size2class.
         size_classes[0:instance_bboxes.shape[0]] = class_ind
         size_residuals[0:instance_bboxes.shape[0], :] = \
             target_bboxes[0:instance_bboxes.shape[0], 3:6] - DC.mean_size_arr[class_ind,:]
+        size_gts[0:instance_bboxes.shape[0], :] = target_bboxes[0:instance_bboxes.shape[0], 3:6]
             
         ret_dict = {}
         ret_dict['point_clouds'] = point_cloud.astype(np.float32)
-        ret_dict['center_label'] = target_bboxes.astype(np.float32)[:,0:3]
+        ret_dict['center_label'] = gt_centers.astype(np.float32)[:,0:3]
         ret_dict['heading_class_label'] = angle_classes.astype(np.int64)
         ret_dict['heading_residual_label'] = angle_residuals.astype(np.float32)
         ret_dict['size_class_label'] = size_classes.astype(np.int64)
-        ret_dict['size_residual_label'] = size_residuals.astype(np.float32)
+        ret_dict['size_residual_label'] = size_residuals.astype(np.float32)        
         target_bboxes_semcls = np.zeros((MAX_NUM_OBJ))                                
         target_bboxes_semcls[0:instance_bboxes.shape[0]] = \
             [DC.nyu40id2class[x] for x in instance_bboxes[:,-1][0:instance_bboxes.shape[0]]]                
         ret_dict['sem_cls_label'] = target_bboxes_semcls.astype(np.int64)
         ret_dict['box_label_mask'] = target_bboxes_mask.astype(np.float32)
-        ret_dict['vote_label'] = point_votes.astype(np.float32)
-        ret_dict['vote_label_mask'] = point_votes_mask.astype(np.int64)
+        ret_dict['point_obj_mask'] = point_obj_mask.astype(np.float32)
+        ret_dict['point_instance_label'] = point_instance_label.astype(np.int64)
+        ret_dict['size_gts'] = size_gts.astype(np.float32)
         ret_dict['scan_idx'] = np.array(idx).astype(np.int64)
         #ret_dict['pcl_color'] = pcl_color
         return ret_dict
