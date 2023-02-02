@@ -62,6 +62,9 @@ parser.add_argument('--bn_decay_step', type=int, default=40, help='Period of BN 
 parser.add_argument('--bn_decay_rate', type=float, default=0.5, help='Decay rate for BN decay [default: 0.5]')
 parser.add_argument('--lr_decay_steps', default='280,340', help='When to decay the learning rate (in epochs) [default: 280,340]')
 parser.add_argument('--lr_decay_rates', default='0.1,0.1', help='Decay rates for lr decay [default: 0.1,0.1]')
+parser.add_argument('--decoder_lr_decay_steps', default='280,340', help='When to decay the learning rate (in epochs) [default: 280,340]')
+parser.add_argument('--decoder_lr_decay_rates', default='1,1', help='Decay rates for lr decay [default: 0.1,0.1]')
+
 parser.add_argument('--no_height', action='store_true', help='Do NOT use height signal in input.')
 parser.add_argument('--use_color', action='store_true', help='Use RGB color in input.')
 parser.add_argument('--use_sunrgbd_v2', action='store_true', help='Use V2 box labels for SUN RGB-D dataset')
@@ -102,7 +105,11 @@ BN_DECAY_RATE = FLAGS.bn_decay_rate
 
 LR_DECAY_STEPS = [int(x) for x in FLAGS.lr_decay_steps.split(',')]
 LR_DECAY_RATES = [float(x) for x in FLAGS.lr_decay_rates.split(',')]
+DECODER_LR_DECAY_STEPS = [int(x) for x in FLAGS.decoder_lr_decay_steps.split(',')]
+DECODER_LR_DECAY_RATES = [float(x) for x in FLAGS.decoder_lr_decay_rates.split(',')]
+
 assert(len(LR_DECAY_STEPS)==len(LR_DECAY_RATES))
+assert(len(DECODER_LR_DECAY_STEPS)==len(DECODER_LR_DECAY_RATES))
 
 if FLAGS.log_dir is None:
     LOG_DIR = os.path.join('logs', model_config['model_id'])
@@ -186,7 +193,7 @@ elif DATASET == 'scannet':
     train_ds = DataLoader(TRAIN_DATASET, batch_size=BATCH_SIZE,
         shuffle=True, num_workers=4, worker_init_fn=my_worker_init_fn, drop_last=True)
     test_ds =DataLoader(TEST_DATASET, batch_size=BATCH_SIZE,
-        shuffle=True, num_workers=4, worker_init_fn=my_worker_init_fn)
+        shuffle=False, num_workers=4, worker_init_fn=my_worker_init_fn)
 else:
     print('Unknown dataset %s. Exiting...'%(FLAGS.dataset))
     exit(-1)
@@ -224,8 +231,8 @@ criterion = loss_helper_tf.get_loss
 
 # Load the optimizer
 if FLAGS.optimizer == 'adamw':
-    optimizer1 = tfa.optimizers.AdamW(learning_rate=FLAGS.learning_rate, weight_decay=FLAGS.weight_decay)
-    optimizer2 = tfa.optimizers.AdamW(learning_rate=FLAGS.decoder_learning_rate, weight_decay=FLAGS.weight_decay)
+    optimizer1 = tfa.optimizers.AdamW(learning_rate=FLAGS.learning_rate, weight_decay=FLAGS.weight_decay, epsilon=1e-08)
+    optimizer2 = tfa.optimizers.AdamW(learning_rate=FLAGS.decoder_learning_rate, weight_decay=FLAGS.weight_decay, epsilon=1e-08)
     # optimizer1 = tf.keras.optimizers.experimental.AdamW(learning_rate=FLAGS.learning_rate, weight_decay=FLAGS.weight_decay)
     # optimizer2 = tf.keras.optimizers.experimental.AdamW(learning_rate=FLAGS.decoder_learning_rate, weight_decay=FLAGS.weight_decay)
 else:
@@ -265,15 +272,15 @@ BN_MOMENTUM_MAX = 0.001
 bn_lmbd = lambda it: 0.9
 bnm_scheduler = BNMomentumScheduler(net, bn_lambda=bn_lmbd, last_epoch=start_epoch-1)
 
-def get_current_lr(epoch, base_lr):
+def get_current_lr(epoch, base_lr, lr_decay_rates, lr_decay_steps):
     lr = base_lr
-    for i,lr_decay_epoch in enumerate(LR_DECAY_STEPS):
+    for i,lr_decay_epoch in enumerate(lr_decay_steps):
         if epoch >= lr_decay_epoch:
-            lr *= LR_DECAY_RATES[i]
+            lr *= lr_decay_rates[i]
     return lr
 
-def adjust_learning_rate(optimizer, epoch, base_lr):
-    lr = get_current_lr(epoch, base_lr)
+def adjust_learning_rate(optimizer, epoch, base_lr, lr_decay_rates, lr_decay_steps):
+    lr = get_current_lr(epoch, base_lr, lr_decay_rates, lr_decay_steps)
     optimizer.learning_rate = lr
 
 if DATASET == 'sunrgbd':
@@ -399,7 +406,7 @@ def train(start_epoch):
         tf.TensorSpec(shape=(None, 64, 3), dtype=tf.float32), #size_residual_label
         tf.TensorSpec(shape=(None, 64), dtype=tf.int64), #sem_cls_label
         tf.TensorSpec(shape=(None, 64), dtype=tf.float32), #box_label_mask
-        tf.TensorSpec(shape=(None, NUM_POINT), dtype=tf.float32), #point_obj_mask
+        tf.TensorSpec(shape=(None, NUM_POINT), dtype=tf.int64), #point_obj_mask
         tf.TensorSpec(shape=(None, NUM_POINT), dtype=tf.int64), #point_instance_label
         tf.TensorSpec(shape=(None, 64,8), dtype=tf.float32), #max_gt_bboxes                           
         tf.TensorSpec(shape=(None, 64,3), dtype=tf.float32), #size_gts
@@ -423,16 +430,19 @@ def train(start_epoch):
     for epoch in range(start_epoch, MAX_EPOCH):
         EPOCH_CNT = epoch
         log_string('**** EPOCH %03d ****' % (epoch))
-        log_string('Current learning rate: %f'%(get_current_lr(epoch, FLAGS.learning_rate)))
-        log_string('Current decoder learning rate: %f'%(get_current_lr(epoch, FLAGS.decoder_learning_rate)))
+        log_string('Current learning rate: %f'%
+                   (get_current_lr(epoch, FLAGS.learning_rate, LR_DECAY_RATES, LR_DECAY_STEPS)))
+        log_string('Current decoder learning rate: %f'%
+                   (get_current_lr(epoch, FLAGS.decoder_learning_rate, DECODER_LR_DECAY_STEPS, DECODER_LR_DECAY_STEPS)))
         log_string('Current BN decay momentum: %f'%(bnm_scheduler.lmbd(bnm_scheduler.last_epoch)))
         log_string(str(datetime.now()))  
                 
-        adjust_learning_rate(optimizer1, EPOCH_CNT, FLAGS.learning_rate)
-        adjust_learning_rate(optimizer2, EPOCH_CNT, FLAGS.decoder_learning_rate)
+        adjust_learning_rate(optimizer1, EPOCH_CNT, FLAGS.learning_rate, LR_DECAY_RATES, LR_DECAY_STEPS)
+        adjust_learning_rate(optimizer2, EPOCH_CNT, FLAGS.decoder_learning_rate, DECODER_LR_DECAY_STEPS, DECODER_LR_DECAY_STEPS)
         # adjust_learning_rate(optimizer, EPOCH_CNT)
 
-        bnm_scheduler.step() # decay BN momentum  
+        if epoch == 0:
+            bnm_scheduler.step() # decay BN momentum  
         train_loss = tf.constant(0.0, tf.float32)
         eval_loss = tf.constant(0.0, tf.float32)
 
@@ -450,7 +460,7 @@ def train(start_epoch):
                 size_residual_label = tf.convert_to_tensor(batch_data['size_residual_label'], dtype=tf.float32)                
                 sem_cls_label = tf.convert_to_tensor(batch_data['sem_cls_label'], dtype=tf.int64)
                 box_label_mask = tf.convert_to_tensor(batch_data['box_label_mask'], dtype=tf.float32)
-                point_obj_mask = tf.convert_to_tensor(batch_data['point_obj_mask'], tf.float32)
+                point_obj_mask = tf.convert_to_tensor(batch_data['point_obj_mask'], tf.int64)
                 point_instance_label = tf.convert_to_tensor(batch_data['point_instance_label'], tf.int64)
                 max_gt_bboxes = tf.convert_to_tensor(np.zeros((BATCH_SIZE, 64, 8)), dtype=tf.float32) 
                 size_gts = tf.convert_to_tensor(batch_data['size_gts'], dtype=tf.float32)
