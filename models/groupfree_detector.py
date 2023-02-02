@@ -23,7 +23,7 @@ ROOT_DIR = os.path.dirname(BASE_DIR)
 
 class GroupFreeDetector(layers.Layer):
     def __init__(self, num_class, num_heading_bin, num_size_cluster, mean_size_arr, model_config,
-                 num_proposal=128, dropout=0.1,
+                 num_proposal=256, dropout=0.1,
                  nhead=8, num_decoder_layers=6, dim_feedforward=2048,
                  self_position_embedding='loc_learned', cross_position_embedding='xyz_learned',
                  size_cls_agnostic=False):
@@ -105,6 +105,7 @@ class GroupFreeDetector(layers.Layer):
                     288, nhead, dim_feedforward, dropout,
                     self_posembed=self.decoder_self_posembeds[i],
                     cross_posembed=self.decoder_cross_posembeds[i],
+                    model_config=model_config
                 ))
 
         # Prediction Head

@@ -11,13 +11,6 @@ ROOT_DIR = os.path.dirname(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 from nn_distance_tf import nn_distance, huber_loss, huber_loss_torch, SigmoidFocalClassificationLoss
 import tensorflow as tf
-#import torch
-#rimport torch.nn as nn
-
-FAR_THRESHOLD = 0.6
-NEAR_THRESHOLD = 0.3
-GT_VOTE_FACTOR = 3 # number of GT votes per point
-OBJECTNESS_CLS_WEIGHTS = [0.2,0.8] # put larger weights on positive objectness
 
 def compute_points_obj_cls_loss_hard_topk(end_points, topk):
 
@@ -154,7 +147,7 @@ def compute_objectness_loss_based_on_query_points(end_points, num_decoder_layers
         cls_normalizer = tf.reduce_sum(cls_weights, axis=1, keepdims=True)
         cls_weights /= tf.clip_by_value(cls_normalizer, clip_value_min=1.0, clip_value_max=tf.float32.max)        
         cls_loss_src = criterion.forward(tf.reshape(tf.transpose(objectness_scores, perm=[0, 2, 1]), [B, K, 1]),
-                                 tf.expand_dims(query_points_obj_gt, -1),
+                                 tf.expand_dims(tf.cast(query_points_obj_gt, tf.float32), -1),
                                  weights=cls_weights)
         objectness_loss = tf.reduce_sum(cls_loss_src) / float(B)
 
@@ -271,8 +264,8 @@ def compute_box_and_sem_cls_loss(end_points, config, num_decoder_layers,
     return box_loss_sum, sem_cls_loss_sum, end_points
 
 def get_loss(end_points, config, num_decoder_layers,
-             query_points_generator_loss_coef, obj_loss_coef, box_loss_coef, sem_cls_loss_coef,
-             query_points_obj_topk=5,
+             query_points_generator_loss_coef=0.8, obj_loss_coef=0.1, box_loss_coef=1.0, sem_cls_loss_coef=0.1,
+             query_points_obj_topk=4,
              center_loss_type='smoothl1', center_delta=1.0,
              size_loss_type='smoothl1', size_delta=1.0,
              heading_loss_type='smoothl1', heading_delta=1.0,
