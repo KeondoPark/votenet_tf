@@ -21,7 +21,7 @@ class MultiheadAttention(tf.keras.layers.Layer):
         self.emb_q = layers.Dense(embed_dim, use_bias=True, kernel_initializer=tf.keras.initializers.he_uniform())
         self.emb_k = layers.Dense(embed_dim, use_bias=True, kernel_initializer=tf.keras.initializers.he_uniform())
         self.emb_v = layers.Dense(embed_dim, use_bias=True, kernel_initializer=tf.keras.initializers.he_uniform())   
-        self.scaling = float(head_dim) ** -0.5
+        self.scaling = float(self.head_dim) ** -0.5
         self.out_proj = layers.Dense(embed_dim, use_bias=True, kernel_initializer=tf.keras.initializers.he_uniform())
         self.dropout = dropout
 
