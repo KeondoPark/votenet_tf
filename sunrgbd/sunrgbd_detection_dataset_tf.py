@@ -472,6 +472,7 @@ class SunrgbdDetectionDataset_tfrecord():
             box3d_sizes[b,:n_box] = 2 * box3d_size
 
             target_bboxes_mask = label_mask 
+<<<<<<< HEAD
             target_bboxes[b,:,0:3] += 1000.0 
             
             corners_3d = my_compute_box_3d_arr(bbox[:,0:3], bbox[:,3:6], bbox[:,6])
@@ -515,6 +516,9 @@ class SunrgbdDetectionDataset_tfrecord():
             # target_bboxes[b,0:3] += 1000.0
 
                    
+=======
+            target_bboxes[b,:,0:3] += 1000.0                   
+>>>>>>> fe15a4380f1f88490c0120d565082287d24cdb80
             
             # for i in range(n_box):
             #     bbox = bboxes[b,i]

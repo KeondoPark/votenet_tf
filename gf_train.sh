@@ -12,9 +12,25 @@ CUDA_VISIBLE_DEVICES=3 python train_tf.py --config_path configs/config_gf_baseli
 # scannet baseline
 CUDA_VISIBLE_DEVICES=3 python train_tf.py --config_path configs/config_gf_scannet_baseline.json \
                        --num_point 50000 --num_decoder_layers 6 --size_delta 0.1111111111 --center_delta 0.04 \
-                       --learning_rate 0.006 --decoder_learning_rate 0.0006 --weight_decay 0.0005 --optimizer adamw
+                       --learning_rate 0.006 --decoder_learning_rate 0.0006 --weight_decay 0.0005 --optimizer adamw \
+                       --lr_decay_rates 0.5,0.5,0.5,0.5 --lr_decay_steps 80,160,240,320 \
+                       --decoder_lr_decay_rates 0.5,0.5,0.5,0.5 --decoder_lr_decay_steps 80,160,240,320
+
+                       --lr_decay_rates 0.7,0.7,0.7,0.7,0.7,0.7,0.7 --lr_decay_steps 50,100,150,200,250,300,350 \
+                       --decoder_lr_decay_rates 0.7,0.7,0.7,0.7,0.7,0.7,0.7 --decoder_lr_decay_steps 50,100,150,200,250,300,350
+
+#cosine lr schedule
+CUDA_VISIBLE_DEVICES=3 python train_tf.py --config_path configs/config_gf_scannet_baseline.json \
+                       --num_point 50000 --num_decoder_layers 6 --size_delta 0.1111111111 --center_delta 0.04 \
+                       --learning_rate 0.006 --decoder_learning_rate 0.0006 --weight_decay 0.0005 --optimizer adamw \
+                       --lr-scheduler cosine
+
+
+                       
 
 # scannet 1way
 CUDA_VISIBLE_DEVICES=2 python train_tf.py --config_path configs/config_gf_scannet_1way_fp.json \
                        --num_point 50000 --num_decoder_layers 6 --size_delta 0.1111111111 --center_delta 0.04 \
-                       --learning_rate 0.006 --decoder_learning_rate 0.0006 --weight_decay 0.0005 --optimizer adamw
+                       --learning_rate 0.006 --decoder_learning_rate 0.0006 --weight_decay 0.0005 --optimizer adamw \
+                       --lr_decay_rates 0.7,0.7,0.7,0.7,0.7,0.7,0.7 --lr_decay_steps 50,100,150,200,250,300,350 \
+                       --decoder_lr_decay_rates 0.7,0.7,0.7,0.7,0.7,0.7,0.7 --decoder_lr_decay_steps 50,100,150,200,250,300,350
