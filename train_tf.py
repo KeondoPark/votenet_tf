@@ -60,6 +60,9 @@ parser.add_argument('--batch_size', type=int, default=8, help='Batch Size during
 
 parser.add_argument('--bn_decay_step', type=int, default=40, help='Period of BN decay (in epochs) [default: 20]')
 parser.add_argument('--bn_decay_rate', type=float, default=0.5, help='Decay rate for BN decay [default: 0.5]')
+
+parser.add_argument('--lr-scheduler', type=str, default='step',
+                        choices=["step", "cosine"], help="learning rate scheduler")
 parser.add_argument('--lr_decay_steps', default='280,340', help='When to decay the learning rate (in epochs) [default: 280,340]')
 parser.add_argument('--lr_decay_rates', default='0.1,0.1', help='Decay rates for lr decay [default: 0.1,0.1]')
 parser.add_argument('--decoder_lr_decay_steps', default='280,340', help='When to decay the learning rate (in epochs) [default: 280,340]')
@@ -268,8 +271,8 @@ else:
 # note: pytorch's BN momentum (default 0.1)= 1 - tensorflow's BN momentum
 BN_MOMENTUM_INIT = 0.5
 BN_MOMENTUM_MAX = 0.001
-# bn_lmbd = lambda it: 1 - max(BN_MOMENTUM_INIT * BN_DECAY_RATE**(int(it / BN_DECAY_STEP)), BN_MOMENTUM_MAX)
-bn_lmbd = lambda it: 0.9
+bn_lmbd = lambda it: 1 - max(BN_MOMENTUM_INIT * BN_DECAY_RATE**(int(it / BN_DECAY_STEP)), BN_MOMENTUM_MAX)
+# bn_lmbd = lambda it: 0.9
 bnm_scheduler = BNMomentumScheduler(net, bn_lambda=bn_lmbd, last_epoch=start_epoch-1)
 
 def get_current_lr(epoch, base_lr, lr_decay_rates, lr_decay_steps):
@@ -278,6 +281,12 @@ def get_current_lr(epoch, base_lr, lr_decay_rates, lr_decay_steps):
         if epoch >= lr_decay_epoch:
             lr *= lr_decay_rates[i]
     return lr
+
+def adjust_cosine_lr(optimizer, epoch, base_lr, decay_steps, alpha=0.01):
+    step = min(epoch, decay_steps)
+    cosine_decay = 0.5 * (1 + np.cos(np.pi * step / decay_steps))
+    decayed = (1 - alpha) * cosine_decay + alpha
+    optimizer.learning_rate = base_lr * decayed  
 
 def adjust_learning_rate(optimizer, epoch, base_lr, lr_decay_rates, lr_decay_steps):
     lr = get_current_lr(epoch, base_lr, lr_decay_rates, lr_decay_steps)
@@ -340,13 +349,13 @@ def train_one_epoch(batch_data):
     grads = tape.gradient(loss, net.trainable_weights)
     # grads = [tf.clip_by_norm(g, FLAGS.clip_norm) for g in grads]
 
-    shapes = [g.shape for g in grads]
-    grads_flatten = [tf.reshape(g, (-1,)) for g in grads]
-    grads_flatten, global_norm = tf.clip_by_global_norm(grads_flatten, FLAGS.clip_norm)
+    # shapes = [g.shape for g in grads]
+    # grads_flatten = [tf.reshape(g, (-1,)) for g in grads]
+    # grads_flatten, global_norm = tf.clip_by_global_norm(grads_flatten, FLAGS.clip_norm)
 
-    grads = []
-    for g, s in zip(grads_flatten, shapes):                        
-        grads.append(tf.reshape(g, s))
+    # grads = []
+    # for g, s in zip(grads_flatten, shapes):                        
+    #     grads.append(tf.reshape(g, s))
 
     # DIfferent learning rate by layers
     varlist1, varlist2 = [], []
@@ -430,19 +439,30 @@ def train(start_epoch):
     for epoch in range(start_epoch, MAX_EPOCH):
         EPOCH_CNT = epoch
         log_string('**** EPOCH %03d ****' % (epoch))
-        log_string('Current learning rate: %f'%
-                   (get_current_lr(epoch, FLAGS.learning_rate, LR_DECAY_RATES, LR_DECAY_STEPS)))
-        log_string('Current decoder learning rate: %f'%
-                   (get_current_lr(epoch, FLAGS.decoder_learning_rate, DECODER_LR_DECAY_STEPS, DECODER_LR_DECAY_STEPS)))
+
+        if FLAGS.lr_scheduler == 'cosine':                
+            adjust_cosine_lr(optimizer1, EPOCH_CNT, FLAGS.learning_rate, MAX_EPOCH)
+            adjust_cosine_lr(optimizer2, EPOCH_CNT, FLAGS.decoder_learning_rate, MAX_EPOCH)
+            log_string('Current learning rate: %f'%
+                    (optimizer1.learning_rate))
+            log_string('Current decoder learning rate: %f'%
+                    (optimizer2.learning_rate))
+        else:
+            adjust_learning_rate(optimizer1, EPOCH_CNT, FLAGS.learning_rate, LR_DECAY_RATES, LR_DECAY_STEPS)
+            adjust_learning_rate(optimizer2, EPOCH_CNT, FLAGS.decoder_learning_rate, DECODER_LR_DECAY_RATES, DECODER_LR_DECAY_STEPS)
+            log_string('Current learning rate: %f'%
+                    (get_current_lr(epoch, FLAGS.learning_rate, LR_DECAY_RATES, LR_DECAY_STEPS)))
+            log_string('Current decoder learning rate: %f'%
+                    (get_current_lr(epoch, FLAGS.decoder_learning_rate, DECODER_LR_DECAY_RATES, DECODER_LR_DECAY_STEPS)))
         log_string('Current BN decay momentum: %f'%(bnm_scheduler.lmbd(bnm_scheduler.last_epoch)))
         log_string(str(datetime.now()))  
-                
-        adjust_learning_rate(optimizer1, EPOCH_CNT, FLAGS.learning_rate, LR_DECAY_RATES, LR_DECAY_STEPS)
-        adjust_learning_rate(optimizer2, EPOCH_CNT, FLAGS.decoder_learning_rate, DECODER_LR_DECAY_STEPS, DECODER_LR_DECAY_STEPS)
+
+        
+
         # adjust_learning_rate(optimizer, EPOCH_CNT)
 
-        if epoch == 0:
-            bnm_scheduler.step() # decay BN momentum  
+        # if epoch == 0:
+        bnm_scheduler.step() # decay BN momentum  
         train_loss = tf.constant(0.0, tf.float32)
         eval_loss = tf.constant(0.0, tf.float32)
 

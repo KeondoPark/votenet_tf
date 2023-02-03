@@ -460,9 +460,7 @@ class SunrgbdDetectionDataset_tfrecord():
                 box3d_sizes[b,i,:] = 2 * box3d_size
             
             target_bboxes_mask = label_mask 
-            target_bboxes[b,0:3] += 1000.0
-
-                   
+            target_bboxes[b,:,0:3] += 1000.0                   
             
             for i in range(n_box):
                 bbox = bboxes[b,i]

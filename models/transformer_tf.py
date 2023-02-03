@@ -32,9 +32,9 @@ class TransformerDecoderLayer(tf.keras.layers.Layer):
         self.dropout = layers.Dropout(dropout)
         self.linear2 = layers.Dense(d_model, kernel_initializer=tf.keras.initializers.he_uniform())
 
-        self.norm1 = layers.LayerNormalization(axis=-1)
-        self.norm2 = layers.LayerNormalization(axis=-1)
-        self.norm3 = layers.LayerNormalization(axis=-1)
+        self.norm1 = layers.LayerNormalization(axis=-1, epsilon=1e-05)
+        self.norm2 = layers.LayerNormalization(axis=-1, epsilon=1e-05)
+        self.norm3 = layers.LayerNormalization(axis=-1, epsilon=1e-05)
         self.dropout1 = layers.Dropout(dropout)
         self.dropout2 = layers.Dropout(dropout)
         self.dropout3 = layers.Dropout(dropout)
