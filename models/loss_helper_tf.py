@@ -72,28 +72,29 @@ def compute_points_obj_cls_loss_hard_topk(end_points, topk):
     objectness_label = tf.cast(objectness_label, tf.float32)    
     cls_loss_src = criterion.forward(tf.reshape(seeds_obj_cls_logits,[B, K, 1]), tf.expand_dims(objectness_label, -1), weights=cls_weights)
     objectness_loss = tf.reduce_sum(cls_loss_src) / float(B)
-
-
-    # Compute recall upper bound
-    padding_array = tf.range(0, B) * 10000
-    padding_array = tf.expand_dims(padding_array, 1)  # B,1
-    point_instance_label = point_instance_label + tf.cast(padding_array, dtype=tf.int64)  # B,num_points
-    # point_instance_label_mask = (point_instance_label < 0)  # B,num_points
-    point_instance_label = tf.where(point_instance_label < 0, tf.constant(-1, dtype=tf.int64), point_instance_label)
+    
+    
+    # Below part causes an error in tf.function.. ignore.
+    # # Compute recall upper bound
+    # padding_array = tf.range(0, B) * 10000
+    # padding_array = tf.expand_dims(padding_array, 1)  # B,1
+    # point_instance_label = point_instance_label + tf.cast(padding_array, dtype=tf.int64)  # B,num_points
+    # # point_instance_label_mask = (point_instance_label < 0)  # B,num_points
+    # point_instance_label = tf.where(point_instance_label < 0, tf.constant(-1, dtype=tf.int64), point_instance_label)
     
 
-    seed_instance_label = tf.gather(point_instance_label, axis=1, indices=seed_inds, batch_dims=1)  # B, num_seed
-    # point_instance_label = tf.cast(point_instance_label, tf.float32)
-    objectness_label = tf.cast(objectness_label, tf.int64)
-    pos_points_instance_label = seed_instance_label * objectness_label + (objectness_label - 1)
+    # seed_instance_label = tf.gather(point_instance_label, axis=1, indices=seed_inds, batch_dims=1)  # B, num_seed
+    # # point_instance_label = tf.cast(point_instance_label, tf.float32)
+    # objectness_label = tf.cast(objectness_label, tf.int64)
+    # pos_points_instance_label = seed_instance_label * objectness_label + (objectness_label - 1)
     
-    point_instance_label = tf.reshape(point_instance_label, (-1,))
-    num_gt_bboxes = len(tf.unique(point_instance_label)[0]) - 1
+    # point_instance_label = tf.reshape(point_instance_label, (-1,))
+    # num_gt_bboxes = tf.unique_with_counts(point_instance_label)[2] - 1
     
-    pos_points_instance_label = tf.reshape(pos_points_instance_label, (-1,))    
-    num_query_bboxes = len(tf.unique(pos_points_instance_label)[0]) - 1
-    if num_gt_bboxes > 0:
-        end_points[f'points_hard_topk{topk}_upper_recall_ratio'] = float(num_query_bboxes) / float(num_gt_bboxes)
+    # pos_points_instance_label = tf.reshape(pos_points_instance_label, (-1,))     
+    # num_query_bboxes = tf.unique_with_counts(pos_points_instance_label)[2] - 1
+    # if num_gt_bboxes > 0:
+    #     end_points[f'points_hard_topk{topk}_upper_recall_ratio'] = tf.divide(tf.cast(num_query_bboxes, tf.float32), tf.cast(num_gt_bboxes, tf.float32))
 
     return objectness_loss
 
@@ -274,15 +275,14 @@ def get_loss(end_points, config, num_decoder_layers,
     """
 
     if 'seeds_obj_cls_logits' in end_points.keys():
-        query_points_generation_loss = compute_points_obj_cls_loss_hard_topk(end_points, query_points_obj_topk)
-
+        query_points_generation_loss = compute_points_obj_cls_loss_hard_topk(end_points, query_points_obj_topk)        
         end_points['query_points_generation_loss'] = query_points_generation_loss
     else:
         query_points_generation_loss = 0.0
 
     # Obj loss
     objectness_loss_sum, end_points = \
-        compute_objectness_loss_based_on_query_points(end_points, num_decoder_layers)
+        compute_objectness_loss_based_on_query_points(end_points, num_decoder_layers)    
 
     end_points['sum_heads_objectness_loss'] = objectness_loss_sum
 
@@ -293,6 +293,7 @@ def get_loss(end_points, config, num_decoder_layers,
         size_loss_type=size_loss_type, size_delta=size_delta,
         heading_loss_type=heading_loss_type, heading_delta=heading_delta,
         size_cls_agnostic=size_cls_agnostic)
+    
     end_points['sum_heads_box_loss'] = box_loss_sum
     end_points['sum_heads_sem_cls_loss'] = sem_cls_loss_sum
 

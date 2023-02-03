@@ -214,6 +214,8 @@ if gpus:
     except RuntimeError as e:    
         print(e)
 
+import loss_helper_tf
+
 # mirrored_strategy = tf.distribute.MirroredStrategy()
 # with mirrored_strategy.scope():
 net = groupfree_tf.GroupFreeNet(num_class=DATASET_CONFIG.num_class,
@@ -225,8 +227,6 @@ net = groupfree_tf.GroupFreeNet(num_class=DATASET_CONFIG.num_class,
             model_config=model_config,
             size_cls_agnostic=FLAGS.size_cls_agnostic)
 
-import loss_helper_tf
-# with mirrored_strategy.scope():
 criterion = loss_helper_tf.get_loss
 
 # Load the optimizer
@@ -238,6 +238,16 @@ if FLAGS.optimizer == 'adamw':
 else:
     optimizer1 = tf.keras.optimizers.Adam(learning_rate=FLAGS.learning_rate)
     optimizer2 = tf.keras.optimizers.Adam(learning_rate=FLAGS.decoder_learning_rate)
+
+if DATASET == 'sunrgbd':
+    train_ds = TRAIN_DATASET.preprocess()
+    train_ds = train_ds.prefetch(BATCH_SIZE)
+
+    test_ds = TEST_DATASET.preprocess()
+    test_ds = test_ds.prefetch(BATCH_SIZE)
+
+    # train_ds = mirrored_strategy.experimental_distribute_dataset(train_ds)
+    # test_ds = mirrored_strategy.experimental_distribute_dataset(test_ds)
 
 
 # Load checkpoint if there is any
@@ -283,12 +293,7 @@ def adjust_learning_rate(optimizer, epoch, base_lr, lr_decay_rates, lr_decay_ste
     lr = get_current_lr(epoch, base_lr, lr_decay_rates, lr_decay_steps)
     optimizer.learning_rate = lr
 
-if DATASET == 'sunrgbd':
-    train_ds = TRAIN_DATASET.preprocess()
-    train_ds = train_ds.prefetch(BATCH_SIZE)
 
-    test_ds = TEST_DATASET.preprocess()
-    test_ds = test_ds.prefetch(BATCH_SIZE)
 
 # TFBoard Visualizers
 TRAIN_VISUALIZER = TfVisualizer(LOG_DIR, 'train')
@@ -303,6 +308,25 @@ CONFIG_DICT = {'remove_empty_box':False, 'use_3d_nms':True,
 
 label_dict = {0:'point_cloud', 1:'center_label', 2:'heading_class_label', 3:'heading_residual_label', 4:'size_class_label',\
     5:'size_residual_label', 6:'sem_cls_label', 7:'box_label_mask', 8:'point_obj_mask', 9:'point_instance_label', 10: 'max_gt_bboxes', 11: 'size_gts'}
+
+
+def torch_to_tf_data(batch_data):
+    point_clouds = tf.convert_to_tensor(batch_data['point_clouds'], dtype=tf.float32)
+    center_label = tf.convert_to_tensor(batch_data['center_label'], dtype=tf.float32)
+    heading_class_label = tf.convert_to_tensor(batch_data['heading_class_label'], dtype=tf.int64)
+    heading_residual_label = tf.convert_to_tensor(batch_data['heading_residual_label'],dtype=tf.float32)
+    size_class_label = tf.convert_to_tensor(batch_data['size_class_label'], dtype=tf.int64)
+    size_residual_label = tf.convert_to_tensor(batch_data['size_residual_label'], dtype=tf.float32)                
+    sem_cls_label = tf.convert_to_tensor(batch_data['sem_cls_label'], dtype=tf.int64)
+    box_label_mask = tf.convert_to_tensor(batch_data['box_label_mask'], dtype=tf.float32)
+    point_obj_mask = tf.convert_to_tensor(batch_data['point_obj_mask'], tf.int64)
+    point_instance_label = tf.convert_to_tensor(batch_data['point_instance_label'], tf.int64)
+    max_gt_bboxes = tf.convert_to_tensor(np.zeros((BATCH_SIZE, 64, 8)), dtype=tf.float32) 
+    size_gts = tf.convert_to_tensor(batch_data['size_gts'], dtype=tf.float32)
+    batch_data = point_clouds, center_label, heading_class_label, heading_residual_label, size_class_label, \
+        size_residual_label, sem_cls_label, box_label_mask, point_obj_mask, point_instance_label, max_gt_bboxes, size_gts                   
+
+    return batch_data
 
 # ------------------------------------------------------------------------- GLOBAL CONFIG END
 
@@ -340,13 +364,13 @@ def train_one_epoch(batch_data):
     grads = tape.gradient(loss, net.trainable_weights)
     # grads = [tf.clip_by_norm(g, FLAGS.clip_norm) for g in grads]
 
-    shapes = [g.shape for g in grads]
-    grads_flatten = [tf.reshape(g, (-1,)) for g in grads]
-    grads_flatten, global_norm = tf.clip_by_global_norm(grads_flatten, FLAGS.clip_norm)
+    # shapes = [g.shape for g in grads]
+    # grads_flatten = [tf.reshape(g, (-1,)) for g in grads]
+    # grads_flatten, global_norm = tf.clip_by_global_norm(grads_flatten, FLAGS.clip_norm)
 
-    grads = []
-    for g, s in zip(grads_flatten, shapes):                        
-        grads.append(tf.reshape(g, s))
+    # grads = []
+    # for g, s in zip(grads_flatten, shapes):                        
+    #     grads.append(tf.reshape(g, s))
 
     # DIfferent learning rate by layers
     varlist1, varlist2 = [], []
@@ -364,8 +388,14 @@ def train_one_epoch(batch_data):
 
     return loss
 
-
+@tf.function
 def evaluate_one_epoch(batch_data):     
+    
+    # For type match
+    config = tf.constant(DATASET_CONFIG.num_heading_bin, dtype=tf.int32), \
+        tf.constant(DATASET_CONFIG.num_size_cluster, dtype=tf.int32), \
+        tf.constant(DATASET_CONFIG.num_class, dtype=tf.int32), \
+        tf.constant(DATASET_CONFIG.mean_size_arr, dtype=tf.float32)
     
     # Forward pass
     point_cloud = batch_data[0]    
@@ -374,23 +404,17 @@ def evaluate_one_epoch(batch_data):
     for i, label in label_dict.items():
         if label_dict[i] not in end_points:
             end_points[label_dict[i]] = batch_data[i] 
-    
-    # For type match
-    config = tf.constant(DATASET_CONFIG.num_heading_bin, dtype=tf.int32), \
-        tf.constant(DATASET_CONFIG.num_size_cluster, dtype=tf.int32), \
-        tf.constant(DATASET_CONFIG.num_class, dtype=tf.int32), \
-        tf.constant(DATASET_CONFIG.mean_size_arr, dtype=tf.float32)
 
     loss, end_points = criterion(end_points, config, num_decoder_layers=FLAGS.num_decoder_layers,
-                                     query_points_generator_loss_coef=FLAGS.query_points_generator_loss_coef,
-                                     obj_loss_coef=FLAGS.obj_loss_coef,
-                                     box_loss_coef=FLAGS.box_loss_coef,
-                                     sem_cls_loss_coef=FLAGS.sem_cls_loss_coef,
-                                     query_points_obj_topk=FLAGS.query_points_obj_topk,
-                                     center_delta=FLAGS.center_delta,                                     
-                                     size_delta=FLAGS.size_delta,                                     
-                                     heading_delta=FLAGS.heading_delta,
-                                     size_cls_agnostic=FLAGS.size_cls_agnostic)     
+                                    query_points_generator_loss_coef=FLAGS.query_points_generator_loss_coef,
+                                    obj_loss_coef=FLAGS.obj_loss_coef,
+                                    box_loss_coef=FLAGS.box_loss_coef,
+                                    sem_cls_loss_coef=FLAGS.sem_cls_loss_coef,
+                                    query_points_obj_topk=FLAGS.query_points_obj_topk,
+                                    center_delta=FLAGS.center_delta,                                     
+                                    size_delta=FLAGS.size_delta,                                     
+                                    heading_delta=FLAGS.heading_delta,
+                                    size_cls_agnostic=FLAGS.size_cls_agnostic)     
 
     return loss, end_points
          
@@ -414,16 +438,16 @@ def train(start_epoch):
 
     # `run` replicates the provided computation and runs it
     # with the distributed input.
-    # @tf.function(experimental_relax_shapes=True, input_signature=input_signature)
+    # @tf.function #(experimental_relax_shapes=True, input_signature=input_signature)
     # def distributed_train_step(batch_data):
     #     per_replica_losses = mirrored_strategy.run(train_one_epoch, args=(batch_data, ))
     #     return mirrored_strategy.reduce(tf.distribute.ReduceOp.MEAN, per_replica_losses, axis=None)
         
 
-    # @tf.function(experimental_relax_shapes=True)
+    # @tf.function #(experimental_relax_shapes=True, input_signature=input_signature)
     # def distributed_eval_step(batch_data):
     #     per_replica_losses, end_points = mirrored_strategy.run(evaluate_one_epoch, args=(batch_data,))
-    #     return mirrored_strategy.reduce(tf.distribute.ReduceOp.MEAN, per_replica_losses, axis=None), end_points
+    #     return mirrored_strategy.reduce(tf.distribute.ReduceOp.MEAN, per_replica_losses, axis=None), mirrored_strategy.reduce(tf.distribute.ReduceOp.SUM, end_points, axis=None)
     
     best_eval_mAP = 0.0
     
@@ -433,12 +457,12 @@ def train(start_epoch):
         log_string('Current learning rate: %f'%
                    (get_current_lr(epoch, FLAGS.learning_rate, LR_DECAY_RATES, LR_DECAY_STEPS)))
         log_string('Current decoder learning rate: %f'%
-                   (get_current_lr(epoch, FLAGS.decoder_learning_rate, DECODER_LR_DECAY_STEPS, DECODER_LR_DECAY_STEPS)))
+                   (get_current_lr(epoch, FLAGS.decoder_learning_rate, DECODER_LR_DECAY_RATES, DECODER_LR_DECAY_STEPS)))
         log_string('Current BN decay momentum: %f'%(bnm_scheduler.lmbd(bnm_scheduler.last_epoch)))
         log_string(str(datetime.now()))  
                 
         adjust_learning_rate(optimizer1, EPOCH_CNT, FLAGS.learning_rate, LR_DECAY_RATES, LR_DECAY_STEPS)
-        adjust_learning_rate(optimizer2, EPOCH_CNT, FLAGS.decoder_learning_rate, DECODER_LR_DECAY_STEPS, DECODER_LR_DECAY_STEPS)
+        adjust_learning_rate(optimizer2, EPOCH_CNT, FLAGS.decoder_learning_rate, DECODER_LR_DECAY_RATES, DECODER_LR_DECAY_STEPS)
         # adjust_learning_rate(optimizer, EPOCH_CNT)
 
         if epoch == 0:
@@ -449,31 +473,14 @@ def train(start_epoch):
         t_epoch = 0
         start = time.time()
         
-        for batch_idx, batch_data in enumerate(train_ds):   
+        for batch_idx, batch_data in enumerate(train_ds):               
                
             if DATASET == 'scannet':                
-                point_clouds = tf.convert_to_tensor(batch_data['point_clouds'], dtype=tf.float32)
-                center_label = tf.convert_to_tensor(batch_data['center_label'], dtype=tf.float32)
-                heading_class_label = tf.convert_to_tensor(batch_data['heading_class_label'], dtype=tf.int64)
-                heading_residual_label = tf.convert_to_tensor(batch_data['heading_residual_label'],dtype=tf.float32)
-                size_class_label = tf.convert_to_tensor(batch_data['size_class_label'], dtype=tf.int64)
-                size_residual_label = tf.convert_to_tensor(batch_data['size_residual_label'], dtype=tf.float32)                
-                sem_cls_label = tf.convert_to_tensor(batch_data['sem_cls_label'], dtype=tf.int64)
-                box_label_mask = tf.convert_to_tensor(batch_data['box_label_mask'], dtype=tf.float32)
-                point_obj_mask = tf.convert_to_tensor(batch_data['point_obj_mask'], tf.int64)
-                point_instance_label = tf.convert_to_tensor(batch_data['point_instance_label'], tf.int64)
-                max_gt_bboxes = tf.convert_to_tensor(np.zeros((BATCH_SIZE, 64, 8)), dtype=tf.float32) 
-                size_gts = tf.convert_to_tensor(batch_data['size_gts'], dtype=tf.float32)
-                batch_data = point_clouds, center_label, heading_class_label, heading_residual_label, size_class_label, \
-                    size_residual_label, sem_cls_label, box_label_mask, point_obj_mask, point_instance_label, max_gt_bboxes, size_gts                            
-            else:                
-                point_cloud = batch_data[0]    
-                if point_cloud.shape[0] < BATCH_SIZE: continue
-            
+                batch_data = torch_to_tf_data(batch_data)
 
-            # train_loss += distributed_train_step(batch_data)
+            # train_loss += distributed_train_step(batch_data)                      
+            train_loss += train_one_epoch(batch_data)  
             
-            train_loss += train_one_epoch(batch_data)            
             
             # Accumulate statistics and print out
             #for key in end_points:
@@ -499,38 +506,20 @@ def train(start_epoch):
             stat_dict = defaultdict(float) # collect statistics            
             ap_calculator = APCalculator(ap_iou_thresh=FLAGS.ap_iou_thresh,
                 class2type_map=DATASET_CONFIG.class2type)     
-            for batch_idx, batch_data in enumerate(test_ds):                                           
-                if DATASET == 'scannet':                
-                    point_clouds = tf.convert_to_tensor(batch_data['point_clouds'], dtype=tf.float32)
-                    center_label = tf.convert_to_tensor(batch_data['center_label'], dtype=tf.float32)
-                    heading_class_label = tf.convert_to_tensor(batch_data['heading_class_label'], dtype=tf.int64)
-                    heading_residual_label = tf.convert_to_tensor(batch_data['heading_residual_label'],dtype=tf.float32)
-                    size_class_label = tf.convert_to_tensor(batch_data['size_class_label'], dtype=tf.int64)
-                    size_residual_label = tf.convert_to_tensor(batch_data['size_residual_label'], dtype=tf.float32)
-                    sem_cls_label = tf.convert_to_tensor(batch_data['sem_cls_label'], dtype=tf.int64)
-                    box_label_mask = tf.convert_to_tensor(batch_data['box_label_mask'], dtype=tf.float32)
-                    point_obj_mask = tf.convert_to_tensor(batch_data['point_obj_mask'], tf.float32)
-                    point_instance_label = tf.convert_to_tensor(batch_data['point_instance_label'], tf.int64)
-                    max_gt_bboxes = tf.convert_to_tensor(np.zeros((BATCH_SIZE, 64, 8)), dtype=tf.float32) 
-                    size_gts = tf.convert_to_tensor(batch_data['size_gts'], dtype=tf.float32)
-                    batch_data = point_clouds, center_label, heading_class_label, heading_residual_label, size_class_label, \
-                    size_residual_label, sem_cls_label, box_label_mask, point_obj_mask, point_instance_label, max_gt_bboxes, size_gts
+            for batch_idx, batch_data in enumerate(test_ds):                               
+                if DATASET == 'scannet':      
+                    batch_data = torch_to_tf_data(batch_data)                          
+                
                 if batch_idx % 10 == 0:
-                    print('Eval batch: %d'%(batch_idx)) 
+                    print('Eval batch: %d'%(batch_idx))
+
+                if (1+EPOCH_CNT) % 50 != 0 and batch_idx * BATCH_SIZE >= 1000:
+                    break
                 
                 # curr_loss, end_points = distributed_eval_step(batch_data)
                 curr_loss, end_points = evaluate_one_epoch(batch_data)
+                
                 eval_loss += curr_loss
-
-                # stat_dict['box_loss'] += end_points['box_loss']
-                # stat_dict['heading_reg_loss'] += end_points['heading_reg_loss']
-                # stat_dict['vote_loss'] += end_points['vote_loss']
-                # stat_dict['objectness_loss'] += end_points['objectness_loss']
-                # stat_dict['sem_cls_loss'] += end_points['sem_cls_loss']
-                # stat_dict['loss'] += end_points['loss']
-                # stat_dict['obj_acc'] += end_points['obj_acc']
-                # stat_dict['pos_ratio'] += end_points['pos_ratio']
-                # stat_dict['neg_ratio'] += end_points['neg_ratio']
 
                 # Accumulate statistics and print out
                 for key in end_points:

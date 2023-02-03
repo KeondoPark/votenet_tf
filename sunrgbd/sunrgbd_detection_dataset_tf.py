@@ -261,11 +261,12 @@ class SunrgbdDetectionDataset_tfrecord():
         if self.shuffle:
             self.files = tf.random.shuffle(self.files)     
         shards = tf.data.Dataset.from_tensor_slices(self.files)
-        dataset = shards.interleave(tf.data.TFRecordDataset)
+        dataset = shards.interleave(tf.data.TFRecordDataset, num_parallel_calls=tf.data.experimental.AUTOTUNE)
         if self.shuffle:
             dataset = dataset.shuffle(buffer_size=100)
         dataset = dataset.map(map_func=self._parse_function, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-        dataset = dataset.batch(batch_size) 
+        drop_remainder = True if split_set == 'train' else False
+        dataset = dataset.batch(batch_size, drop_remainder=drop_remainder) 
         self.dataset = dataset       
         
         
@@ -291,7 +292,7 @@ class SunrgbdDetectionDataset_tfrecord():
             self.dataset = self.dataset.map(self.augment_tensor, num_parallel_calls=tf.data.experimental.AUTOTUNE)
         
         
-        self.dataset = self.dataset.map(self.tf_get_output) #tf.data.experimental.AUTOTUNE)
+        self.dataset = self.dataset.map(self.tf_get_output, num_parallel_calls=tf.data.experimental.AUTOTUNE)
         
         return self.dataset
 
@@ -411,6 +412,25 @@ class SunrgbdDetectionDataset_tfrecord():
         return point_cloud, bboxes, point_labels, n_valid_box
 
     def _get_output(self, point_cloud, bboxes, point_labels, n_valid_box):
+
+
+        def my_compute_box_3d_arr(center, size, heading_angle):    
+            angle = -1*heading_angle
+            R = np.stack([np.stack([np.cos(angle), -np.sin(angle), np.zeros_like(angle)], -1),
+                    np.stack([np.sin(angle), np.cos(angle), np.zeros_like(angle)], -1),
+                    np.stack([np.zeros_like(angle), np.zeros_like(angle), np.ones_like(angle)], -1)], 1)
+            l, w, h = size[:,0], size[:,1], size[:,2]
+            x_corners = np.stack([-l,l,l,-l,-l,l,l,-l],-1)
+            y_corners = np.stack([w,w,-w,-w,w,w,-w,-w],-1)
+            z_corners = np.stack([h,h,h,h,-h,-h,-h,-h],-1)
+            
+            corners_3d = np.matmul(R, np.stack([x_corners, y_corners, z_corners], axis=1))
+            
+            corners_3d[:,0,:] += np.expand_dims(center[:,0],-1)
+            corners_3d[:,1,:] += np.expand_dims(center[:,1],-1)
+            corners_3d[:,2,:] += np.expand_dims(center[:,2],-1)    
+            
+            return np.transpose(corners_3d, [0,2,1])
         #print(point_cloud.shape)
         B = point_cloud.shape[0]
         
@@ -436,49 +456,81 @@ class SunrgbdDetectionDataset_tfrecord():
             
             label_mask[b,:n_box] = 1
             max_bboxes[b,:n_box,:] = bboxes[b,:n_box,:]
-
-            for i in range(n_box):
-                bbox = bboxes[b,i]
-                semantic_class = bbox[7]
-                box3d_center = bbox[0:3]
-                angle_class, angle_residual = self.DC.angle2class(bbox[6])
-                # NOTE: The mean size stored in size2class is of full length of box edges,
-                # while in sunrgbd_data.py data dumping we dumped *half* length l,w,h.. so have to time it by 2 here 
-                #box3d_size = bbox[3:6]*2
-                box3d_size = bbox[3:6]
-                #box3d_size *= 2
-                size_class = semantic_class         
-                #mean_size =  self.type_mean_size_np[size_class.numpy().astype(np.int32)]         
-                #size_residual = 2 * box3d_size - mean_size
-                size_residual = 2 * box3d_size - self.type_mean_size_np[size_class.numpy().astype(np.int32)]
-                #size_class, size_residual = size2class(box3d_size, class2type[semantic_class])
-                box3d_centers[b,i,:] = box3d_center
-                angle_classes[b,i] = angle_class
-                angle_residuals[b,i] = angle_residual
-                size_classes[b,i] = size_class
-                size_residuals[b,i] = size_residual
-                box3d_sizes[b,i,:] = 2 * box3d_size
+            bbox = bboxes[b,:n_box]
+            semantic_class = bbox[:,7]
+            box3d_center = bbox[:,0:3]
+            angle_class, angle_residual = self.DC.angle2class(bbox[:,6])
+            box3d_size = bbox[:,3:6]
+            size_class = semantic_class
+            size_residual = 2 * box3d_size - self.type_mean_size_np[size_class.numpy().astype(np.int32)]
             
+            box3d_centers[b,:n_box] = box3d_center
+            angle_classes[b,:n_box] = angle_class
+            angle_residuals[b,:n_box] = angle_residual
+            size_classes[b,:n_box] = size_class
+            size_residuals[b,:n_box] = size_residual
+            box3d_sizes[b,:n_box] = 2 * box3d_size
+
             target_bboxes_mask = label_mask 
-            target_bboxes[b,0:3] += 1000.0
+            target_bboxes[b,:,0:3] += 1000.0 
+            
+            corners_3d = my_compute_box_3d_arr(bbox[:,0:3], bbox[:,3:6], bbox[:,6])
+            xmin = np.min(corners_3d[:,:,0], axis=-1)
+            ymin = np.min(corners_3d[:,:,1], axis=-1)
+            zmin = np.min(corners_3d[:,:,2], axis=-1)
+            xmax = np.max(corners_3d[:,:,0], axis=-1)
+            ymax = np.max(corners_3d[:,:,1], axis=-1)
+            zmax = np.max(corners_3d[:,:,2], axis=-1)
+            target_bboxes[b,:n_box] = np.stack([(xmin+xmax)/2, (ymin+ymax)/2, (zmin+zmax)/2, xmax-xmin, ymax-ymin, zmax-zmin], axis=-1)
+            target_bboxes_semcls[b,:n_box] = bboxes[b,:n_box,-1] # from 0 to 9
+
+        size_gts = target_bboxes[:,:,3:6]
+
+            # label_mask[b,:n_box] = 1
+            # max_bboxes[b,:n_box,:] = bboxes[b,:n_box,:]
+
+            # for i in range(n_box):
+            #     bbox = bboxes[b,i]
+            #     semantic_class = bbox[7]
+            #     box3d_center = bbox[0:3]
+            #     angle_class, angle_residual = self.DC.angle2class(bbox[6])
+            #     # NOTE: The mean size stored in size2class is of full length of box edges,
+            #     # while in sunrgbd_data.py data dumping we dumped *half* length l,w,h.. so have to time it by 2 here 
+            #     #box3d_size = bbox[3:6]*2
+            #     box3d_size = bbox[3:6]
+            #     #box3d_size *= 2
+            #     size_class = semantic_class         
+            #     #mean_size =  self.type_mean_size_np[size_class.numpy().astype(np.int32)]         
+            #     #size_residual = 2 * box3d_size - mean_size
+            #     size_residual = 2 * box3d_size - self.type_mean_size_np[size_class.numpy().astype(np.int32)]
+            #     #size_class, size_residual = size2class(box3d_size, class2type[semantic_class])
+            #     box3d_centers[b,i,:] = box3d_center
+            #     angle_classes[b,i] = angle_class
+            #     angle_residuals[b,i] = angle_residual
+            #     size_classes[b,i] = size_class
+            #     size_residuals[b,i] = size_residual
+            #     box3d_sizes[b,i,:] = 2 * box3d_size
+            
+            # target_bboxes_mask = label_mask 
+            # target_bboxes[b,0:3] += 1000.0
 
                    
             
-            for i in range(n_box):
-                bbox = bboxes[b,i]
-                corners_3d = sunrgbd_utils.my_compute_box_3d(bbox[0:3], bbox[3:6], bbox[6])
-                # compute axis aligned box
-                xmin = np.min(corners_3d[:,0])
-                ymin = np.min(corners_3d[:,1])
-                zmin = np.min(corners_3d[:,2])
-                xmax = np.max(corners_3d[:,0])
-                ymax = np.max(corners_3d[:,1])
-                zmax = np.max(corners_3d[:,2])
-                target_bbox = np.array([(xmin+xmax)/2, (ymin+ymax)/2, (zmin+zmax)/2, xmax-xmin, ymax-ymin, zmax-zmin])
-                target_bboxes[b,i,:] = target_bbox
-                size_gts[b, i, :] = target_bbox[3:6]
+            # for i in range(n_box):
+            #     bbox = bboxes[b,i]
+            #     corners_3d = sunrgbd_utils.my_compute_box_3d(bbox[0:3], bbox[3:6], bbox[6])
+            #     # compute axis aligned box
+            #     xmin = np.min(corners_3d[:,0])
+            #     ymin = np.min(corners_3d[:,1])
+            #     zmin = np.min(corners_3d[:,2])
+            #     xmax = np.max(corners_3d[:,0])
+            #     ymax = np.max(corners_3d[:,1])
+            #     zmax = np.max(corners_3d[:,2])
+            #     target_bbox = np.array([(xmin+xmax)/2, (ymin+ymax)/2, (zmin+zmax)/2, xmax-xmin, ymax-ymin, zmax-zmin])
+            #     target_bboxes[b,i,:] = target_bbox
+            #     size_gts[b, i, :] = target_bbox[3:6]
 
-            target_bboxes_semcls[b,:n_box] = bboxes[b,:n_box,-1] # from 0 to 9
+            
         
         point_cloud = tf.constant(point_cloud, dtype=tf.float32)        
         center_label = tf.constant(target_bboxes[:,:,0:3], dtype=tf.float32)
@@ -490,7 +542,7 @@ class SunrgbdDetectionDataset_tfrecord():
         sem_cls_label = tf.constant(target_bboxes_semcls, dtype=tf.int64)
         box_label_mask = tf.constant(target_bboxes_mask, dtype=tf.float32)
         
-        point_obj_mask = tf.constant(point_labels[:,:,0], dtype=tf.float32)
+        point_obj_mask = tf.constant(tf.cast(point_labels[:,:,0], dtype=tf.int64))
         point_instance_label = tf.constant(tf.cast(point_labels[:,:,-1],dtype=tf.int64), dtype=tf.int64)
         
         max_gt_bboxes = tf.constant(max_bboxes, dtype=tf.float32) 
@@ -505,7 +557,7 @@ class SunrgbdDetectionDataset_tfrecord():
             size_residual_label, sem_cls_label, box_label_mask, point_obj_mask, point_instance_label, max_gt_bboxes, size_gts] \
                 = tf.py_function(func=self._get_output, inp=[point_cloud, bboxes, point_labels, n_valid_box],
                                  Tout= [tf.float32, tf.float32, tf.int64, tf.float32, tf.int64,  
-                                        tf.float32, tf.int64, tf.float32, tf.float32, tf.int64,
+                                        tf.float32, tf.int64, tf.float32, tf.int64, tf.int64,
                                         tf.float32, tf.float32])
         return point_cloud, center_label, heading_class_label, heading_residual_label, size_class_label, \
             size_residual_label, sem_cls_label, box_label_mask, point_obj_mask, point_instance_label, max_gt_bboxes, size_gts

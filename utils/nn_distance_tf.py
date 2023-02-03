@@ -30,7 +30,8 @@ def huber_loss(error, delta=1.0):
     # quadratic = tf.clip_by_value(abs_error, clip_value_min = 0, clip_value_max=delta)
     # linear = (abs_error - quadratic)
     # loss = 0.5 * quadratic**2 + delta * linear
-    loss = tf.where(abs_error < delta, 0.5 * abs_error * abs_error / delta, abs_error - 0.5*delta)
+    inv_delta = tf.divide(1.0, float(delta))
+    loss = tf.where(abs_error < delta, 0.5 * abs_error * abs_error * inv_delta, abs_error - 0.5*delta)
     return loss
 
 def huber_loss_torch(error, delta=1.0):
