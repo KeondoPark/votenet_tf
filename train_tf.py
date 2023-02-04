@@ -48,6 +48,7 @@ import json
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='sunrgbd', help='Dataset name. sunrgbd or scannet. [default: sunrgbd]')
 parser.add_argument('--checkpoint_path', default=None, help='Model checkpoint path [default: None]')
+parser.add_argument('--load_from', default=None, help='Loading checkpoint path [default: None]')
 parser.add_argument('--log_dir', default=None, help='Dump dir to save model checkpoint [default: log]')
 parser.add_argument('--dump_dir', default=None, help='Dump dir to save sample outputs [default: None]')
 parser.add_argument('--num_point', type=int, default=20000, help='Point Number [default: 20000]')
@@ -236,6 +237,8 @@ criterion = loss_helper_tf.get_loss
 if FLAGS.optimizer == 'adamw':
     optimizer1 = tfa.optimizers.AdamW(learning_rate=FLAGS.learning_rate, weight_decay=FLAGS.weight_decay, epsilon=1e-08)
     optimizer2 = tfa.optimizers.AdamW(learning_rate=FLAGS.decoder_learning_rate, weight_decay=FLAGS.weight_decay, epsilon=1e-08)
+    # optimizer1.global_clipnorm = FLAGS.clip_norm
+    # optimizer2.global_clipnorm = FLAGS.clip_norm
     # optimizer1 = tf.keras.optimizers.experimental.AdamW(learning_rate=FLAGS.learning_rate, weight_decay=FLAGS.weight_decay)
     # optimizer2 = tf.keras.optimizers.experimental.AdamW(learning_rate=FLAGS.decoder_learning_rate, weight_decay=FLAGS.weight_decay)
 else:
@@ -267,14 +270,19 @@ if not os.path.exists(CHECKPOINT_PATH):
 
 
 # with mirrored_strategy.scope():
-manager = tf.train.CheckpointManager(ckpt, CHECKPOINT_PATH, max_to_keep=3)
-ckpt.restore(manager.latest_checkpoint)
-print("Start epoch:", ckpt.epoch)
-if manager.latest_checkpoint:
+if FLAGS.load_from is not None:
+    manager = tf.train.CheckpointManager(ckpt, FLAGS.load_from, max_to_keep=3)
     print("Restored from {}".format(manager.latest_checkpoint))
+    ckpt.restore(manager.latest_checkpoint)
     start_epoch = ckpt.epoch.numpy()
 else:
     print("Initializing from scratch.")
+
+manager = tf.train.CheckpointManager(ckpt, CHECKPOINT_PATH, max_to_keep=3)
+print("Start epoch:", ckpt.epoch)
+
+    
+
 
         
 # Decay Batchnorm momentum from 0.5 to 0.001
@@ -296,7 +304,10 @@ def adjust_cosine_lr(optimizer, epoch, base_lr, decay_steps, alpha=0.01):
     step = min(epoch, decay_steps)
     cosine_decay = 0.5 * (1 + np.cos(np.pi * step / decay_steps))
     decayed = (1 - alpha) * cosine_decay + alpha
-    optimizer.learning_rate = base_lr * decayed  
+    curr_lr = base_lr * decayed  
+    optimizer.learning_rate = float(curr_lr)
+    return curr_lr
+    
 
 def adjust_learning_rate(optimizer, epoch, base_lr, lr_decay_rates, lr_decay_steps):
     lr = get_current_lr(epoch, base_lr, lr_decay_rates, lr_decay_steps)
@@ -465,12 +476,10 @@ def train(start_epoch):
         log_string('**** EPOCH %03d ****' % (epoch))
 
         if FLAGS.lr_scheduler == 'cosine':                
-            adjust_cosine_lr(optimizer1, EPOCH_CNT, FLAGS.learning_rate, MAX_EPOCH)
-            adjust_cosine_lr(optimizer2, EPOCH_CNT, FLAGS.decoder_learning_rate, MAX_EPOCH)
-            log_string('Current learning rate: %f'%
-                    (optimizer1.learning_rate))
-            log_string('Current decoder learning rate: %f'%
-                    (optimizer2.learning_rate))
+            curr_lr = adjust_cosine_lr(optimizer1, EPOCH_CNT, FLAGS.learning_rate, MAX_EPOCH) # int(MAX_EPOCH * 0.75))
+            log_string('Current learning rate:%f'%(curr_lr))
+            curr_decoder_lr = adjust_cosine_lr(optimizer2, EPOCH_CNT, FLAGS.decoder_learning_rate, MAX_EPOCH) # int(MAX_EPOCH * 0.75))            
+            log_string('Current decoder learning rate:%f'%(curr_decoder_lr))
         else:
             adjust_learning_rate(optimizer1, EPOCH_CNT, FLAGS.learning_rate, LR_DECAY_RATES, LR_DECAY_STEPS)
             adjust_learning_rate(optimizer2, EPOCH_CNT, FLAGS.decoder_learning_rate, DECODER_LR_DECAY_RATES, DECODER_LR_DECAY_STEPS)

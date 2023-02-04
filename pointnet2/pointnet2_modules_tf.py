@@ -376,14 +376,16 @@ class PointnetFPModule(layers.Layer):
         """
 
         if known is not None:                    
-            dist, idx = tf_interpolate.three_nn(unknown, known)
+            dist, idx = tf_interpolate.three_nn_gpu(unknown, known)
             dist_recip = tf.divide(tf.constant(1.0, dtype=tf.float32), (dist + 1e-8))
             norm = tf.reduce_sum(dist_recip, axis=2, keepdims=True)
             weight = tf.divide(dist_recip, norm)  # (B, n, 3)
             
-            interpolated_feats = tf_interpolate.three_interpolate(
+            # print("Before three interpolate")
+            interpolated_feats = tf_interpolate.three_interpolate_gpu(
                 known_feats, idx, weight
             )            
+            # print("Passed three interpolate")
 
         else:
             interpolated_feats = tf.tile(known_feats, [1, tf.shape(unknow_feats)[1] / tf.shape(known_feats)[1], 1])

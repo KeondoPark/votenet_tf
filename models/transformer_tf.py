@@ -10,7 +10,7 @@ ROOT_DIR = os.path.dirname(BASE_DIR)
 from typing import List
 import time
 import numpy as np
-from attention_tf import MultiheadAttention
+from attention_tf import MultiheadAttention, MultiheadAttention2
 
 class TransformerDecoderLayer(tf.keras.layers.Layer):
     def __init__(self, d_model=288, nhead=8, dim_feedforward=2048, dropout=0.1,
@@ -26,8 +26,8 @@ class TransformerDecoderLayer(tf.keras.layers.Layer):
                 maxval = 6            
 
 
-        self.self_attn = MultiheadAttention(d_model, nhead, dropout=dropout)
-        self.cross_attn = MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.self_attn = MultiheadAttention2(d_model, nhead, dropout=dropout)
+        self.cross_attn = MultiheadAttention2(d_model, nhead, dropout=dropout)
         self.linear1 = layers.Dense(dim_feedforward, kernel_initializer=tf.keras.initializers.he_uniform())
         self.dropout = layers.Dropout(dropout)
         self.linear2 = layers.Dense(d_model, kernel_initializer=tf.keras.initializers.he_uniform())
