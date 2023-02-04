@@ -48,6 +48,78 @@ class MultiheadAttention(tf.keras.layers.Layer):
         output = self.out_proj(output)
         return output
 
+
+class MultiheadAttention2(tf.keras.layers.Layer):
+    def __init__(self, embed_dim=288, nheads=8, dropout=0.1, qkv_same=False):
+        super().__init__()        
+        self.nheads = nheads
+        self.embed_dim = embed_dim
+        self.head_dim = embed_dim // nheads
+        self.scaling = float(self.head_dim) ** -0.5
+        self.out_proj = layers.Dense(embed_dim, use_bias=True, 
+                                     kernel_initializer=tf.keras.initializers.he_uniform(), 
+                                     bias_initializer=tf.keras.initializers.constant(0.0))
+        self.dropout = dropout
+        self.qkv_same = qkv_same
+    def build(self, input_shape):        
+        self.in_proj_weight =  self.add_weight(name='in_proj_weight', 
+                                  shape=[self.embed_dim, self.embed_dim * 3],                                  
+                                  initializer=tf.keras.initializers.he_uniform(),
+                                  trainable=True)
+        self.in_proj_bias =  self.add_weight(name='in_proj_bias', 
+                                  shape=[1,1,3 * self.embed_dim],
+                                  initializer=tf.keras.initializers.constant(0.0),
+                                  trainable=True)
+
+    def call(self, query, key, value):    
+        """
+        query, key, value dim: (B, N, C)
+        """      
+        bsz = tf.shape(query)[0]
+        tgt_len = query.shape[1]
+        embed_dim = query.shape[-1]
+        query = tf.transpose(query, [1,0,2]) #(N, B, C)
+        key = tf.transpose(key, [1,0,2]) #(M, B, C)
+        value = tf.transpose(value, [1,0,2]) #(M, B, C)
+        
+        if self.qkv_same:
+            q, k, v = tf.split(tf.matmul(query, self.in_proj_weight) + self.in_proj_bias, num_or_size_splits=3, axis=-1) #(N, B, C) -> (N, B, 3C) -> (N, B, C) * 3
+        else:
+            _b = self.in_proj_bias
+            _start = 0
+            _end = self.embed_dim
+            _w = self.in_proj_weight[:,_start:_end]
+            _b_q = _b[:,:,_start:_end]
+            q = tf.matmul(query, _w) + _b_q
+
+            # This is inline in_proj function with in_proj_weight and in_proj_bias            
+            _start = self.embed_dim            
+            _w = self.in_proj_weight[:,_start:,]
+            _b_kv = _b[:,:,_start:]
+            k, v = tf.split(tf.matmul(key, _w) +  _b_kv, num_or_size_splits=2, axis=-1)
+    
+        q = q * self.scaling
+        q = tf.reshape(q, [tgt_len, bsz * self.nheads, self.head_dim])
+        q = tf.transpose(q, perm=[1,0,2])
+        
+        k = tf.reshape(k, [-1, bsz * self.nheads, self.head_dim])
+        k = tf.transpose(k, perm=[1,0,2])
+        v = tf.reshape(v, [-1, bsz * self.nheads, self.head_dim])
+        v = tf.transpose(v, perm=[1,0,2])
+
+        attn_output_weights = tf.matmul(q, k, transpose_b=True) # (B*nh, N, H) * (B*nh, H, N) -> (B*nh, N, N)
+        attn_output_weights = tf.keras.backend.softmax(attn_output_weights)
+        attn_output_weights = layers.Dropout(self.dropout)(attn_output_weights)
+        
+        attn_output = tf.matmul(attn_output_weights, v) # (B*nh, N, N) * (B*nh, N, H) -> (B*nh, N, H)
+        attn_output = tf.transpose(attn_output, [1,0,2]) # (B*nh, N, H) -> (N, B*nh, H)
+        attn_output = tf.reshape(attn_output, [tgt_len, bsz, embed_dim]) # (N, B*nh, H) -> (N, B, C)
+        
+        attn_output = self.out_proj(attn_output) #(N, B, C)        
+        attn_output = tf.transpose(attn_output, [1,0,2]) #(B, N, C)
+        
+        return attn_output
+
 class InducedSetAttention(tf.keras.layers.Layer):
     def __init__(self, embed_dim=288, nheads=8, dropout=0.0):
         super().__init__()
