@@ -190,8 +190,8 @@ class GroupFreeDetector(layers.Layer):
                                                            end_points=end_points,
                                                            prefix=prefix)
 
-            base_xyz = base_xyz
-            base_size = base_size
+            base_xyz = tf.identity(base_xyz)
+            base_size = tf.identity(base_size)
 
         return end_points
  

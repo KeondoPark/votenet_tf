@@ -62,8 +62,8 @@ parser.add_argument('--batch_size', type=int, default=8, help='Batch Size during
 parser.add_argument('--bn_decay_step', type=int, default=40, help='Period of BN decay (in epochs) [default: 20]')
 parser.add_argument('--bn_decay_rate', type=float, default=0.5, help='Decay rate for BN decay [default: 0.5]')
 
-parser.add_argument('--lr-scheduler', type=str, default='step',
-                        choices=["step", "cosine"], help="learning rate scheduler")
+parser.add_argument('--lr-scheduler', type=str, default='step', choices=["step", "cosine"], help="learning rate scheduler")
+parser.add_argument('--cosine_alpha', type=float, default=0.01, help='Final lr to the beginning lr when cosine learning schedule is used.')
 parser.add_argument('--lr_decay_steps', default='280,340', help='When to decay the learning rate (in epochs) [default: 280,340]')
 parser.add_argument('--lr_decay_rates', default='0.1,0.1', help='Decay rates for lr decay [default: 0.1,0.1]')
 parser.add_argument('--decoder_lr_decay_steps', default='280,340', help='When to decay the learning rate (in epochs) [default: 280,340]')
@@ -91,8 +91,7 @@ parser.add_argument('--obj_loss_coef', default=0.1, type=float, help='Loss weigh
 parser.add_argument('--box_loss_coef', default=1, type=float, help='Loss weight for box loss')
 parser.add_argument('--sem_cls_loss_coef', default=0.1, type=float, help='Loss weight for classification loss')
 parser.add_argument('--query_points_obj_topk', default=4, type=int, help='query_points_obj_topk')
-parser.add_argument('--clip_norm', default=0.1, type=float,
-                        help='gradient clipping max norm')
+parser.add_argument('--clip_norm', default=0.1, type=float, help='gradient clipping max norm')
 
 
 FLAGS = parser.parse_args()
@@ -300,18 +299,23 @@ def get_current_lr(epoch, base_lr, lr_decay_rates, lr_decay_steps):
             lr *= lr_decay_rates[i]
     return lr
 
-def adjust_cosine_lr(optimizer, epoch, base_lr, decay_steps, alpha=0.01):
+def adjust_cosine_lr(optimizer, epoch, base_lr, base_wd, decay_steps, alpha=0.01):
     step = min(epoch, decay_steps)
     cosine_decay = 0.5 * (1 + np.cos(np.pi * step / decay_steps))
     decayed = (1 - alpha) * cosine_decay + alpha
-    curr_lr = base_lr * decayed  
+    curr_lr = base_lr * decayed      
     optimizer.learning_rate = float(curr_lr)
-    return curr_lr
-    
+    if FLAGS.optimizer == 'adamw':
+        curr_wd = base_wd * decayed      
+        optimizer.weight_decay = float(curr_wd)
+        return curr_lr, curr_wd
+    else:
+        return curr_lr, None    
 
 def adjust_learning_rate(optimizer, epoch, base_lr, lr_decay_rates, lr_decay_steps):
     lr = get_current_lr(epoch, base_lr, lr_decay_rates, lr_decay_steps)
     optimizer.learning_rate = lr
+    return lr
 
 
 
@@ -323,7 +327,7 @@ TEST_VISUALIZER = TfVisualizer(LOG_DIR, 'test')
 # Used for AP calculation
 CONFIG_DICT = {'remove_empty_box':False, 'use_3d_nms':True,
     'nms_iou':0.25, 'use_old_type_nms':False, 'cls_nms':True,
-    'per_class_proposal': True, 'conf_thresh':0.05,
+    'per_class_proposal': True, 'conf_thresh':0.0,
     'dataset_config':DATASET_CONFIG}
 
 label_dict = {0:'point_cloud', 1:'center_label', 2:'heading_class_label', 3:'heading_residual_label', 4:'size_class_label',\
@@ -476,25 +480,18 @@ def train(start_epoch):
         log_string('**** EPOCH %03d ****' % (epoch))
 
         if FLAGS.lr_scheduler == 'cosine':                
-            curr_lr = adjust_cosine_lr(optimizer1, EPOCH_CNT, FLAGS.learning_rate, MAX_EPOCH) # int(MAX_EPOCH * 0.75))
-            log_string('Current learning rate:%f'%(curr_lr))
-            curr_decoder_lr = adjust_cosine_lr(optimizer2, EPOCH_CNT, FLAGS.decoder_learning_rate, MAX_EPOCH) # int(MAX_EPOCH * 0.75))            
-            log_string('Current decoder learning rate:%f'%(curr_decoder_lr))
+            curr_lr, curr_wd = adjust_cosine_lr(optimizer1, EPOCH_CNT, FLAGS.learning_rate, FLAGS.weight_decay, MAX_EPOCH, alpha=FLAGS.cosine_alpha) # int(MAX_EPOCH * 0.75))                        
+            curr_decoder_lr, curr_decoder_wd = adjust_cosine_lr(optimizer2, EPOCH_CNT, FLAGS.decoder_learning_rate, FLAGS.weight_decay, MAX_EPOCH, alpha=FLAGS.cosine_alpha) #int(MAX_EPOCH * 0.75))                        
+            
         else:
-            adjust_learning_rate(optimizer1, EPOCH_CNT, FLAGS.learning_rate, LR_DECAY_RATES, LR_DECAY_STEPS)
-            adjust_learning_rate(optimizer2, EPOCH_CNT, FLAGS.decoder_learning_rate, DECODER_LR_DECAY_RATES, DECODER_LR_DECAY_STEPS)
-            log_string('Current learning rate: %f'%
-                    (get_current_lr(epoch, FLAGS.learning_rate, LR_DECAY_RATES, LR_DECAY_STEPS)))
-            log_string('Current decoder learning rate: %f'%
-                    (get_current_lr(epoch, FLAGS.decoder_learning_rate, DECODER_LR_DECAY_RATES, DECODER_LR_DECAY_STEPS)))
+            curr_lr = adjust_learning_rate(optimizer1, EPOCH_CNT, FLAGS.learning_rate, LR_DECAY_RATES, LR_DECAY_STEPS)
+            curr_decoder_lr = adjust_learning_rate(optimizer2, EPOCH_CNT, FLAGS.decoder_learning_rate, DECODER_LR_DECAY_RATES, DECODER_LR_DECAY_STEPS)
+        
+        log_string('Current learning rate:%f'%(curr_lr))
+        log_string('Current decoder learning rate:%f'%(curr_decoder_lr))
         log_string('Current BN decay momentum: %f'%(bnm_scheduler.lmbd(bnm_scheduler.last_epoch)))
         log_string(str(datetime.now()))  
 
-        
-
-        # adjust_learning_rate(optimizer, EPOCH_CNT)
-
-        # if epoch == 0:
         bnm_scheduler.step() # decay BN momentum  
         train_loss = tf.constant(0.0, tf.float32)
         eval_loss = tf.constant(0.0, tf.float32)
@@ -502,7 +499,7 @@ def train(start_epoch):
         t_epoch = 0
         start = time.time()
         
-        for batch_idx, batch_data in enumerate(train_ds):               
+        for batch_idx, batch_data in enumerate(train_ds):                   
                
             if DATASET == 'scannet':                
                 batch_data = torch_to_tf_data(batch_data)
@@ -581,6 +578,7 @@ def train(start_epoch):
                 save_path = manager.save(checkpoint_number=ckpt.epoch)
                 log_string("Saved checkpoint for step {}: {}".format(int(ckpt.epoch), save_path))
                 best_eval_mAP = eval_mAP
+                
 
         ckpt.epoch.assign_add(1)
 
