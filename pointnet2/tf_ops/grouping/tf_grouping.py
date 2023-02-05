@@ -30,6 +30,23 @@ def query_ball_point(radius, nsample, xyz1, xyz2):
     #return grouping_module.query_ball_point(radius, nsample, xyz1, xyz2)
     return grouping_module.query_ball_point(xyz1, xyz2, radius, nsample)
 ops.NoGradient('QueryBallPoint')
+
+
+def query_ball_point_cpu(radius, nsample, xyz1, xyz2):
+    '''
+    Input:
+        radius: float32, ball search radius
+        nsample: int32, number of points selected in each ball region
+        xyz1: (batch_size, ndataset, 3) float32 array, input points
+        xyz2: (batch_size, npoint, 3) float32 array, query points
+    Output:
+        idx: (batch_size, npoint, nsample) int32 array, indices to input points
+        pts_cnt: (batch_size, npoint) int32 array, number of unique points in each local region
+    '''
+    #return grouping_module.query_ball_point(radius, nsample, xyz1, xyz2)
+    return grouping_module.query_ball_point_cpu(xyz1, xyz2, radius, nsample)
+ops.NoGradient('QueryBallPointCpu')
+
 def select_top_k(k, dist):
     '''
     Input:
@@ -41,6 +58,7 @@ def select_top_k(k, dist):
     '''
     return grouping_module.selection_sort(dist, k)
 ops.NoGradient('SelectionSort')
+
 def group_point(points, idx):
     '''
     Input:
@@ -50,11 +68,28 @@ def group_point(points, idx):
         out: (batch_size, npoint, nsample, channel) float32 array, values sampled from points
     '''
     return grouping_module.group_point(points, idx)
+
 @tf.RegisterGradient('GroupPoint')
 def _group_point_grad(op, grad_out):
     points = op.inputs[0]
     idx = op.inputs[1]
     return [grouping_module.group_point_grad(points, idx, grad_out), None]
+
+def group_point_cpu(points, idx):
+    '''
+    Input:
+        points: (batch_size, ndataset, channel) float32 array, points to sample from
+        idx: (batch_size, npoint, nsample) int32 array, indices to points
+    Output:
+        out: (batch_size, npoint, nsample, channel) float32 array, values sampled from points
+    '''
+    return grouping_module.group_point_cpu(points, idx)
+
+@tf.RegisterGradient('GroupPointCpu')
+def _group_point_cpu_grad(op, grad_out):
+    points = op.inputs[0]
+    idx = op.inputs[1]
+    return [grouping_module.group_point_cpu_grad(points, idx, grad_out), None]
 
 def knn_point(k, xyz1, xyz2):
     '''
@@ -113,31 +148,39 @@ def knn_with_attention(k, xyz1, xyz2, attn):
     return idx, val
 
 if __name__=='__main__':
-    knn=True
+    knn=False
     import numpy as np
     import time
     np.random.seed(100)
-    pts = np.random.random((32,512,64)).astype('float32')
-    tmp1 = np.random.random((32,512,3)).astype('float32')
-    tmp2 = np.random.random((32,128,3)).astype('float32')
-    with tf.device('/gpu:1'):
-        points = tf.constant(pts)
-        xyz1 = tf.constant(tmp1)
-        xyz2 = tf.constant(tmp2)
-        radius = 0.1 
-        nsample = 64
-        if knn:
-            _, idx = knn_point(nsample, xyz1, xyz2)
-            grouped_points = group_point(points, idx)
-        else:
-            idx, _ = query_ball_point(radius, nsample, xyz1, xyz2)
-            grouped_points = group_point(points, idx)
+    pts = np.random.random((8,16+4,64)).astype('float32')
+    tmp1 = np.random.random((8,16,3)).astype('float32')
+    tmp2 = np.random.random((8,4,3)).astype('float32')
+    
+    points = tf.constant(pts)
+    xyz1 = tf.constant(tmp1)
+    xyz2 = tf.constant(tmp2)
+    xyz2 = tf.concat([xyz1, xyz2], axis=1)
+    radius = 0.5 
+    nsample = 4
+    if knn:
+        _, idx = knn_point(nsample, xyz1, xyz2)
+        grouped_points = group_point(points, idx)
+    else:
+        idx_gpu, _ = query_ball_point(radius, nsample, xyz1, xyz2)
+        idx_cpu, _ = query_ball_point_cpu(radius, nsample, xyz1, xyz2)
+        # print(tf.reduce_sum(idx_gpu - idx_cpu, axis=1))
+        print(tf.reduce_sum(idx_gpu - idx_cpu))
+        
+
+        grouped_points = group_point(points, idx_gpu)
+        grouped_points_cpu = group_point_cpu(points, idx_cpu)
+        print(tf.reduce_sum(grouped_points.numpy() - grouped_points_cpu.numpy()))
             #grouped_points_grad = tf.ones_like(grouped_points)
             #points_grad = tf.gradients(grouped_points, points, grouped_points_grad)
-    with tf.Session('') as sess:
-        now = time.time() 
-        for _ in range(100):
-            ret = sess.run(grouped_points)
-        print (time.time() - now)
-        print (ret.shape, ret.dtype)
-        print (ret)
+    # with tf.Session('') as sess:
+    #     now = time.time() 
+    #     for _ in range(100):
+    #         ret = sess.run(grouped_points)
+    #     print (time.time() - now)
+    #     print (ret.shape, ret.dtype)
+    #     print (ret)

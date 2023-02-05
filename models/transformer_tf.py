@@ -26,8 +26,8 @@ class TransformerDecoderLayer(tf.keras.layers.Layer):
                 maxval = 6            
 
 
-        self.self_attn = MultiheadAttention2(d_model, nhead, dropout=dropout)
-        self.cross_attn = MultiheadAttention2(d_model, nhead, dropout=dropout)
+        self.self_attn = MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.cross_attn = MultiheadAttention(d_model, nhead, dropout=dropout)
         self.linear1 = layers.Dense(dim_feedforward, kernel_initializer=tf.keras.initializers.he_uniform())
         self.dropout = layers.Dropout(dropout)
         self.linear2 = layers.Dense(d_model, kernel_initializer=tf.keras.initializers.he_uniform())

@@ -161,8 +161,8 @@ if __name__ == '__main__':
             super().__init__()
             self.self_posembed = PositionEmbeddingLearned(embed_dim)
             self.cross_posembed = PositionEmbeddingLearned(embed_dim)
-            self.self_attention = MultiheadAttention(embed_dim, nheads, dropout)
-            self.cross_attention = MultiheadAttention(embed_dim, nheads, dropout)
+            self.self_attention = MultiheadAttention2(embed_dim, nheads, dropout)
+            self.cross_attention = MultiheadAttention2(embed_dim, nheads, dropout)
             self.norm = layers.LayerNormalization(axis=-1)
             # self.norm = layers.BatchNormalization(axis=-1)
         
@@ -251,5 +251,5 @@ if __name__ == '__main__':
     converter.inference_output_type = tf.float32
     tflite_model = converter.convert()
 
-    with open('attention_quant_groupfree.tflite', 'wb') as f:
+    with open('temp/attention_quant_groupfree.tflite', 'wb') as f:
         f.write(tflite_model)
