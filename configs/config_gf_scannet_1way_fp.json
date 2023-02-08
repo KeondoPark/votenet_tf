@@ -1,5 +1,5 @@
 {    
-    "model_id": "gf_scannet_1way_fp",
+    "model_id": "gf_scannet_1way_fp_test1",
     "dataset": "scannet",
     "use_painted": true,   
     "two_way": false,       

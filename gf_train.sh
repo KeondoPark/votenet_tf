@@ -26,7 +26,7 @@ CUDA_VISIBLE_DEVICES=0 python train_tf.py --config_path configs/config_gf_1way_f
                        --query_points_generator_loss_coef 0.2 --obj_loss_coef 0.4 --optimizer adamw --cosine_alpha 0.001
 
 # sunrgbd 2way
-CUDA_VISIBLE_DEVICES=2 python train_tf.py --config_path configs/config_gf_2way_nofp_sep.json \
+CUDA_VISIBLE_DEVICES=3 python train_tf.py --config_path configs/config_gf_2way_nofp_sep.json \
                        --max_epoch 300 --lr-scheduler cosine \
                        --size_cls_agnostic --size_delta 0.0625 --heading_delta 0.04 --center_delta 0.1111111111111 \
                        --num_point 20000 --num_decoder_layers 6 \

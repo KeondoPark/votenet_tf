@@ -288,22 +288,26 @@ class PointnetMLP(layers.Layer):
             use_xyz: bool = True,                                    
             mlp: List[int], 
             bn: bool = True, 
-            model_config = None
+            model_config = None,
+            add_logit_branch: bool = False
     ):
         super().__init__()
 
         self.nsample = nsample        
         self.npoint = npoint
+        self.add_logit_branch = add_logit_branch
 
         mlp_spec = mlp
         if use_xyz and len(mlp_spec)>0:
             mlp_spec[0] += 3  
         act = model_config['activation'] if 'activation' in model_config['activation'] else 'relu6'
-        self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=bn, activation=act, input_shape=[npoint, nsample, mlp_spec[0]])        
+        self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=bn, activation=act, input_shape=[npoint, nsample, mlp_spec[0]], add_logit_branch=add_logit_branch)        
         self.max_pool = layers.MaxPooling2D(pool_size=(1, 16), strides=(1,16), data_format="channels_last")
         self.max_pool2 = layers.MaxPooling2D(pool_size=(1, int(self.nsample/16)), strides=(1,int(self.nsample/16)), data_format="channels_last")        
+        if self.add_logit_branch:
+            self.classifier = layers.Dense(1)
         
-    def call(self, features):
+    def call(self, features):                    
         new_features = self.mlp_module(features)
 
         if self.nsample == 16:
@@ -313,7 +317,12 @@ class PointnetMLP(layers.Layer):
 
         new_features = layers.Reshape((-1, new_features.shape[-1]))(new_features)
 
-        return new_features
+        if self.add_logit_branch:
+            logit = self.classifier(new_features)
+            logit = layers.Reshape((-1, ))(logit)
+            return logit, new_features
+        else:
+            return new_features
 
 class PointnetFPModule(layers.Layer):
     r"""Propigates the features of one set to another
@@ -382,7 +391,7 @@ class PointnetFPModule(layers.Layer):
             weight = tf.divide(dist_recip, norm)  # (B, n, 3)
             
             # print("Before three interpolate")
-            interpolated_feats = tf_interpolate.three_interpolate_gpu(
+            interpolated_feats = tf_interpolate.three_interpolate_gpu( # (B, n, C2)
                 known_feats, idx, weight
             )            
             # print("Passed three interpolate")

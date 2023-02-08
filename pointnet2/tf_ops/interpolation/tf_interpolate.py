@@ -11,7 +11,12 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR)))
 environ_file = os.path.join(ROOT_DIR,'configs','environ.json')
 environ = json.load(open(environ_file))['environ']
 
+<<<<<<< HEAD
 if 'server' in environ:           
+=======
+if 'server' in environ:       
+    # interpolate_module=tf.load_op_library('/home/keondopark/votenet_tf/pointnet2/tf_ops/interpolation/tf_interpolate_so_server.so') #For server
+>>>>>>> 32cac1c4a025783ec5e8410f89f999d1e2a61b08
     interpolate_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_interpolate_so_server.so')) #For server
 elif environ == 'jetson':
     interpolate_module=tf.load_op_library(os.path.join(BASE_DIR, 'tf_interpolate_so.so')) #For Jetson Nano

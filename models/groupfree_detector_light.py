@@ -14,14 +14,14 @@ from tensorflow.keras import layers
 import numpy as np
 import os
 
-from modules_tf import PointsObjClsModule, PredictHead, PositionEmbeddingLearned, ClsAgnosticPredictHead
+from modules_tf import PointsObjClsModule, PredictHead, PositionEmbeddingLearned, ClsAgnosticPredictHead, PointsObjClsModule2
 from transformer_tf import TransformerDecoderLayer
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
 
 
-class GroupFreeDetector(layers.Layer):
+class GroupFreeDetector_Light(layers.Layer):
     def __init__(self, num_class, num_heading_bin, num_size_cluster, mean_size_arr, model_config,
                  num_proposal=256, dropout=0.1,
                  nhead=8, num_decoder_layers=6, dim_feedforward=2048,
@@ -60,7 +60,7 @@ class GroupFreeDetector(layers.Layer):
             act = model_config['activation']
         else:
             act = 'relu'
-        self.points_obj_cls = PointsObjClsModule(288, activation=act) # 3 Conv layers
+        self.points_obj_cls = PointsObjClsModule2(288, activation=act) # 3 Conv layers
         # self.gsample_module = GeneralSamplingModule() # Gather operation
         
 
@@ -71,33 +71,16 @@ class GroupFreeDetector(layers.Layer):
             self.proposal_head = PredictHead(num_class, num_heading_bin, num_size_cluster,
                                              mean_size_arr, num_proposal, 288, activation=act)
 
-        # Transformer Decoder Projection
-        self.decoder_key_proj = layers.Conv2D(filters=288, kernel_size=1, kernel_initializer=tf.keras.initializers.he_normal())
-        self.decoder_query_proj = layers.Conv2D(filters=288, kernel_size=1, kernel_initializer=tf.keras.initializers.he_normal())
-
         # Position Embedding for Self-Attention
-        if self.self_position_embedding == 'none':
-            self.decoder_self_posembeds = [None for i in range(self.num_decoder_layers)]
-        elif self.self_position_embedding == 'xyz_learned':            
-            self.decoder_self_posembeds = []
-            for i in range(self.num_decoder_layers):
-                self.decoder_self_posembeds.append(PositionEmbeddingLearned(288, activation=act))
-        elif self.self_position_embedding == 'loc_learned':    
-            self.decoder_self_posembeds = []        
-            for i in range(self.num_decoder_layers):
-                self.decoder_self_posembeds.append(PositionEmbeddingLearned(288, activation=act))
+        self.decoder_self_posembeds = []        
+        for i in range(self.num_decoder_layers):
+            self.decoder_self_posembeds.append(PositionEmbeddingLearned(288, activation=act))
 
-         # Position Embedding for Cross-Attention
-        if self.cross_position_embedding == 'none':
-            self.decoder_cross_posembeds = [None for i in range(num_decoder_layers)]
-        elif self.cross_position_embedding == 'xyz_learned':
-            self.decoder_cross_posembeds = []
-            for i in range(self.num_decoder_layers):
-                self.decoder_cross_posembeds.append(PositionEmbeddingLearned(288, activation=act))
-        else:
-            raise NotImplementedError(f"cross_position_embedding not supported {self.cross_position_embedding}")
-
-        
+        # Position Embedding for Cross-Attention        
+        self.decoder_cross_posembeds = []
+        for i in range(self.num_decoder_layers):
+            self.decoder_cross_posembeds.append(PositionEmbeddingLearned(288, activation=act))
+                
         self.decoder = []
         for i in range(self.num_decoder_layers):
             self.decoder.append(
@@ -135,13 +118,13 @@ class GroupFreeDetector(layers.Layer):
 
 
         # Query Points Generation; Object candidate sampling 
-        points_obj_cls_logits = self.points_obj_cls(seed_features)  # (batch_size, num_seed, 1, 1)
+        points_obj_cls_logits, new_seed_features = self.points_obj_cls(seed_features)  # (batch_size, num_seed, 1, 1)
         end_points['seeds_obj_cls_logits'] = points_obj_cls_logits
         points_obj_cls_scores = tf.math.sigmoid(points_obj_cls_logits)
         points_obj_cls_scores = layers.Reshape((N,))(points_obj_cls_logits)
         values, sample_inds = tf.math.top_k(points_obj_cls_scores, self.num_proposal)
         xyz = tf.gather(seed_xyz, axis=1, indices=sample_inds, batch_dims=1)
-        features = tf.gather(seed_features, axis=1, indices=sample_inds, batch_dims=1) # (batch_size, num_proposal, 1, C)
+        features = tf.gather(new_seed_features, axis=1, indices=sample_inds, batch_dims=1) # (batch_size, num_proposal, 1, C)
         cluster_feature = features # (batch_size, num_proposal, 1, C)
         cluster_xyz = xyz
         end_points['query_points_xyz'] = xyz  # (batch_size, num_proposal, 3)
@@ -157,39 +140,29 @@ class GroupFreeDetector(layers.Layer):
         base_xyz = proposal_center
         base_size = proposal_size
 
+
         # Transformer Decoder and Prediction
-        query = self.decoder_query_proj(cluster_feature) # (batch_size, num_proposal, 1, C)
-        key = self.decoder_key_proj(seed_features) if self.decoder_key_proj is not None else None # (batch_size, num_proposal, 1, C)
+        query = cluster_feature
+        key = new_seed_features        
 
         # Position Embedding for Cross-Attention
-        if self.cross_position_embedding == 'none':
-            key_pos = None
-        elif self.cross_position_embedding in ['xyz_learned']:
-            key_pos = seed_xyz
-        else:
-            raise NotImplementedError(f"cross_position_embedding not supported {self.cross_position_embedding}")
+        key_pos = seed_xyz
 
         for i in range(self.num_decoder_layers):
             prefix = 'last_' if (i == self.num_decoder_layers - 1) else f'{i}head_'
 
             # Position Embedding for Self-Attention
-            if self.self_position_embedding == 'none':
-                query_pos = None
-            elif self.self_position_embedding == 'xyz_learned':
-                query_pos = base_xyz
-            elif self.self_position_embedding == 'loc_learned':
-                query_pos = layers.Concatenate(axis=-1)([base_xyz, base_size])
-            else:
-                raise NotImplementedError(f"self_position_embedding not supported {self.self_position_embedding}")
+            query_pos = layers.Concatenate(axis=-1)([base_xyz, base_size])
 
             # Transformer Decoder Layer
             query = self.decoder[i](query, key, query_pos, key_pos)
 
             # Prediction
-            base_xyz, base_size, end_points = self.prediction_heads[i](query,
+            base_xyz, base_size, end_points = self.prediction_heads[0](query,
                                                            base_xyz=cluster_xyz,
                                                            end_points=end_points,
                                                            prefix=prefix)
+            
 
             base_xyz = tf.identity(base_xyz)
             base_size = tf.identity(base_size)

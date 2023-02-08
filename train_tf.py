@@ -56,7 +56,7 @@ parser.add_argument('--num_target', type=int, default=256, help='Proposal number
 parser.add_argument('--vote_factor', type=int, default=1, help='Vote factor [default: 1]')
 parser.add_argument('--cluster_sampling', default='vote_fps', help='Sampling strategy for vote clusters: vote_fps, seed_fps, random [default: vote_fps]')
 parser.add_argument('--ap_iou_thresh', type=float, default=0.25, help='AP IoU threshold [default: 0.25]')
-parser.add_argument('--max_epoch', type=int, default=400, help='Epoch to run [default: 400]')
+parser.add_argument('--max_epoch', type=int, default=300, help='Epoch to run [default: 400]')
 parser.add_argument('--batch_size', type=int, default=8, help='Batch Size during training [default: 8]')
 
 parser.add_argument('--bn_decay_step', type=int, default=40, help='Period of BN decay (in epochs) [default: 20]')
@@ -92,7 +92,8 @@ parser.add_argument('--box_loss_coef', default=1, type=float, help='Loss weight 
 parser.add_argument('--sem_cls_loss_coef', default=0.1, type=float, help='Loss weight for classification loss')
 parser.add_argument('--query_points_obj_topk', default=4, type=int, help='query_points_obj_topk')
 parser.add_argument('--clip_norm', default=0.1, type=float, help='gradient clipping max norm')
-
+parser.add_argument('--decoder_normalization', default='layer', help='Which normalization method to use in decoder [layer or batch]')
+parser.add_argument('--light', action='store_true', help='Use light version of detector')
 
 FLAGS = parser.parse_args()
 
@@ -228,7 +229,9 @@ net = groupfree_tf.GroupFreeNet(num_class=DATASET_CONFIG.num_class,
             num_proposal=FLAGS.num_target,
             input_feature_dim=num_input_channel,                                
             model_config=model_config,
-            size_cls_agnostic=FLAGS.size_cls_agnostic)
+            size_cls_agnostic=FLAGS.size_cls_agnostic,
+            decoder_normalization=FLAGS.decoder_normalization,
+            light_detector=FLAGS.light)
 
 criterion = loss_helper_tf.get_loss
 
@@ -302,6 +305,7 @@ def get_current_lr(epoch, base_lr, lr_decay_rates, lr_decay_steps):
 def adjust_cosine_lr(optimizer, epoch, base_lr, base_wd, decay_steps, alpha=0.01):
     step = min(epoch, decay_steps)
     cosine_decay = 0.5 * (1 + np.cos(np.pi * step / decay_steps))
+    # cosine_decay = 1 + np.cos(np.pi/2 * (1 + step / decay_steps))
     decayed = (1 - alpha) * cosine_decay + alpha
     curr_lr = base_lr * decayed      
     optimizer.learning_rate = float(curr_lr)
@@ -484,7 +488,7 @@ def train(start_epoch):
 
         if FLAGS.lr_scheduler == 'cosine':                
             curr_lr, curr_wd = adjust_cosine_lr(optimizer1, EPOCH_CNT, FLAGS.learning_rate, FLAGS.weight_decay, MAX_EPOCH, alpha=FLAGS.cosine_alpha) # int(MAX_EPOCH * 0.75))                        
-            curr_decoder_lr, curr_decoder_wd = adjust_cosine_lr(optimizer2, EPOCH_CNT, FLAGS.decoder_learning_rate, FLAGS.weight_decay, MAX_EPOCH, alpha=FLAGS.cosine_alpha) #int(MAX_EPOCH * 0.75))                        
+            curr_decoder_lr, curr_decoder_wd = adjust_cosine_lr(optimizer2, EPOCH_CNT, FLAGS.decoder_learning_rate, FLAGS.weight_decay, MAX_EPOCH, alpha=FLAGS.cosine_alpha) #int(MAX_EPOCH * 0.75))            
             
         else:
             curr_lr = adjust_learning_rate(optimizer1, EPOCH_CNT, FLAGS.learning_rate, LR_DECAY_RATES, LR_DECAY_STEPS)

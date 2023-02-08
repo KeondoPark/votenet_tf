@@ -18,6 +18,7 @@ ROOT_DIR = os.path.dirname(BASE_DIR)
 sys.path.append(BASE_DIR)
 from backbone_module_tf import Pointnet2Backbone, Pointnet2Backbone_p, Pointnet2Backbone_tflite
 from groupfree_detector import GroupFreeDetector
+from groupfree_detector_light import GroupFreeDetector_Light
 from dump_helper_tf import dump_results
 from loss_helper_tf import get_loss
 
@@ -45,7 +46,8 @@ class GroupFreeNet(tf.keras.Model):
 
     def __init__(self, num_class, num_heading_bin, num_size_cluster, mean_size_arr,
         model_config,
-        input_feature_dim=0, num_proposal=256, size_cls_agnostic=False):
+        input_feature_dim=0, num_proposal=256, size_cls_agnostic=False,
+        decoder_normalization='layer', light_detector=False):
         super().__init__()
 
         self.num_class = num_class
@@ -68,8 +70,26 @@ class GroupFreeNet(tf.keras.Model):
         else:
             # Original votenet architecture
             self.backbone_net = Pointnet2Backbone(input_feature_dim=self.input_feature_dim, model_config=model_config)
-            
-        self.detector = GroupFreeDetector(num_class, num_heading_bin, num_size_cluster, mean_size_arr, model_config, num_proposal=num_proposal, size_cls_agnostic=size_cls_agnostic)            
+        
+        if light_detector:
+            self.detector = GroupFreeDetector_Light(num_class, 
+                                        num_heading_bin, 
+                                        num_size_cluster, 
+                                        mean_size_arr, 
+                                        model_config, 
+                                        num_proposal=num_proposal, 
+                                        size_cls_agnostic=size_cls_agnostic, 
+                                        decoder_normalization=decoder_normalization)            
+
+        else:
+            self.detector = GroupFreeDetector(num_class, 
+                                            num_heading_bin, 
+                                            num_size_cluster, 
+                                            mean_size_arr, 
+                                            model_config, 
+                                            num_proposal=num_proposal, 
+                                            size_cls_agnostic=size_cls_agnostic, 
+                                            decoder_normalization=decoder_normalization)            
 
     def call(self, point_cloud, imgs=None, calibs=None, deeplab_tflite_file=None):
         """ Forward pass of the network
