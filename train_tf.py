@@ -249,10 +249,10 @@ else:
 
 if DATASET == 'sunrgbd':
     train_ds = TRAIN_DATASET.preprocess()
-    train_ds = train_ds.prefetch(BATCH_SIZE)
+    train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
 
     test_ds = TEST_DATASET.preprocess()
-    test_ds = test_ds.prefetch(BATCH_SIZE)
+    test_ds = test_ds.prefetch(tf.data.AUTOTUNE)
 
     # train_ds = mirrored_strategy.experimental_distribute_dataset(train_ds)
     # test_ds = mirrored_strategy.experimental_distribute_dataset(test_ds)
@@ -316,9 +316,12 @@ def adjust_cosine_lr(optimizer, epoch, base_lr, base_wd, decay_steps, alpha=0.01
     else:
         return curr_lr, None    
 
-def adjust_learning_rate(optimizer, epoch, base_lr, lr_decay_rates, lr_decay_steps):
+def adjust_learning_rate(optimizer, epoch, base_lr, base_wd, lr_decay_rates, lr_decay_steps):
     lr = get_current_lr(epoch, base_lr, lr_decay_rates, lr_decay_steps)
     optimizer.learning_rate = lr
+    if FLAGS.optimizer == 'adamw':
+        wd = get_current_lr(epoch, base_wd, lr_decay_rates, lr_decay_steps)
+        optimizer.weight_decay = float(wd)
     return lr
 
 
@@ -449,20 +452,20 @@ def evaluate_one_epoch(batch_data):
 def train(start_epoch):
     global EPOCH_CNT   
 
-    input_signature=[[     
-        tf.TensorSpec(shape=(None, NUM_POINT, 3+num_input_channel), dtype=tf.float32), #point cloud        
-        tf.TensorSpec(shape=(None, 64, 3), dtype=tf.float32), #center label
-        tf.TensorSpec(shape=(None, 64), dtype=tf.int64), #heading class label
-        tf.TensorSpec(shape=(None, 64), dtype=tf.float32), #heading residual label
-        tf.TensorSpec(shape=(None, 64), dtype=tf.int64), #size_class_label
-        tf.TensorSpec(shape=(None, 64, 3), dtype=tf.float32), #size_residual_label
-        tf.TensorSpec(shape=(None, 64), dtype=tf.int64), #sem_cls_label
-        tf.TensorSpec(shape=(None, 64), dtype=tf.float32), #box_label_mask
-        tf.TensorSpec(shape=(None, NUM_POINT), dtype=tf.int64), #point_obj_mask
-        tf.TensorSpec(shape=(None, NUM_POINT), dtype=tf.int64), #point_instance_label
-        tf.TensorSpec(shape=(None, 64,8), dtype=tf.float32), #max_gt_bboxes                           
-        tf.TensorSpec(shape=(None, 64,3), dtype=tf.float32), #size_gts
-    ]]
+    # input_signature=[[     
+    #     tf.TensorSpec(shape=(None, NUM_POINT, 3+num_input_channel), dtype=tf.float32), #point cloud        
+    #     tf.TensorSpec(shape=(None, 64, 3), dtype=tf.float32), #center label
+    #     tf.TensorSpec(shape=(None, 64), dtype=tf.int64), #heading class label
+    #     tf.TensorSpec(shape=(None, 64), dtype=tf.float32), #heading residual label
+    #     tf.TensorSpec(shape=(None, 64), dtype=tf.int64), #size_class_label
+    #     tf.TensorSpec(shape=(None, 64, 3), dtype=tf.float32), #size_residual_label
+    #     tf.TensorSpec(shape=(None, 64), dtype=tf.int64), #sem_cls_label
+    #     tf.TensorSpec(shape=(None, 64), dtype=tf.float32), #box_label_mask
+    #     tf.TensorSpec(shape=(None, NUM_POINT), dtype=tf.int64), #point_obj_mask
+    #     tf.TensorSpec(shape=(None, NUM_POINT), dtype=tf.int64), #point_instance_label
+    #     tf.TensorSpec(shape=(None, 64,8), dtype=tf.float32), #max_gt_bboxes                           
+    #     tf.TensorSpec(shape=(None, 64,3), dtype=tf.float32), #size_gts
+    # ]]
 
     # `run` replicates the provided computation and runs it
     # with the distributed input.

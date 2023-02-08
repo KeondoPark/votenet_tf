@@ -1,5 +1,6 @@
 {    
-    "model_id": "gf_2way_nofp_sep", 
+    "model_id": "gf_2way_nofp_sep_test2", 
+    "dataset": "sunrgbd",
     "use_painted": true,   
     "two_way": true,       
     "use_fp_mlp": false, 

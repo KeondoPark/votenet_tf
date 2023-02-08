@@ -424,7 +424,7 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
                     ########## Add 2D segmentation result to point cloud(Point Painting) ##########
                     # Project points to image
                     calib = dataset.get_calibration(data_idx)
-                    uv,d = calib.project_upright_depth_to_image(pc_upright_depth_subsampled[:,0:3]) #uv: (N, 2)
+                    uv,d,_ = calib.project_upright_depth_to_image(pc_upright_depth_subsampled[:,0:3]) #uv: (N, 2)
 
                     # Run image segmentation result and get result
                     img = dataset.get_image2(data_idx)            

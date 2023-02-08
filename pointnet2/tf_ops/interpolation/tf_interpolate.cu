@@ -1,4 +1,4 @@
-
+//
 // input: unknown(b, n, 3) known(b, m, 3)
 // output: dist2(b, n, 3), idx(b, n, 3)
 __global__ void threenn_gpu(int b, int n, int m, 
