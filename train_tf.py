@@ -485,7 +485,7 @@ def train(start_epoch):
 
         if FLAGS.lr_scheduler == 'cosine':                
             curr_lr, curr_wd = adjust_cosine_lr(optimizer1, EPOCH_CNT, FLAGS.learning_rate, FLAGS.weight_decay, MAX_EPOCH, alpha=FLAGS.cosine_alpha) # int(MAX_EPOCH * 0.75))                        
-            curr_decoder_lr, curr_decoder_wd = adjust_cosine_lr(optimizer2, EPOCH_CNT, FLAGS.decoder_learning_rate, 0.1*FLAGS.weight_decay, MAX_EPOCH, alpha=FLAGS.cosine_alpha) #int(MAX_EPOCH * 0.75))            
+            curr_decoder_lr, curr_decoder_wd = adjust_cosine_lr(optimizer2, EPOCH_CNT, FLAGS.decoder_learning_rate, FLAGS.weight_decay, MAX_EPOCH, alpha=FLAGS.cosine_alpha) #int(MAX_EPOCH * 0.75))            
             
         else:
             curr_lr = adjust_learning_rate(optimizer1, EPOCH_CNT, FLAGS.learning_rate, LR_DECAY_RATES, LR_DECAY_STEPS)
