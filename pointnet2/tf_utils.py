@@ -19,7 +19,8 @@ class SharedMLP(layers.Layer):
             activation='relu',
             #preact: bool = False,            
             name: str = "",
-            data_format: str = "channels_last"
+            data_format: str = "channels_last",
+            add_logit_branch: bool = False
     ):
         super(SharedMLP, self).__init__()
 
@@ -47,7 +48,7 @@ class SharedMLP(layers.Layer):
                         #preact=preact,                    
                         name=name + 'layer{}'.format(i),
                         input_shape=None,
-                        data_format=data_format               
+                        data_format=data_format                        
                     )
                 )
   
@@ -105,7 +106,7 @@ class _ConvBase(layers.Layer):
             #preact=False,
             name="",
             input_shape=None,
-            data_format="channels_last" #(B,H,W,C)    
+            data_format="channels_last" #(B,H,W,C)                
     ):
         super(_ConvBase, self).__init__()
 
@@ -151,6 +152,7 @@ class _ConvBase(layers.Layer):
             self.act = layers.ReLU()
         elif activation =='relu6':
             self.act = layers.ReLU(6)
+        
     
     def call(self, inputs):
         if self.bn:

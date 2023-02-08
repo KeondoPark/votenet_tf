@@ -61,6 +61,43 @@ class PointsObjClsModule(tf.keras.layers.Layer):
 
         return logits
 
+class PointsObjClsModule2(tf.keras.layers.Layer):
+    def __init__(self, seed_feature_dim, activation='relu'):
+        """ object candidate point prediction from seed point features.
+
+        Args:
+            seed_feature_dim: int
+                number of channels of seed point features
+        """
+        super().__init__()
+        self.in_dim = seed_feature_dim
+        self.conv1 = layers.Conv2D(filters=self.in_dim, kernel_size=1, kernel_initializer=tf.keras.initializers.he_normal())
+        self.bn1 = layers.BatchNormalization(axis=-1)
+        self.conv2 = layers.Conv2D(filters=self.in_dim, kernel_size=1, kernel_initializer=tf.keras.initializers.he_normal())
+        self.bn2 = layers.BatchNormalization(axis=-1)
+        self.conv3 = layers.Conv2D(filters=1 + 288, kernel_size=1, kernel_initializer=tf.keras.initializers.he_normal())
+
+        maxval = None if activation=='relu' else 6
+        self.relu1 = layers.ReLU(maxval)
+        self.relu2 = layers.ReLU(maxval)
+
+    def call(self, seed_features):
+        """ Forward pass.
+
+        Arguments:
+            seed_features: (batch_size, num_seed, 1, feature_dim)
+        Returns:
+            logits: (batch_size, num_seed, 1)
+        """
+        net = self.relu1(self.bn1(self.conv1(seed_features)))
+        net = self.relu2(self.bn2(self.conv2(net)))
+        net = self.conv3(net)  # (batch_size, num_seed, 1, 288 + 1)
+
+        logits = net[:,:,:,:1] # (batch_size, num_seed, 1, 1)
+        features = net[:,:,:,1:] # (batch_size, num_seed, 1, 288)
+
+        return logits, features
+
 
 class PredictHead(tf.keras.layers.Layer):
     def __init__(self, num_class, num_heading_bin, num_size_cluster,
@@ -86,14 +123,6 @@ class PredictHead(tf.keras.layers.Layer):
         maxval = None if activation=='relu' else 6
         self.relu1 = layers.ReLU(maxval)
         self.relu2 = layers.ReLU(maxval)
-
-        # self.objectness_scores_head = torch.nn.Conv1d(seed_feat_dim, 1, 1)
-        # self.center_residual_head = torch.nn.Conv1d(seed_feat_dim, 3, 1)
-        # self.heading_class_head = torch.nn.Conv1d(seed_feat_dim, num_heading_bin, 1)
-        # self.heading_residual_head = torch.nn.Conv1d(seed_feat_dim, num_heading_bin, 1)
-        # self.size_class_head = torch.nn.Conv1d(seed_feat_dim, num_size_cluster, 1)
-        # self.size_residual_head = torch.nn.Conv1d(seed_feat_dim, num_size_cluster * 3, 1)
-        # self.sem_cls_scores_head = torch.nn.Conv1d(seed_feat_dim, self.num_class, 1)
 
     def decode_scores(self, net, end_points, prefix=''):
         """

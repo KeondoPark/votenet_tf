@@ -14,7 +14,7 @@ from attention_tf import MultiheadAttention, MultiheadAttention2
 
 class TransformerDecoderLayer(tf.keras.layers.Layer):
     def __init__(self, d_model=288, nhead=8, dim_feedforward=2048, dropout=0.1,
-                self_posembed=None, cross_posembed=None, model_config=None):
+                self_posembed=None, cross_posembed=None, model_config=None, normalization='layer'):
     
         super().__init__()
         maxval = None
@@ -32,9 +32,17 @@ class TransformerDecoderLayer(tf.keras.layers.Layer):
         self.dropout = layers.Dropout(dropout)
         self.linear2 = layers.Dense(d_model, kernel_initializer=tf.keras.initializers.he_uniform())
 
-        self.norm1 = layers.LayerNormalization(axis=-1, epsilon=1e-05)
-        self.norm2 = layers.LayerNormalization(axis=-1, epsilon=1e-05)
+        if normalization == 'layer':
+            self.norm1 = layers.LayerNormalization(axis=-1, epsilon=1e-05)
+            self.norm2 = layers.LayerNormalization(axis=-1, epsilon=1e-05)
+            
+        elif normalization == 'batch':
+            print('Batch norm is used for decoder')
+            self.norm1 = layers.BatchNormalization(axis=-1)
+            self.norm2 = layers.BatchNormalization(axis=-1)
+        
         self.norm3 = layers.LayerNormalization(axis=-1, epsilon=1e-05)
+
         self.dropout1 = layers.Dropout(dropout)
         self.dropout2 = layers.Dropout(dropout)
         self.dropout3 = layers.Dropout(dropout)
@@ -43,6 +51,8 @@ class TransformerDecoderLayer(tf.keras.layers.Layer):
 
         self.self_posembed = self_posembed
         self.cross_posembed = cross_posembed
+
+        self.normalization = normalization
 
 
     def with_pos_embed(self, tensor, pos_embed=None):

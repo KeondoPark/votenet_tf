@@ -120,6 +120,9 @@ class MultiheadAttention2(tf.keras.layers.Layer):
         
         return attn_output
 
+# Induced set attention: https://github.com/lucidrains/isab-pytorch
+# Known to be less memory-heavy than plain attention 
+
 class InducedSetAttention(tf.keras.layers.Layer):
     def __init__(self, embed_dim=288, nheads=8, dropout=0.0):
         super().__init__()
@@ -161,10 +164,16 @@ if __name__ == '__main__':
             super().__init__()
             self.self_posembed = PositionEmbeddingLearned(embed_dim)
             self.cross_posembed = PositionEmbeddingLearned(embed_dim)
-            self.self_attention = MultiheadAttention2(embed_dim, nheads, dropout)
-            self.cross_attention = MultiheadAttention2(embed_dim, nheads, dropout)
-            self.norm = layers.LayerNormalization(axis=-1)
-            # self.norm = layers.BatchNormalization(axis=-1)
+            self.self_attention = MultiheadAttention(embed_dim, nheads, dropout)
+            self.cross_attention = MultiheadAttention(embed_dim, nheads, dropout)
+            # self.norm = layers.LayerNormalization(axis=-1)
+            self.norm1 = layers.BatchNormalization(axis=-1)
+            self.norm2 = layers.BatchNormalization(axis=-1)
+            self.norm3 = layers.LayerNormalization(axis=-1)
+
+            self.linear1 = layers.Dense(2048, kernel_initializer=tf.keras.initializers.he_uniform())            
+            self.linear2 = layers.Dense(288, kernel_initializer=tf.keras.initializers.he_uniform())
+            self.activation = layers.ReLU(6) 
         
         def call(self, inputs):
             query, query_pos, key, key_pos = inputs
@@ -182,6 +191,7 @@ if __name__ == '__main__':
             
             query2 = self.self_attention(query, query, query)
             query = query2 + query
+            query = self.norm1(query)
 
             posC = key_pos.shape[-1]
             key_pos = layers.Reshape((N, 1, posC))(key_pos)     
@@ -193,7 +203,15 @@ if __name__ == '__main__':
             key += key_pos_embed
             query += query_pos_embed
             query2 = self.cross_attention(query, key, key)
-            output = query2 + query
+            query = query2 + query
+            query = self.norm2(query)
+
+            # query2 = self.activation(self.linear1(query))            
+            # query2 = self.linear2(query2)
+            # query = query + query2
+            # query = self.norm3(query)
+
+            output = query
 
             return output
             

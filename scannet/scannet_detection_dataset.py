@@ -179,7 +179,7 @@ class ScannetDetectionDataset(Dataset):
             point_cloud_recon[:,:3] = point_cloud[:,:3]
             point_cloud_recon[:,-1] = point_cloud[:,-1]
 
-            num_img = 3
+            num_img = 5
             sliced = len(frame_nums) // num_img
             frames_selected = []
             
@@ -249,7 +249,7 @@ class ScannetDetectionDataset(Dataset):
                 
                 #projected_class = pred_class[y, x]    
 
-                isPainted = np.where(projected_class == 0, -1, projected_class) # Point belongs to foreground?                    
+                isPainted = np.where(projected_class > 0, 1, 0) # Point belongs to foreground?                    
                 
                 point_cloud_recon[filter_idx2, 3] = isPainted
                 point_cloud_recon[filter_idx2, 4:-1] = pred_prob
