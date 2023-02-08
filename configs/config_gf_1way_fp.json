@@ -1,5 +1,6 @@
 {    
-    "model_id": "gf_1way_fp", 
+    "model_id": "gf_1way_fp_test5", 
+    "dataset": "sunrgbd",
     "use_painted": true,   
     "two_way": false,       
     "use_fp_mlp": true, 
