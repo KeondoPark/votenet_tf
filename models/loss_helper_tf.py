@@ -145,9 +145,36 @@ def compute_sa1_obj_loss_hard_topk(end_points, topk):
     # objectness_label = tf.where(objectness_label_mask < 0, tf.constant(0, dtype=tf.int64), objectness_label)
 
     sa1_obj_gt = tf.gather(end_points['point_obj_mask'], axis=1, indices=sa1_inds, batch_dims=1)  # B,num_seed
+    sa1_painted = tf.cast(tf.keras.activations.relu(tf.sign(sa1_obj_logits)), tf.int64)
+    
+    # print("point_obj_mask", tf.reduce_sum(end_points['point_obj_mask'], -1))
+    # print("sa1_obj_gt1", tf.reduce_sum(sa1_obj_gt[:,:1024], -1))
+    # print("sa1_obj_gt2", tf.reduce_sum(sa1_obj_gt[:,1024:], -1))
+    
+
+    # print("sa1_painted1", tf.reduce_sum(sa1_painted[:,:1024], -1))
+    # print("sa1_painted2", tf.reduce_sum(sa1_painted[:,1024:], -1))
+
+    # print("correct 1", tf.reduce_sum(sa1_painted[:,:1024] * sa1_obj_gt[:,:1024], -1))
+    # print("correct 2", tf.reduce_sum(sa1_painted[:,1024:] * sa1_obj_gt[:,1024:], -1))
+
+    # # print("bf dnn sa1_painted1", tf.reduce_sum(tf.cast(end_points['sa1_painted1'],tf.int64), -1))
+    # # print("bf dnn sa1_painted2", tf.reduce_sum(tf.cast(end_points['sa1_painted2'],tf.int64), -1))
+
+    # # print("bf dnn correct 1", tf.reduce_sum(tf.cast(end_points['sa1_painted1'],tf.int64) * sa1_obj_gt[:,:1024], -1))
+    # # print("bf dnn correct 2", tf.reduce_sum(tf.cast(end_points['sa1_painted2'],tf.int64) * sa1_obj_gt[:,1024:], -1))
+
+
+    # exit(0)
+
+    end_points['sa1_obj_sum_gt'] = tf.reduce_sum(sa1_obj_gt)
+    end_points['sa1_obj_sum_correct'] = tf.reduce_sum(sa1_painted * sa1_obj_gt)
+    end_points['sa1_obj_sum_paint'] = tf.reduce_sum(sa1_painted)
+
+
     
     # Compute objectness loss
-    criterion = SigmoidFocalClassificationLoss()
+    criterion = SigmoidFocalClassificationLoss(alpha=0.65)
     cls_weights = tf.where(sa1_obj_gt >= 0, tf.constant(1.0, tf.float32), tf.constant(0.0, tf.float32))
     # cls_weights = objectness_label
     cls_normalizer = tf.reduce_sum(cls_weights, axis=1, keepdims=True)
@@ -157,7 +184,7 @@ def compute_sa1_obj_loss_hard_topk(end_points, topk):
     sa1_obj_loss = tf.reduce_sum(cls_loss_src) / float(B)
     
 
-    return sa1_obj_loss
+    return sa1_obj_loss*10, end_points
 
 def compute_objectness_loss_based_on_query_points(end_points, num_decoder_layers):
     """ 
@@ -352,7 +379,7 @@ def get_loss(end_points, config, num_decoder_layers,
         query_points_generation_loss = 0.0
 
     if 'sa1_obj_logits' in end_points.keys():
-        sa1_obj_loss = compute_sa1_obj_loss_hard_topk(end_points, query_points_obj_topk)        
+        sa1_obj_loss, end_points = compute_sa1_obj_loss_hard_topk(end_points, query_points_obj_topk)        
         end_points['sa1_obj_loss'] = sa1_obj_loss
     else:
         sa1_obj_loss = 0.0

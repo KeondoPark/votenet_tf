@@ -310,7 +310,11 @@ class Pointnet2Backbone_p(layers.Layer):
         time_record.append(("SA1 sampling and grouping 2:", time.time()))        
 
         sa1_obj_logits2, sa1_features2 = self.sa1_mlp(sa1_grp_feats2)          
-        time_record.append(("SA1 MLP 2:", time.time()))        
+        time_record.append(("SA1 MLP 2:", time.time()))     
+
+        
+        # end_points['sa1_painted1'] = sa1_painted1
+        # end_points['sa1_painted2'] = sa1_painted2
 
         sa1_xyz = layers.Concatenate(axis=1)([sa1_xyz1, sa1_xyz2])
         sa1_features = layers.Concatenate(axis=1)([sa1_features1, sa1_features2])
@@ -402,9 +406,10 @@ class Pointnet2Backbone_p(layers.Layer):
         sa1_2_inds2 = tf.gather(sa1_inds2, axis=1, indices=sa2_inds2, batch_dims=1)
         seed_inds2 = tf.gather(rem_inds, indices=sa1_2_inds2, batch_dims=1)   
 
-        sa1_inds2_from_orig = tf.gather(rem_inds, indices=sa1_inds2, batch_dims=1)   
-
+        sa1_inds2_from_orig = tf.gather(rem_inds, indices=sa1_inds2, batch_dims=1)         
         sa1_inds = layers.Concatenate(axis=1)([sa1_inds1, sa1_inds2_from_orig])
+
+        
         end_points['sa1_xyz'] = sa1_xyz        
         end_points['sa1_inds'] = sa1_inds        
         end_points['sa1_obj_logits'] = sa1_obj_logits                     

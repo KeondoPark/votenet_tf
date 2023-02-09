@@ -276,7 +276,7 @@ if FLAGS.load_from is not None:
     manager = tf.train.CheckpointManager(ckpt, FLAGS.load_from, max_to_keep=3)
     print("Restored from {}".format(manager.latest_checkpoint))
     ckpt.restore(manager.latest_checkpoint)
-    start_epoch = ckpt.epoch.numpy()
+    # start_epoch = ckpt.epoch.numpy()
 else:
     print("Initializing from scratch.")
 
@@ -556,14 +556,17 @@ def train(start_epoch):
 
                 # Accumulate statistics and print out
                 for key in end_points:
-                    if 'loss' in key or 'acc' in key or 'ratio' in key:
+                    if 'loss' in key or 'acc' in key or 'ratio' in key or 'sa1_obj_sum' in key:
                         if key not in stat_dict: stat_dict[key] = 0
                         if isinstance(end_points[key], float) or isinstance(end_points[key], int):
                             stat_dict[key] += end_points[key]
                         else:
                             stat_dict[key] += end_points[key].numpy()
 
-                batch_pred_map_cls, pred_mask = parse_predictions(end_points, CONFIG_DICT, prefix='last_', size_cls_agnostic=FLAGS.size_cls_agnostic)        
+                batch_pred_map_cls, pred_mask = parse_predictions(end_points, 
+                                                                CONFIG_DICT, 
+                                                                prefix='last_', 
+                                                                size_cls_agnostic=FLAGS.size_cls_agnostic)        
                 batch_gt_map_cls = parse_groundtruths(end_points, CONFIG_DICT)
                 ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)    
 
