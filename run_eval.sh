@@ -9,9 +9,9 @@
 source /home/${USER}/.bashrc # Initiate your shell environment
 source ~/anaconda3/etc/profile.d/conda.sh
 conda activate votenet_tf # Activate your conda environment
-srun python eval_tf.py  \
+CUDA_VISIBLE_DEVICES=1 python eval_tf.py  \
 --use_3d_nms --use_cls_nms --per_class_proposal \
---faster_eval --batch_size 1 --ap_iou_thresholds 0.25 \
---dump_dir evals/inf_baseline --config_path configs/inf_baseline.json
+--batch_size 16 --ap_iou_thresholds 0.25 \
+--config_path configs/config_gf_scannet_2way_nofp_sep.json
 
 

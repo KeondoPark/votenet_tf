@@ -28,11 +28,11 @@ sys.path.append(os.path.join(ROOT_DIR, 'pointnet2'))
 sys.path.append(os.path.join(ROOT_DIR, 'models'))
 from ap_helper_tf import APCalculator, parse_predictions, parse_groundtruths
 
-import votenet_tf
-from votenet_tf import dump_results
+import groupfree_tf
+from groupfree_tf import dump_results
 from collections import defaultdict
 from torch.utils.data import DataLoader
-
+import tensorflow_addons as tfa
 
 
 parser = argparse.ArgumentParser()
@@ -53,11 +53,25 @@ parser.add_argument('--use_cls_nms', action='store_true', help='Use per class NM
 parser.add_argument('--use_old_type_nms', action='store_true', help='Use old type of NMS, IoBox2Area.')
 parser.add_argument('--per_class_proposal', action='store_true', help='Duplicate each proposal num_class times.')
 parser.add_argument('--nms_iou', type=float, default=0.25, help='NMS IoU threshold. [default: 0.25]')
-parser.add_argument('--conf_thresh', type=float, default=0.05, help='Filter out predictions with obj prob less than it. [default: 0.05]')
+parser.add_argument('--conf_thresh', type=float, default=0.0, help='Filter out predictions with obj prob less than it. [default: 0.0]')
 parser.add_argument('--faster_eval', action='store_true', help='Faster evaluation by skippling empty bounding box removal.')
 parser.add_argument('--shuffle_dataset', action='store_true', help='Shuffle the dataset (random order).')
 parser.add_argument('--config_path', default=None, required=True, help='Model configuration path')
 parser.add_argument('--gpu_mem_limit', type=int, default=0, help='GPU memory usage')
+
+parser.add_argument('--num_decoder_layers', default=6, type=int, help='number of decoder layers')
+parser.add_argument('--size_delta', default=1.0, type=float, help='delta for smoothl1 loss in size loss')
+parser.add_argument('--center_delta', default=1.0, type=float, help='delta for smoothl1 loss in center loss')
+parser.add_argument('--heading_delta', default=1.0, type=float, help='delta for smoothl1 loss in heading loss')
+parser.add_argument('--size_cls_agnostic', action='store_true', help='Use class-agnostic size prediction.')
+parser.add_argument('--query_points_generator_loss_coef', default=0.8, type=float)
+parser.add_argument('--obj_loss_coef', default=0.1, type=float, help='Loss weight for objectness loss')
+parser.add_argument('--box_loss_coef', default=1, type=float, help='Loss weight for box loss')
+parser.add_argument('--sem_cls_loss_coef', default=0.1, type=float, help='Loss weight for classification loss')
+parser.add_argument('--query_points_obj_topk', default=4, type=int, help='query_points_obj_topk')
+parser.add_argument('--clip_norm', default=0.1, type=float, help='gradient clipping max norm')
+parser.add_argument('--decoder_normalization', default='layer', help='Which normalization method to use in decoder [layer or batch]')
+parser.add_argument('--light', action='store_true', help='Use light version of detector')
 
 FLAGS = parser.parse_args()
 
@@ -70,12 +84,17 @@ if FLAGS.use_cls_nms:
 # ------------------------------------------------------------------------- GLOBAL CONFIG BEG
 BATCH_SIZE = FLAGS.batch_size
 NUM_POINT = FLAGS.num_point
-DUMP_DIR = FLAGS.dump_dir
+
 DEFAULT_CHECKPOINT_PATH = os.path.join('tf_ckpt', model_config['model_id'])
 CHECKPOINT_PATH = FLAGS.checkpoint_path if FLAGS.checkpoint_path is not None \
     else DEFAULT_CHECKPOINT_PATH
 assert(CHECKPOINT_PATH is not None)
-FLAGS.DUMP_DIR = DUMP_DIR
+
+if FLAGS.dump_dir is None:
+    DUMP_DIR = os.path.join('logs', model_config['model_id'])
+else:
+    DUMP_DIR = FLAGS.dump_dir
+
 AP_IOU_THRESHOLDS = [float(x) for x in FLAGS.ap_iou_thresholds.split(',')]
 
 
@@ -125,8 +144,7 @@ elif DATASET == 'scannet':
     sys.path.append(os.path.join(ROOT_DIR, 'scannet'))
     from scannet_detection_dataset import ScannetDetectionDataset, MAX_NUM_OBJ
     from model_util_scannet import ScannetDatasetConfig
-    DATASET_CONFIG = ScannetDatasetConfig()
-    NUM_POINT = 40000
+    DATASET_CONFIG = ScannetDatasetConfig()    
 
     TEST_DATASET = ScannetDetectionDataset('val', num_points=NUM_POINT,
         augment=False,
@@ -138,7 +156,7 @@ elif DATASET == 'scannet':
         np.random.seed(np.random.get_state()[1][0] + worker_id)
     
     test_ds =DataLoader(TEST_DATASET, batch_size=BATCH_SIZE,
-        shuffle=True, num_workers=4, worker_init_fn=my_worker_init_fn)
+        shuffle=False, num_workers=4, worker_init_fn=my_worker_init_fn)
 
 else:
     print('Unknown dataset %s. Exiting...'%(DATASET))
@@ -153,26 +171,28 @@ if model_config['use_painted']:
     num_input_channel += DATASET_CONFIG.num_class + 1 + 1
 
 
-net = votenet_tf.VoteNet(num_class=DATASET_CONFIG.num_class,
-               num_heading_bin=DATASET_CONFIG.num_heading_bin,
-               num_size_cluster=DATASET_CONFIG.num_size_cluster,
-               mean_size_arr=DATASET_CONFIG.mean_size_arr,
-               num_proposal=FLAGS.num_target,
-               input_feature_dim=num_input_channel,
-               vote_factor=FLAGS.vote_factor,
-               sampling=FLAGS.cluster_sampling,
-               model_config=model_config)
+net = groupfree_tf.GroupFreeNet(num_class=DATASET_CONFIG.num_class,
+            num_heading_bin=DATASET_CONFIG.num_heading_bin,
+            num_size_cluster=DATASET_CONFIG.num_size_cluster,
+            mean_size_arr=DATASET_CONFIG.mean_size_arr,
+            num_proposal=FLAGS.num_target,
+            input_feature_dim=num_input_channel,                                
+            model_config=model_config,
+            size_cls_agnostic=FLAGS.size_cls_agnostic,
+            decoder_normalization=FLAGS.decoder_normalization,
+            light_detector=FLAGS.light)
 
 import loss_helper_tf
 criterion = loss_helper_tf.get_loss
 
-# Load the Adam optimizer # No weight decay in tf basic adam optimizer... so ignore
-optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+# Load the optimizer
+optimizer1 = tfa.optimizers.AdamW(learning_rate=0.006, weight_decay=0.0005, epsilon=1e-08)
+optimizer2 = tfa.optimizers.AdamW(learning_rate=0.0006, weight_decay=0.0005, epsilon=1e-08)    
 
 # Load checkpoint if there is any
 it = -1 # for the initialize value of `LambdaLR` and `BNMomentumScheduler`
 start_epoch = 0
-ckpt = tf.train.Checkpoint(epoch=tf.Variable(0), optimizer=optimizer, net=net)
+ckpt = tf.train.Checkpoint(epoch=tf.Variable(0), optimizer1=optimizer1, optimizer2=optimizer2, net=net)
 
 if not model_config['use_tflite']:
     manager = tf.train.CheckpointManager(ckpt, CHECKPOINT_PATH, max_to_keep=3)
@@ -187,7 +207,7 @@ if not model_config['use_tflite']:
 
 if DATASET == 'sunrgbd':
     test_ds = TEST_DATASET.preprocess()
-    test_ds = test_ds.prefetch(BATCH_SIZE)
+    test_ds = test_ds.prefetch(tf.data.AUTOTUNE)
 
 # Used for AP calculation
 CONFIG_DICT = {'remove_empty_box': (not FLAGS.faster_eval), 'use_3d_nms':FLAGS.use_3d_nms,
@@ -196,13 +216,40 @@ CONFIG_DICT = {'remove_empty_box': (not FLAGS.faster_eval), 'use_3d_nms':FLAGS.u
     'dataset_config':DATASET_CONFIG}
 
 label_dict = {0:'point_cloud', 1:'center_label', 2:'heading_class_label', 3:'heading_residual_label', 4:'size_class_label',\
-    5:'size_residual_label', 6:'sem_cls_label', 7:'box_label_mask', 8:'vote_label', 9:'vote_label_mask', 10: 'max_gt_bboxes'}
+    5:'size_residual_label', 6:'sem_cls_label', 7:'box_label_mask', 8:'point_obj_mask', 9:'point_instance_label', 10: 'max_gt_bboxes', 11: 'size_gts'}
+
+
+def torch_to_tf_data(batch_data):
+    point_clouds = tf.convert_to_tensor(batch_data['point_clouds'], dtype=tf.float32)
+    center_label = tf.convert_to_tensor(batch_data['center_label'], dtype=tf.float32)
+    heading_class_label = tf.convert_to_tensor(batch_data['heading_class_label'], dtype=tf.int64)
+    heading_residual_label = tf.convert_to_tensor(batch_data['heading_residual_label'],dtype=tf.float32)
+    size_class_label = tf.convert_to_tensor(batch_data['size_class_label'], dtype=tf.int64)
+    size_residual_label = tf.convert_to_tensor(batch_data['size_residual_label'], dtype=tf.float32)                
+    sem_cls_label = tf.convert_to_tensor(batch_data['sem_cls_label'], dtype=tf.int64)
+    box_label_mask = tf.convert_to_tensor(batch_data['box_label_mask'], dtype=tf.float32)
+    point_obj_mask = tf.convert_to_tensor(batch_data['point_obj_mask'], tf.int64)
+    point_instance_label = tf.convert_to_tensor(batch_data['point_instance_label'], tf.int64)
+    max_gt_bboxes = tf.convert_to_tensor(np.zeros((BATCH_SIZE, 64, 8)), dtype=tf.float32) 
+    size_gts = tf.convert_to_tensor(batch_data['size_gts'], dtype=tf.float32)
+    batch_data = point_clouds, center_label, heading_class_label, heading_residual_label, size_class_label, \
+        size_residual_label, sem_cls_label, box_label_mask, point_obj_mask, point_instance_label, max_gt_bboxes, size_gts                   
+
+    return batch_data
 
 # ------------------------------------------------------------------------- GLOBAL CONFIG END
 
 def evaluate_one_epoch():
     stat_dict = defaultdict(int) # collect statistics            
+
+    all_prefix = 'all_layers_'
+    _prefixes = ['last_', 'proposal_']
+    _prefixes += [f'{i}head_' for i in range(FLAGS.num_decoder_layers - 1)]
+
     ap_calculator_list = [APCalculator(iou_thresh, DATASET_CONFIG.class2type) \
+        for iou_thresh in AP_IOU_THRESHOLDS]
+
+    all_ap_calculator_list = [APCalculator(iou_thresh, DATASET_CONFIG.class2type) \
         for iou_thresh in AP_IOU_THRESHOLDS]
     
     start = time.time()    
@@ -210,25 +257,18 @@ def evaluate_one_epoch():
     for batch_idx, batch_data in enumerate(test_ds):        
         # if batch_idx*BATCH_SIZE >= 400: break
         if DATASET == 'scannet':                
-            point_clouds = tf.convert_to_tensor(batch_data['point_clouds'], dtype=tf.float32)
-            center_label = tf.convert_to_tensor(batch_data['center_label'], dtype=tf.float32)
-            heading_class_label = tf.convert_to_tensor(batch_data['heading_class_label'], dtype=tf.int64)
-            heading_residual_label = tf.convert_to_tensor(batch_data['heading_residual_label'],dtype=tf.float32)
-            size_class_label = tf.convert_to_tensor(batch_data['size_class_label'], dtype=tf.int64)
-            size_residual_label = tf.convert_to_tensor(batch_data['size_residual_label'], dtype=tf.float32)
-            sem_cls_label = tf.convert_to_tensor(batch_data['sem_cls_label'], dtype=tf.int64)
-            box_label_mask = tf.convert_to_tensor(batch_data['box_label_mask'], dtype=tf.float32)
-            vote_label = tf.convert_to_tensor(batch_data['vote_label'], tf.float32)
-            vote_label_mask = tf.convert_to_tensor(batch_data['vote_label_mask'], tf.int64)
-            max_gt_bboxes = tf.convert_to_tensor(np.zeros((BATCH_SIZE, 64, 8)), dtype=tf.float32) 
-            batch_data = point_clouds, center_label, heading_class_label, heading_residual_label, size_class_label, \
-                size_residual_label, sem_cls_label, box_label_mask, vote_label, vote_label_mask, max_gt_bboxes
+            batch_data = torch_to_tf_data(batch_data)
 
         if batch_idx % 10 == 0:
             end = time.time()
-            log_string('---------- Eval batch: %d ----------'%(batch_idx) + str(end - start))
+            print('---------- Eval batch: %d ----------'%(batch_idx) + str(end - start))
             start = time.time()        
         
+        config = tf.constant(DATASET_CONFIG.num_heading_bin, dtype=tf.int32), \
+            tf.constant(DATASET_CONFIG.num_size_cluster, dtype=tf.int32), \
+            tf.constant(DATASET_CONFIG.num_class, dtype=tf.int32), \
+            tf.constant(DATASET_CONFIG.mean_size_arr, dtype=tf.float32)
+
         # Forward pass        
         point_cloud = batch_data[0]
         end_points = net(point_cloud, training=False)
@@ -237,29 +277,73 @@ def evaluate_one_epoch():
                 end_points[label_dict[i]] = batch_data[i] 
 
         end_points['point_clouds'] = point_cloud
-
-        config = tf.constant(DATASET_CONFIG.num_heading_bin, dtype=tf.int32), \
-            tf.constant(DATASET_CONFIG.num_size_cluster, dtype=tf.int32), \
-            tf.constant(DATASET_CONFIG.num_class, dtype=tf.int32), \
-            tf.constant(DATASET_CONFIG.mean_size_arr, dtype=tf.float32)
-        loss, end_points = criterion(end_points, config)        
-
-        stat_dict['box_loss'] += end_points['box_loss']
-        stat_dict['heading_reg_loss'] += end_points['heading_reg_loss']
-        stat_dict['vote_loss'] += end_points['vote_loss']
-        stat_dict['objectness_loss'] += end_points['objectness_loss']
-        stat_dict['sem_cls_loss'] += end_points['sem_cls_loss']
-        stat_dict['loss'] += end_points['loss']
-        stat_dict['obj_acc'] += end_points['obj_acc']
-        stat_dict['pos_ratio'] += end_points['pos_ratio']
-        stat_dict['neg_ratio'] += end_points['neg_ratio']
         
+        loss, end_points = criterion(end_points, config, num_decoder_layers=FLAGS.num_decoder_layers,
+                                     query_points_generator_loss_coef=FLAGS.query_points_generator_loss_coef,
+                                     obj_loss_coef=FLAGS.obj_loss_coef,
+                                     box_loss_coef=FLAGS.box_loss_coef,
+                                     sem_cls_loss_coef=FLAGS.sem_cls_loss_coef,
+                                     query_points_obj_topk=FLAGS.query_points_obj_topk,
+                                     center_delta=FLAGS.center_delta,                                     
+                                     size_delta=FLAGS.size_delta,                                     
+                                     heading_delta=FLAGS.heading_delta,
+                                     size_cls_agnostic=FLAGS.size_cls_agnostic)            
 
-        batch_pred_map_cls, pred_mask = parse_predictions(end_points, CONFIG_DICT)        
+        # stat_dict['box_loss'] += end_points['box_loss']
+        # stat_dict['heading_reg_loss'] += end_points['heading_reg_loss']
+        # stat_dict['vote_loss'] += end_points['vote_loss']
+        # stat_dict['objectness_loss'] += end_points['objectness_loss']
+        # stat_dict['sem_cls_loss'] += end_points['sem_cls_loss']
+        # stat_dict['loss'] += end_points['loss']
+        # stat_dict['obj_acc'] += end_points['obj_acc']
+        # stat_dict['pos_ratio'] += end_points['pos_ratio']
+        # stat_dict['neg_ratio'] += end_points['neg_ratio']
+
+        # Accumulate statistics and print out
+        for key in end_points:
+            if 'loss' in key or 'acc' in key or 'ratio' in key:
+                if key not in stat_dict: stat_dict[key] = 0
+                if isinstance(end_points[key], float) or isinstance(end_points[key], int):
+                    stat_dict[key] += end_points[key]
+                else:
+                    stat_dict[key] += end_points[key].numpy()
+
+        batch_pred_map_cls, pred_mask = parse_predictions(end_points, 
+                                                                CONFIG_DICT, 
+                                                                prefix='last_', 
+                                                                size_cls_agnostic=FLAGS.size_cls_agnostic) 
         batch_gt_map_cls = parse_groundtruths(end_points, CONFIG_DICT) 
         for ap_calculator in ap_calculator_list:
-            ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)            
+            ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)                 
         
+        
+        end_points[f'{all_prefix}center'] = tf.concat([end_points[f'{ppx}center']
+                                                    for ppx in _prefixes], 1)
+        end_points[f'{all_prefix}heading_scores'] = tf.concat([end_points[f'{ppx}heading_scores']
+                                                            for ppx in _prefixes], 1)
+        end_points[f'{all_prefix}heading_residuals'] = tf.concat([end_points[f'{ppx}heading_residuals']
+                                                                for ppx in _prefixes], 1)
+        if FLAGS.size_cls_agnostic:
+            end_points[f'{all_prefix}pred_size'] = tf.concat([end_points[f'{ppx}pred_size']
+                                                            for ppx in _prefixes], 1)
+        else:
+            end_points[f'{all_prefix}size_scores'] = tf.concat([end_points[f'{ppx}size_scores']
+                                                            for ppx in _prefixes], 1)
+            end_points[f'{all_prefix}size_residuals'] = tf.concat([end_points[f'{ppx}size_residuals']
+                                                                for ppx in _prefixes], 1)
+        end_points[f'{all_prefix}sem_cls_scores'] = tf.concat([end_points[f'{ppx}sem_cls_scores']
+                                                            for ppx in _prefixes], 1)
+        end_points[f'{all_prefix}objectness_scores'] = tf.concat([end_points[f'{ppx}objectness_scores']
+                                                                for ppx in _prefixes], 1)
+
+        all_batch_pred_map_cls, all_pred_mask = parse_predictions(end_points, 
+                                                                CONFIG_DICT, 
+                                                                prefix=all_prefix, 
+                                                                size_cls_agnostic=FLAGS.size_cls_agnostic) 
+        
+        for ap_calculator in all_ap_calculator_list:
+            ap_calculator.step(all_batch_pred_map_cls, batch_gt_map_cls)
+
         # Dump evaluation results for visualization
         # if batch_idx == 0:
         #     dump_results(end_points, DUMP_DIR, DATASET_CONFIG)
@@ -277,9 +361,19 @@ def evaluate_one_epoch():
         for key in metrics_dict:
             log_string('eval %s: %f'%(key, metrics_dict[key]))
 
+    log_string('---------- Eval All Layers: %d ----------')
+
+    # Evaluate average precision: All layers
+    for i, ap_calculator in enumerate(all_ap_calculator_list):
+        print('-'*10, 'iou_thresh: %f'%(AP_IOU_THRESHOLDS[i]), '-'*10)
+        metrics_dict = ap_calculator.compute_metrics()
+        for key in metrics_dict:
+            log_string('eval %s: %f'%(key, metrics_dict[key]))
+
     mean_loss = stat_dict['loss']/float(batch_idx+1)
     log_string('total eval time: '+ str(time.time() - total_start))
     return mean_loss
+
 def eval():
     log_string(str(datetime.now()))
     # Reset numpy seed.

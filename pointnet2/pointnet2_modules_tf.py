@@ -305,6 +305,12 @@ class PointnetMLP(layers.Layer):
         self.max_pool = layers.MaxPooling2D(pool_size=(1, 16), strides=(1,16), data_format="channels_last")
         self.max_pool2 = layers.MaxPooling2D(pool_size=(1, int(self.nsample/16)), strides=(1,int(self.nsample/16)), data_format="channels_last")        
         if self.add_logit_branch:
+            self.dense1 = layers.Dense(512)
+            self.bn_logit = layers.BatchNormalization(axis=-1)
+            maxval = None
+            if act == 'relu6':
+                maxval = 6       
+            self.relu_logit = layers.ReLU(maxval)
             self.classifier = layers.Dense(1)
         
     def call(self, features):                    
@@ -318,7 +324,8 @@ class PointnetMLP(layers.Layer):
         new_features = layers.Reshape((-1, new_features.shape[-1]))(new_features)
 
         if self.add_logit_branch:
-            logit = self.classifier(new_features)
+            x = self.relu_logit(self.bn_logit(self.dense1(new_features)))
+            logit = self.classifier(x)
             logit = layers.Reshape((-1, ))(logit)
             return logit, new_features
         else:
