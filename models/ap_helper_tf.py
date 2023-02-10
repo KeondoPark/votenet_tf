@@ -19,6 +19,9 @@ from nms import nms_2d_faster, nms_3d_faster, nms_3d_faster_samecls
 from box_util import get_3d_box
 sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
 from sunrgbd_utils import extract_pc_in_box3d
+import time
+from concurrent.futures import ThreadPoolExecutor
+
 
 #import torch
 
@@ -61,7 +64,7 @@ def parse_predictions(end_points, config_dict, prefix="", size_cls_agnostic=Fals
             where pred_list_i = [(pred_sem_cls, box_params, box_score)_j]
             where j = 0, ..., num of valid detections - 1 from sample input i
     """    
-
+    
     pred_center = end_points[f'{prefix}center'] # B,num_proposal,3
     K = tf.shape(end_points[f'{prefix}heading_scores'])[1] #num_proposal
     
@@ -71,16 +74,18 @@ def parse_predictions(end_points, config_dict, prefix="", size_cls_agnostic=Fals
     pred_heading_residual = tf.squeeze(pred_heading_residual, axis=[2])       
 
     if size_cls_agnostic:
-        pred_size = end_points[f'{prefix}pred_size']  # B, num_proposal, 3
+        pred_size = end_points[f'{prefix}pred_size'].numpy() # B, num_proposal, 3
     else:
-        pred_size_class = tf.math.argmax(end_points[f'{prefix}size_scores'], axis=-1) # B,num_proposal
+        pred_size_class = tf.math.argmax(end_points[f'{prefix}size_scores'], axis=-1).numpy() # B,num_proposal
         # (B, K, 10, 3) -> (B, K, 1, 3)
         pred_size_residual = tf.gather(end_points[f'{prefix}size_residuals'], axis=2, 
                                     indices=tf.expand_dims(pred_size_class, axis=-1), batch_dims=2)        
-        pred_size_residual = tf.squeeze(pred_size_residual, axis=[2]) # B,num_proposal,3            
+        pred_size_residual = tf.squeeze(pred_size_residual, axis=[2]).numpy() # B,num_proposal,3            
     
-    pred_sem_cls = tf.math.argmax(end_points[f'{prefix}sem_cls_scores'], axis=-1) # B,num_proposal
-    sem_cls_probs = softmax(end_points[f'{prefix}sem_cls_scores'].numpy()) # B,num_proposal,10
+    pred_sem_cls = tf.math.argmax(end_points[f'{prefix}sem_cls_scores'], axis=-1).numpy() # B,num_proposal
+    # sem_cls_probs = softmax(end_points[f'{prefix}sem_cls_scores'].numpy()) # B,num_proposal,10
+    sem_cls_probs = tf.keras.backend.softmax(end_points[f'{prefix}sem_cls_scores']) # B,num_proposal,10
+    
     # pred_sem_cls_prob = np.max(sem_cls_probs,-1) # B,num_proposal
 
     num_proposal = tf.shape(pred_center)[1] 
@@ -90,25 +95,29 @@ def parse_predictions(end_points, config_dict, prefix="", size_cls_agnostic=Fals
     pred_corners_3d_upright_camera = np.zeros((bsize, num_proposal, 8, 3))
     pred_heading_angle = np.zeros((bsize, num_proposal))
     pred_center_upright_camera = flip_axis_to_camera(pred_center.numpy())
+    pred_heading_class = pred_heading_class.numpy()
+    pred_heading_residual = pred_heading_residual.numpy()
+
     for i in range(bsize):
         for j in range(num_proposal):
             heading_angle = config_dict['dataset_config'].class2angle(\
-                pred_heading_class[i,j].numpy(), pred_heading_residual[i,j].numpy())
+                pred_heading_class[i,j], pred_heading_residual[i,j])
             
             if size_cls_agnostic:
-                box_size = pred_size[i, j].numpy()
+                box_size = pred_size[i, j]
             else:
                 box_size = config_dict['dataset_config'].class2size(\
-                    int(pred_size_class[i,j].numpy()), pred_size_residual[i,j].numpy())
+                    int(pred_size_class[i,j]), pred_size_residual[i,j])
 
             corners_3d_upright_camera = get_3d_box(box_size, heading_angle, pred_center_upright_camera[i,j,:])
             pred_corners_3d_upright_camera[i,j] = corners_3d_upright_camera
             pred_heading_angle[i,j] = heading_angle
 
-
-
     K = tf.shape(pred_center)[1] # K==num_proposal
     nonempty_box_mask = np.ones((bsize, K))
+    
+    pool = ThreadPoolExecutor(8)
+    
 
     if config_dict['remove_empty_box']:
         # -------------------------------------
@@ -116,20 +125,27 @@ def parse_predictions(end_points, config_dict, prefix="", size_cls_agnostic=Fals
         batch_pc = end_points['point_clouds'].numpy()[:,:,0:3] # B,N,3
         for i in range(bsize):
             pc = batch_pc[i,:,:] # (N,3)
+            futures = []
             for j in range(K):
                 box3d = pred_corners_3d_upright_camera[i,j,:,:] # (8,3)
-                box3d = flip_axis_to_depth(box3d)
-                pc_in_box,inds = extract_pc_in_box3d(pc, box3d)
+                box3d = flip_axis_to_depth(box3d)                
+                # pc_in_box,inds = extract_pc_in_box3d(pc, box3d)
+                futures.append(pool.submit(extract_pc_in_box3d, pc, box3d))
+
+            for j, f in enumerate(futures):
+                pc_in_box,inds = f.result()
                 if len(pc_in_box) < 5:
                     nonempty_box_mask[i,j] = 0
+                
         # -------------------------------------
-
     # detach() returns a new tensor, detached from the current graph / shares memory storage with original tensor  
     # #============= Validation =======================
     #print("end_points['objectness_scores'][5]:", end_points['objectness_scores'][5])
     #============= Validation =======================  
-    obj_logits = tf.stop_gradient(end_points[f'{prefix}objectness_scores']).numpy()
+    # obj_logits = tf.stop_gradient(end_points[f'{prefix}objectness_scores']).numpy()
+    obj_logits = end_points[f'{prefix}objectness_scores']
     obj_prob = tf.math.sigmoid(obj_logits)[:,:,0] # (B,K)
+    obj_prob = obj_prob.numpy()
     #============= Validation =======================
     #print("obj_prob[5]:", obj_prob[5])
     #============= Validation =======================
@@ -188,16 +204,12 @@ def parse_predictions(end_points, config_dict, prefix="", size_cls_agnostic=Fals
                 boxes_3d_with_prob[j,7] = pred_sem_cls[i,j] # only suppress if the two boxes are of the same class!!
             nonempty_box_inds = np.where(nonempty_box_mask[i,:]==1)[0]
             pick = nms_3d_faster_samecls(boxes_3d_with_prob[nonempty_box_mask[i,:]==1,:],
-                config_dict['nms_iou'], config_dict['use_old_type_nms'])
-                #config_dict['nms_iou'], config_dict['conf_thresh'], config_dict['use_old_type_nms'])
+                config_dict['nms_iou'], config_dict['use_old_type_nms'])                
             assert(len(pick)>0)       
             pred_mask[i, nonempty_box_inds[pick]] = 1     
-            #============= Validation =======================
-            #if i == 5: print("Pred mask:", pred_mask[i])
-            #============= Validation =======================
         end_points['pred_mask'] = pred_mask
         # ---------- NMS output: pred_mask in (B,K) -----------
-
+    
     batch_pred_map_cls = [] # a list (len: batch_size) of list (len: num of predictions per sample) of tuples of pred_cls, pred_box and conf (0-1)
     for i in range(bsize):
         if config_dict['per_class_proposal']:
@@ -207,9 +219,9 @@ def parse_predictions(end_points, config_dict, prefix="", size_cls_agnostic=Fals
                     for j in range(pred_center.shape[1]) if pred_mask[i,j]==1 and obj_prob[i,j]>config_dict['conf_thresh']]
             batch_pred_map_cls.append(cur_list)
         else:
-            batch_pred_map_cls.append([(pred_sem_cls[i,j].numpy(), pred_corners_3d_upright_camera[i,j], obj_prob[i,j], pred_heading_angle[i,j]) \
+            batch_pred_map_cls.append([(pred_sem_cls[i,j], pred_corners_3d_upright_camera[i,j], obj_prob[i,j], pred_heading_angle[i,j]) \
                 for j in range(pred_center.shape[1]) if pred_mask[i,j]==1 and obj_prob[i,j]>config_dict['conf_thresh']])
-    end_points['batch_pred_map_cls'] = batch_pred_map_cls
+    end_points['batch_pred_map_cls'] = batch_pred_map_cls     
 
     return batch_pred_map_cls, pred_mask
 

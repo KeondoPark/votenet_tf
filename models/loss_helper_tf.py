@@ -174,7 +174,7 @@ def compute_sa1_obj_loss_hard_topk(end_points, topk):
 
     
     # Compute objectness loss
-    criterion = SigmoidFocalClassificationLoss(alpha=0.65)
+    criterion = SigmoidFocalClassificationLoss(alpha=0.5)
     cls_weights = tf.where(sa1_obj_gt >= 0, tf.constant(1.0, tf.float32), tf.constant(0.0, tf.float32))
     # cls_weights = objectness_label
     cls_normalizer = tf.reduce_sum(cls_weights, axis=1, keepdims=True)

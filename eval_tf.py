@@ -129,13 +129,12 @@ else:
 # Create Dataset and Dataloader
 if DATASET == 'sunrgbd':
     sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
-    from sunrgbd_detection_dataset_tf import SunrgbdDetectionVotesDataset_tfrecord
+    from sunrgbd_detection_dataset_tf import SunrgbdDetectionDataset_tfrecord
     from model_util_sunrgbd import SunrgbdDatasetConfig
-    if 'include_person' in model_config and model_config['include_person']:
-        DATASET_CONFIG = SunrgbdDatasetConfig(include_person=True)
-    else:
-        DATASET_CONFIG = SunrgbdDatasetConfig()
-    TEST_DATASET = SunrgbdDetectionVotesDataset_tfrecord('val', num_points=NUM_POINT,
+    include_person = 'include_person' in model_config and model_config['include_person']
+    DATASET_CONFIG = SunrgbdDatasetConfig(include_person=include_person)
+    
+    TEST_DATASET = SunrgbdDetectionDataset_tfrecord('val', num_points=NUM_POINT,
         augment=False,  shuffle=FLAGS.shuffle_dataset, batch_size=BATCH_SIZE,
         use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
         use_painted=use_painted, DC=DATASET_CONFIG)
@@ -239,7 +238,40 @@ def torch_to_tf_data(batch_data):
 
 # ------------------------------------------------------------------------- GLOBAL CONFIG END
 
-def evaluate_one_epoch():
+@tf.function
+def evaluate_one_epoch(batch_data):     
+    
+    # For type match
+    config = tf.constant(DATASET_CONFIG.num_heading_bin, dtype=tf.int32), \
+        tf.constant(DATASET_CONFIG.num_size_cluster, dtype=tf.int32), \
+        tf.constant(DATASET_CONFIG.num_class, dtype=tf.int32), \
+        tf.constant(DATASET_CONFIG.mean_size_arr, dtype=tf.float32)
+    
+    # Forward pass
+    point_cloud = batch_data[0]    
+    
+    end_points = net(point_cloud, training=False)
+
+    for i, label in label_dict.items():
+        if label_dict[i] not in end_points:
+            end_points[label_dict[i]] = batch_data[i] 
+
+    loss, end_points = criterion(end_points, config, num_decoder_layers=FLAGS.num_decoder_layers,
+                                    query_points_generator_loss_coef=FLAGS.query_points_generator_loss_coef,
+                                    obj_loss_coef=FLAGS.obj_loss_coef,
+                                    box_loss_coef=FLAGS.box_loss_coef,
+                                    sem_cls_loss_coef=FLAGS.sem_cls_loss_coef,
+                                    query_points_obj_topk=FLAGS.query_points_obj_topk,
+                                    center_delta=FLAGS.center_delta,                                     
+                                    size_delta=FLAGS.size_delta,                                     
+                                    heading_delta=FLAGS.heading_delta,
+                                    size_cls_agnostic=FLAGS.size_cls_agnostic)     
+
+    end_points['point_clouds'] = point_cloud
+    return loss, end_points
+
+
+def run_eval():
     stat_dict = defaultdict(int) # collect statistics            
 
     all_prefix = 'all_layers_'
@@ -262,42 +294,10 @@ def evaluate_one_epoch():
         if batch_idx % 10 == 0:
             end = time.time()
             print('---------- Eval batch: %d ----------'%(batch_idx) + str(end - start))
-            start = time.time()        
-        
-        config = tf.constant(DATASET_CONFIG.num_heading_bin, dtype=tf.int32), \
-            tf.constant(DATASET_CONFIG.num_size_cluster, dtype=tf.int32), \
-            tf.constant(DATASET_CONFIG.num_class, dtype=tf.int32), \
-            tf.constant(DATASET_CONFIG.mean_size_arr, dtype=tf.float32)
+            start = time.time() 
 
-        # Forward pass        
-        point_cloud = batch_data[0]
-        end_points = net(point_cloud, training=False)
-        for i, label in label_dict.items():
-            if label_dict[i] not in end_points:
-                end_points[label_dict[i]] = batch_data[i] 
-
-        end_points['point_clouds'] = point_cloud
-        
-        loss, end_points = criterion(end_points, config, num_decoder_layers=FLAGS.num_decoder_layers,
-                                     query_points_generator_loss_coef=FLAGS.query_points_generator_loss_coef,
-                                     obj_loss_coef=FLAGS.obj_loss_coef,
-                                     box_loss_coef=FLAGS.box_loss_coef,
-                                     sem_cls_loss_coef=FLAGS.sem_cls_loss_coef,
-                                     query_points_obj_topk=FLAGS.query_points_obj_topk,
-                                     center_delta=FLAGS.center_delta,                                     
-                                     size_delta=FLAGS.size_delta,                                     
-                                     heading_delta=FLAGS.heading_delta,
-                                     size_cls_agnostic=FLAGS.size_cls_agnostic)            
-
-        # stat_dict['box_loss'] += end_points['box_loss']
-        # stat_dict['heading_reg_loss'] += end_points['heading_reg_loss']
-        # stat_dict['vote_loss'] += end_points['vote_loss']
-        # stat_dict['objectness_loss'] += end_points['objectness_loss']
-        # stat_dict['sem_cls_loss'] += end_points['sem_cls_loss']
-        # stat_dict['loss'] += end_points['loss']
-        # stat_dict['obj_acc'] += end_points['obj_acc']
-        # stat_dict['pos_ratio'] += end_points['pos_ratio']
-        # stat_dict['neg_ratio'] += end_points['neg_ratio']
+        curr_loss, end_points = evaluate_one_epoch(batch_data)       
+          
 
         # Accumulate statistics and print out
         for key in end_points:
@@ -312,11 +312,14 @@ def evaluate_one_epoch():
                                                                 CONFIG_DICT, 
                                                                 prefix='last_', 
                                                                 size_cls_agnostic=FLAGS.size_cls_agnostic) 
+
         batch_gt_map_cls = parse_groundtruths(end_points, CONFIG_DICT) 
+
+
+
         for ap_calculator in ap_calculator_list:
             ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)                 
-        
-        
+     
         end_points[f'{all_prefix}center'] = tf.concat([end_points[f'{ppx}center']
                                                     for ppx in _prefixes], 1)
         end_points[f'{all_prefix}heading_scores'] = tf.concat([end_points[f'{ppx}heading_scores']
@@ -361,7 +364,7 @@ def evaluate_one_epoch():
         for key in metrics_dict:
             log_string('eval %s: %f'%(key, metrics_dict[key]))
 
-    log_string('---------- Eval All Layers: %d ----------')
+    log_string('---------- Eval All Layers ----------')
 
     # Evaluate average precision: All layers
     for i, ap_calculator in enumerate(all_ap_calculator_list):
@@ -379,7 +382,7 @@ def eval():
     # Reset numpy seed.
     # REF: https://github.com/pytorch/pytorch/issues/5059
     np.random.seed()
-    loss = evaluate_one_epoch()
+    loss = run_eval()
 
 if __name__=='__main__':
     eval()
