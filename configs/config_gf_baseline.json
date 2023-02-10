@@ -1,5 +1,5 @@
 {    
-    "model_id": "gf_baseline3",
+    "model_id": "gf_baseline6",
     "dataset": "sunrgbd",
     "use_painted": false,   
     "two_way": false,       

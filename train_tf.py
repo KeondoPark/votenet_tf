@@ -67,7 +67,7 @@ parser.add_argument('--cosine_alpha', type=float, default=0.01, help='Final lr t
 parser.add_argument('--lr_decay_steps', default='280,340', help='When to decay the learning rate (in epochs) [default: 280,340]')
 parser.add_argument('--lr_decay_rates', default='0.1,0.1', help='Decay rates for lr decay [default: 0.1,0.1]')
 parser.add_argument('--decoder_lr_decay_steps', default='280,340', help='When to decay the learning rate (in epochs) [default: 280,340]')
-parser.add_argument('--decoder_lr_decay_rates', default='1,1', help='Decay rates for lr decay [default: 0.1,0.1]')
+parser.add_argument('--decoder_lr_decay_rates', default='0.1,0.1', help='Decay rates for lr decay [default: 0.1,0.1]')
 
 parser.add_argument('--no_height', action='store_true', help='Do NOT use height signal in input.')
 parser.add_argument('--use_color', action='store_true', help='Use RGB color in input.')
@@ -491,8 +491,8 @@ def train(start_epoch):
             curr_decoder_lr, curr_decoder_wd = adjust_cosine_lr(optimizer2, EPOCH_CNT, FLAGS.decoder_learning_rate, FLAGS.weight_decay, MAX_EPOCH, alpha=FLAGS.cosine_alpha) #int(MAX_EPOCH * 0.75))            
             
         else:
-            curr_lr = adjust_learning_rate(optimizer1, EPOCH_CNT, FLAGS.learning_rate, LR_DECAY_RATES, LR_DECAY_STEPS)
-            curr_decoder_lr = adjust_learning_rate(optimizer2, EPOCH_CNT, FLAGS.decoder_learning_rate, DECODER_LR_DECAY_RATES, DECODER_LR_DECAY_STEPS)
+            curr_lr = adjust_learning_rate(optimizer1, EPOCH_CNT, FLAGS.learning_rate, FLAGS.weight_decay, LR_DECAY_RATES, LR_DECAY_STEPS)
+            curr_decoder_lr = adjust_learning_rate(optimizer2, EPOCH_CNT, FLAGS.decoder_learning_rate, FLAGS.weight_decay, DECODER_LR_DECAY_RATES, DECODER_LR_DECAY_STEPS)
         
         log_string('Current learning rate:%f'%(curr_lr))
         log_string('Current decoder learning rate:%f'%(curr_decoder_lr))

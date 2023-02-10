@@ -203,7 +203,7 @@ class Pointnet2Backbone_p(layers.Layer):
         
         self.sa2 = SamplingAndGrouping(
                 npoint=512,
-                radius=0.4,
+                radius=0.6,
                 nsample=32,                
                 use_xyz=True,
                 normalize_xyz=True                
@@ -320,13 +320,13 @@ class Pointnet2Backbone_p(layers.Layer):
         sa1_features = layers.Concatenate(axis=1)([sa1_features1, sa1_features2])
         sa1_obj_logits = layers.Concatenate(axis=1)([sa1_obj_logits1, sa1_obj_logits2])
         
-        sa1_painted = tf.cast(tf.keras.activations.relu(tf.sign(sa1_obj_logits)), tf.int32)
-        sa1_painted1 = sa1_painted[:,:1024]
-        sa1_painted2 = sa1_painted[:,1024:]
+        sa1_painted2 = tf.cast(tf.keras.activations.relu(tf.sign(sa1_obj_logits2)), tf.int32)
+        # sa1_painted1 = sa1_painted[:,:1024]
+        # sa1_painted2 = sa1_painted[:,1024:]
         
         # ------------------------------- SA2-------------------------------        
         sa2_xyz1, sa2_inds1, sa2_grp_feats1, sa2_painted1 \
-            = self.sa2(sa1_xyz1, sa1_painted1, sa1_features1, bg1=True, wght1=1)
+            = self.sa2(sa1_xyz1, sa1_painted1, sa1_features1, bg1=True, wght1=1.0)
         time_record.append(("SA2 sampling and grouping 1:", time.time()))        
         
         sa2_features1 = self.sa2_mlp(sa2_grp_feats1)
