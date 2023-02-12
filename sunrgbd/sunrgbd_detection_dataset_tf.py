@@ -235,9 +235,9 @@ class SunrgbdDetectionDataset_tfrecord():
         if DC.include_person:
             self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf_person2'%(split_set))
         elif self.use_painted:
-            self.data_path = os.path.join(DATA_DIR,'gf_sunrgbd_pc_%s_painted_tf'%(split_set))
+            self.data_path = os.path.join(DATA_DIR,'gf_sunrgbd_pc_%s_painted_tf2'%(split_set))
         else:
-            self.data_path = os.path.join(DATA_DIR,'gf_sunrgbd_pc_%s_tf'%(split_set))
+            self.data_path = os.path.join(DATA_DIR,'gf_sunrgbd_pc_%s_tf2'%(split_set))
 
         if DC.include_small:
             self.data_path += '_sm'

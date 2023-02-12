@@ -1,6 +1,7 @@
 #/bin/bash
 # CUDA_ROOT=/usr/local/cuda-11.4
-CUDA_ROOT=/usr/local/cuda-12.0
+# CUDA_ROOT=/usr/local/cuda-12.0
+CUDA_ROOT=/anaconda3/envs/tf25/lib #usr/local/cuda-12.0
 
 #TF_ROOT=/home/gundo0102/anaconda3/envs/votenet_tf/lib/python3.7/site-packages/tensorflow
 #${CUDA_ROOT}/bin/nvcc tf_sampling_g.cu -o tf_sampling_g.cu.o -c -O2 -DGOOGLE_CUDA=1 -x cu -Xcompiler -fPIC

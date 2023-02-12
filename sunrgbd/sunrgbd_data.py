@@ -34,6 +34,7 @@ import tensorflow as tf
 import time
 #from deeplab import run_semantic_segmentation_graph
 import deeplab
+import pickle
 
 import json
 ROOT_DIR = os.path.dirname(BASE_DIR)
@@ -569,6 +570,280 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
     f.close()
 
 
+
+def gf_extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=20000,
+                         type_whitelist=DEFAULT_TYPE_WHITELIST,
+                         save_votes=False, use_v1=False, skip_empty_scene=True, pointpainting=False):
+
+    """ Extract scene point clouds and 
+    bounding boxes (centroids, box sizes, heading angles, semantic classes).
+    Dumped point clouds and boxes are in upright depth coord.
+
+    Args:
+        idx_filename: a TXT file where each line is an int number (index)
+        split: training or testing
+        save_votes: whether to compute and save Ground truth votes.
+        use_v1: use the SUN RGB-D V1 data
+        skip_empty_scene: if True, skip scenes that contain no object (no objet in whitelist)
+
+    Dumps:
+        <id>_pc.npz of (N,6) where N is for number of subsampled points and 6 is
+            for XYZ and RGB (in 0~1) in upright depth coord
+        <id>_bbox.npy of (K,8) where K is the number of objects, 8 is for
+            centroids (cx,cy,cz), dimension (l,w,h), heanding_angle and semantic_class
+        <id>_votes.npz of (N,10) with 0/1 indicating whether the point belongs to an object,
+            then three sets of GT votes for up to three objects. If the point is only in one
+            object's OBB, then the three GT votes are the same.
+    """
+
+    def _bytes_feature(input_list):
+        """Returns a bytes_list from a string / byte."""
+        if isinstance(value, type(tf.constant(0))):
+            value = value.numpy() # BytesList won't unpack a string from an EagerTensor.
+        return tf.train.Feature(bytes_list=tf.train.BytesList(value=input_list))
+
+    def _float_feature(input_list):
+        """Returns a float_list from a float / double."""
+        return tf.train.Feature(float_list=tf.train.FloatList(value=input_list))
+
+    def _int64_feature(input_list):
+        """Returns an int64_list from a bool / enum / int / uint."""
+        return tf.train.Feature(int64_list=tf.train.Int64List(value=input_list))
+    
+    def create_example(point_cloud, bboxes, point_labels, n_valid_box):    
+        feature = {        
+            'point_cloud': _float_feature(list(point_cloud.reshape((-1)))),
+            'bboxes': _float_feature(list(bboxes.reshape((-1)))),
+            'point_labels':_float_feature(list(point_labels.reshape((-1)))),
+            'n_valid_box':_int64_feature([n_valid_box])
+        }
+
+        return tf.train.Example(features=tf.train.Features(feature=feature))
+
+    dataset = sunrgbd_object(os.path.join(DATA_DIR,'sunrgbd_trainval'), split, use_v1=use_v1)
+    data_idx_list = [int(line.rstrip()) for line in open(idx_filename)]
+
+    if not os.path.exists(output_folder):
+        os.mkdir(output_folder)
+
+    n_pc_shard = 100
+    n_shards = int(len(data_idx_list) / n_pc_shard) + (1 if len(data_idx_list) % n_pc_shard != 0 else 0)
+
+    MAX_NUM_OBJ = 64
+    num_sunrgbd_class = len(type_whitelist)
+    
+    all_obbs = []
+    all_pc_upright_depth_subsampled = []
+    all_point_votes = []
+
+    # Load semantic segmentation model(Written and trained in TF1.15)
+    if pointpainting:
+        INPUT_SIZE = (513, 513)
+        with tf.compat.v1.gfile.GFile('../deeplab/saved_model/sunrgbd_COCO_15.pb', "rb") as f:
+            graph_def = tf.compat.v1.GraphDef()
+            graph_def.ParseFromString(f.read())
+        
+        myGraph = tf.compat.v1.Graph()
+        with myGraph.as_default():
+            tf.compat.v1.import_graph_def(graph_def, name='')
+
+        sess = tf.compat.v1.Session(graph=myGraph)
+
+    for shard in tqdm(range(n_shards)):
+        
+        tfrecords_shard_path = os.path.join(output_folder, "{}_{}.records".format("sunrgbd", '%.5d-of-%.5d' % (shard, n_shards - 1)))
+        start_idx = shard * n_pc_shard
+        end_idx = min((shard+1) * n_pc_shard, len(data_idx_list))
+        data_idx_shard_list = data_idx_list[start_idx:end_idx]     
+        with tf.io.TFRecordWriter(tfrecords_shard_path) as writer:
+            for data_idx in data_idx_shard_list:
+                if data_idx == 2983: continue   #Errorneous data
+                print('------------- ', data_idx)
+                objects = dataset.get_label_objects(data_idx)
+
+                # Skip scenes with 0 object
+                if skip_empty_scene and (len(objects) == 0 or
+                                        len([obj for obj in objects if obj.classname in type_whitelist]) == 0):
+                    continue
+                
+                assert len(objects) <= MAX_NUM_OBJ
+
+                
+                cnt = 0
+
+                object_list = []
+                for obj in objects:
+                    if obj.classname not in type_whitelist: continue
+                    obb = np.zeros((8))
+                    obb[0:3] = obj.centroid
+                    # Note that compared with that in data_viz, we do not time 2 to l,w.h
+                    # neither do we flip the heading angle
+                    obb[3:6] = np.array([obj.l, obj.w, obj.h])
+                    obb[6] = obj.heading_angle
+                    obb[7] = sunrgbd_utils.type2class[obj.classname]
+                    object_list.append(obb)
+                    cnt+=1
+                
+                n_valid_box = cnt
+                obbs = np.zeros((MAX_NUM_OBJ,8))
+                if len(object_list) > 0:                    
+                    obbs[:n_valid_box] = np.vstack(object_list)  # (K,8)
+                
+                # print(f"{data_idx} has {obbs.shape[0]} gt bboxes")
+
+                pc_upright_depth = dataset.get_depth(data_idx)
+                pc_upright_depth_subsampled = pc_util.random_sampling(pc_upright_depth, num_point)
+
+                np.savez_compressed(os.path.join(output_folder, '%06d_pc.npz' % (data_idx)),
+                                    pc=pc_upright_depth_subsampled)
+                np.save(os.path.join(output_folder, '%06d_bbox.npy' % (data_idx)), obbs)
+                # pickle save
+                with open(os.path.join(output_folder, '%06d_pc.pkl' % (data_idx)), 'wb') as f:
+                    pickle.dump(pc_upright_depth_subsampled, f)
+                    print(f"{os.path.join(output_folder, '%06d_pc.pkl' % (data_idx))} saved successfully !!")
+                with open(os.path.join(output_folder, '%06d_bbox.pkl' % (data_idx)), 'wb') as f:
+                    pickle.dump(obbs, f)
+                    print(f"{os.path.join(output_folder, '%06d_bbox.pkl' % (data_idx))} saved successfully !!")
+                # add to collection
+                all_pc_upright_depth_subsampled.append(pc_upright_depth_subsampled)
+                all_obbs.append(obbs)
+
+                if pointpainting:
+                    ########## Add 2D segmentation result to point cloud(Point Painting) ##########
+                    # Project points to image
+                    calib = dataset.get_calibration(data_idx)
+                    uv,d,_ = calib.project_upright_depth_to_image(pc_upright_depth_subsampled[:,0:3]) #uv: (N, 2)
+
+                    # Run image segmentation result and get result
+                    img = dataset.get_image2(data_idx)            
+                    
+                    # Round to the nearest integer; since uv starts from 1. subtract 1.
+                    uv[:,0] = np.rint(uv[:,0] - 1)
+                    uv[:,1] = np.rint(uv[:,1] - 1)
+
+                    w, h = img.size
+
+                    uv[:,0] = np.minimum(uv[:,0], w-1)
+                    uv[:,1] = np.minimum(uv[:,1], h-1)
+
+                    pred_prob, pred_class = deeplab.run_semantic_segmentation_graph(img, sess, INPUT_SIZE) # (w, h, num_class)     
+                    pred_prob = pred_prob[:,:,:(num_sunrgbd_class+1)] # 0 is background class              
+                    projected_class = pred_class[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
+                    pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)]
+                    
+                    isPainted = np.where((projected_class > 0) & (projected_class < num_sunrgbd_class+1), 1, 0) # Point belongs to foreground?                    
+                    isPainted = np.expand_dims(isPainted, axis=-1)
+
+                    # Append segmentation score to each point
+                    painted_pc = np.concatenate([pc_upright_depth_subsampled[:,:3],\
+                                            isPainted,\
+                                            pred_prob
+                                            ], axis=-1)
+                                                               
+                    ######################################################################################################
+
+                N = pc_upright_depth_subsampled.shape[0]
+                point_votes = np.zeros((N, 13))  # 1 vote mask + 3 votes and + 3 votes gt ind
+                point_votes[:, 10:13] = -1
+                point_vote_idx = np.zeros((N)).astype(np.int32)  # in the range of [0,2]
+                indices = np.arange(N)
+                i_obj = 0
+                for obj in objects:
+                    if obj.classname not in type_whitelist: continue
+                    try:
+                        # Find all points in this object's OBB
+                        box3d_pts_3d = sunrgbd_utils.my_compute_box_3d(obj.centroid,
+                                                                    np.array([obj.l, obj.w, obj.h]), obj.heading_angle)
+                        pc_in_box3d, inds = sunrgbd_utils.extract_pc_in_box3d( \
+                            pc_upright_depth_subsampled, box3d_pts_3d)
+                        # Assign first dimension to indicate it is in an object box
+                        point_votes[inds, 0] = 1
+                        # Add the votes (all 0 if the point is not in any object's OBB)
+                        votes = np.expand_dims(obj.centroid, 0) - pc_in_box3d[:, 0:3]
+                        sparse_inds = indices[inds]  # turn dense True,False inds to sparse number-wise inds
+                        for i in range(len(sparse_inds)):
+                            j = sparse_inds[i]
+                            point_votes[j, int(point_vote_idx[j] * 3 + 1):int((point_vote_idx[j] + 1) * 3 + 1)] = votes[i,:]
+                            point_votes[j, point_vote_idx[j] + 10] = i_obj
+                            # Populate votes with the fisrt vote
+                            if point_vote_idx[j] == 0:
+                                point_votes[j, 4:7] = votes[i, :]
+                                point_votes[j, 7:10] = votes[i, :]
+                                point_votes[j, 10] = i_obj
+                                point_votes[j, 11] = i_obj
+                                point_votes[j, 12] = i_obj
+                        point_vote_idx[inds] = np.minimum(2, point_vote_idx[inds] + 1)
+                        i_obj += 1
+                    except:
+                        print('ERROR ----', data_idx, obj.classname)
+
+                # choose the nearest as the first gt for each point
+                for ip in range(N):
+                    is_pos = (point_votes[ip, 0] > 0)
+                    if is_pos:
+                        vote_delta1 = point_votes[ip, 1:4].copy()
+                        vote_delta2 = point_votes[ip, 4:7].copy()
+                        vote_delta3 = point_votes[ip, 7:10].copy()
+                        dist1 = np.sum(vote_delta1 ** 2)
+                        dist2 = np.sum(vote_delta2 ** 2)
+                        dist3 = np.sum(vote_delta3 ** 2)
+
+                        gt_ind1 = int(point_votes[ip, 10].copy())
+
+                        near_ind = np.argmin([dist1, dist2, dist3])
+
+                        point_votes[ip, 10] = point_votes[ip, 10 + near_ind].copy()
+                        point_votes[ip, 10 + near_ind] = gt_ind1
+                        point_votes[ip, 1:4] = point_votes[ip, int(near_ind * 3 + 1):int((near_ind + 1) * 3 + 1)].copy()
+                        point_votes[ip, int(near_ind * 3 + 1):int((near_ind + 1) * 3 + 1)] = vote_delta1
+                    else:
+                        assert point_votes[ip, 10] == -1, "error"
+                        assert point_votes[ip, 11] == -1, "error"
+                        assert point_votes[ip, 12] == -1, "error"
+
+                print(f"{data_idx}_votes.npz has {i_obj} gt bboxes")
+                np.savez_compressed(os.path.join(output_folder, '%06d_votes.npz' % (data_idx)),
+                                    point_votes=point_votes)
+                with open(os.path.join(output_folder, '%06d_votes.pkl' % (data_idx)), 'wb') as f:
+                    pickle.dump(point_votes, f)
+                    print(f"{os.path.join(output_folder, '%06d_votes.pkl' % (data_idx))} saved successfully !!")
+                all_point_votes.append(point_votes)
+
+                point_labels = point_votes[:,[0,10]]
+                
+                if pointpainting:
+                    tf_example = create_example(painted_pc, obbs, point_labels, n_valid_box) 
+                else:
+                    tf_example = create_example(pc_upright_depth_subsampled, obbs, point_labels, n_valid_box)
+                                
+                writer.write(tf_example.SerializeToString())   
+
+    pickle_filename = os.path.join(output_folder, 'all_obbs_modified_nearest_has_empty.pkl')
+    with open(pickle_filename, 'wb') as f:
+        pickle.dump(all_obbs, f)
+        print(f"{pickle_filename} saved successfully !!")
+
+    pickle_filename = os.path.join(output_folder, 'all_pc_modified_nearest_has_empty.pkl')
+    with open(pickle_filename, 'wb') as f:
+        pickle.dump(all_pc_upright_depth_subsampled, f)
+        print(f"{pickle_filename} saved successfully !!")
+
+    pickle_filename = os.path.join(output_folder, 'all_point_votes_nearest_has_empty.pkl')
+    with open(pickle_filename, 'wb') as f:
+        pickle.dump(all_point_votes, f)
+        print(f"{pickle_filename} saved successfully !!")
+
+    all_point_labels = []
+    for point_votes in all_point_votes:
+        point_labels = point_votes[:, [0, 10]]
+        all_point_labels.append(point_labels)
+    pickle_filename = os.path.join(output_folder, 'all_point_labels_nearest_has_empty.pkl')
+    with open(pickle_filename, 'wb') as f:
+        pickle.dump(all_point_labels, f)
+        print(f"{pickle_filename} saved successfully !!")
+
+
+
 def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
     use_v1=False, skip_empty_scene=True, pointpainting=False, use_gt=False, include_person=False):
     """ Same as extract_sunrgbd_data EXCEPT
@@ -836,10 +1111,6 @@ def get_simple_prediction_from_seg(idx_filename, split, num_point=20000,
         print("Class: %d, valid_box_per_class: %d, tp: %d, tp + fp: %d, pred_error: %.6f"%(c, valid_box_per_class, np.sum(pred_under_thr[:,2]), pred_cnt_per_class[c], pred_error))
 
 
-    
-
-        
-
 
 def get_box3d_dim_statistics(idx_filename,
     type_whitelist=['garbage_bin','laptop','cup','cups','coffee_cup','paper_cup','bottle','bottles','water_bottle','wine_bottle','back_pack'],
@@ -979,13 +1250,13 @@ if __name__=='__main__':
             save_votes=True, num_point=50000, use_v1=False, skip_empty_scene=False)
 
     if args.tfrecord and not args.painted:
-        extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/train_data_idx.txt'),
+        gf_extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/train_data_idx.txt'),
             split = 'training',
-            output_folder = os.path.join(DATA_DIR, 'gf_sunrgbd_pc_train_tf'),
+            output_folder = os.path.join(DATA_DIR, 'gf_sunrgbd_pc_train_tf2'),
             num_point=50000, use_v1=True, skip_empty_scene=False)
-        extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/val_data_idx.txt'),
+        gf_extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/val_data_idx.txt'),
             split = 'training',
-            output_folder = os.path.join(DATA_DIR, 'gf_sunrgbd_pc_val_tf'),
+            output_folder = os.path.join(DATA_DIR, 'gf_sunrgbd_pc_val_tf2'),
             num_point=50000, use_v1=True, skip_empty_scene=False)
 
     if args.painted:
@@ -999,23 +1270,33 @@ if __name__=='__main__':
         else:
             train_data_idx_file = 'train_data_idx.txt'
             val_data_idx_file = 'val_data_idx.txt'
-            output_folder_train = 'gf_sunrgbd_pc_train_painted_tf'
-            output_folder_val = 'gf_sunrgbd_pc_val_painted_tf'
+            output_folder_train = 'gf_sunrgbd_pc_train_painted_tf2'
+            output_folder_val = 'gf_sunrgbd_pc_val_painted_tf2'
 
         if args.include_small:
             output_folder_train += '_sm'
             output_folder_val += '_sm'
 
-        extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval', train_data_idx_file),
+        # extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval', train_data_idx_file),
+        #     split = 'training',
+        #     output_folder = os.path.join(DATA_DIR, output_folder_train),
+        #     num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True, use_gt=args.use_gt,
+        #     include_person=args.include_person, include_small = args.include_small)
+        # extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval', val_data_idx_file),
+        #     split = 'training',
+        #     output_folder = os.path.join(DATA_DIR, output_folder_val),
+        #     num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True, use_gt=args.use_gt,
+        #     include_person=args.include_person, include_small = args.include_small)
+
+
+        gf_extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval', train_data_idx_file),
             split = 'training',
             output_folder = os.path.join(DATA_DIR, output_folder_train),
-            num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True, use_gt=args.use_gt,
-            include_person=args.include_person, include_small = args.include_small)
-        extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval', val_data_idx_file),
+            num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True)
+        gf_extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval', val_data_idx_file),
             split = 'training',
             output_folder = os.path.join(DATA_DIR, output_folder_val),
-            num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True, use_gt=args.use_gt,
-            include_person=args.include_person, include_small = args.include_small)
+            num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True)
 
 
     if args.pred_from_seg:

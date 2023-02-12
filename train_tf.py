@@ -361,7 +361,7 @@ def torch_to_tf_data(batch_data):
 
 # ------------------------------------------------------------------------- GLOBAL CONFIG END
 
-@tf.function
+# @tf.function
 def train_one_epoch(batch_data):     
 
     # For type match 

@@ -246,10 +246,11 @@ class Pointnet2Backbone_p(layers.Layer):
         '''
         # Batch index. i in (i,j) index type
         B = tf.shape(xyz)[0]
-        N = tf.shape(xyz)[1]
+        N = tf.shape(xyz)[1]        
+        
         npoint = tf.shape(inds)[1]
         batch_inds = tf.expand_dims(tf.tile(tf.expand_dims(tf.range(B),-1), [1,npoint]), -1)
-        new_inds = tf.concat([batch_inds, tf.expand_dims(inds, -1)], -1)
+        new_inds = tf.concat([batch_inds, tf.expand_dims(inds, -1)], -1)        
         updates = tf.cast(tf.ones([B,npoint]), tf.bool)
         mask = tf.scatter_nd(new_inds, updates, [B,N]) # mask where sa1_inds = True
 
