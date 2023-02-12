@@ -88,7 +88,7 @@ class QueryAndGroup(layers.Layer):
         if ball_inds is None:
             if not knn:
                 idx, pts_cnt = tf_grouping.query_ball_point(self.radius, self.nsample, xyz, new_xyz)
-                print(self.nsample, tf.reduce_sum(pts_cnt, -1)/new_xyz.shape[1])
+                # print(self.nsample, tf.reduce_sum(pts_cnt, -1)/new_xyz.shape[1])
             else:
                 idx, pts_cnt = tf_grouping.knn_with_attention(self.nsample, xyz, new_xyz, attn)                
         else:

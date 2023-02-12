@@ -194,10 +194,13 @@ elif DATASET == 'scannet':
     def my_worker_init_fn(worker_id):
         np.random.seed(np.random.get_state()[1][0] + worker_id)
 
+    def val_worker_init_fn(worker_id):
+        np.random.seed(2481757)
+
     train_ds = DataLoader(TRAIN_DATASET, batch_size=BATCH_SIZE,
         shuffle=True, num_workers=4, worker_init_fn=my_worker_init_fn, drop_last=True)
     test_ds =DataLoader(TEST_DATASET, batch_size=BATCH_SIZE,
-        shuffle=False, num_workers=4, worker_init_fn=my_worker_init_fn)
+        shuffle=False, num_workers=4, worker_init_fn=val_worker_init_fn)
 else:
     print('Unknown dataset %s. Exiting...'%(FLAGS.dataset))
     exit(-1)
@@ -276,7 +279,7 @@ if FLAGS.load_from is not None:
     manager = tf.train.CheckpointManager(ckpt, FLAGS.load_from, max_to_keep=3)
     print("Restored from {}".format(manager.latest_checkpoint))
     ckpt.restore(manager.latest_checkpoint)
-    # start_epoch = ckpt.epoch.numpy()
+    start_epoch = ckpt.epoch.numpy()
 else:
     print("Initializing from scratch.")
 
@@ -546,7 +549,7 @@ def train(start_epoch):
                 if batch_idx % 10 == 0:
                     print('Eval batch: %d'%(batch_idx))
 
-                if (1+EPOCH_CNT) % 50 != 0 and batch_idx * BATCH_SIZE >= 1000:
+                if 1+EPOCH_CNT < 100 and batch_idx * BATCH_SIZE >= 160:
                     break
                 
                 # curr_loss, end_points = distributed_eval_step(batch_data)

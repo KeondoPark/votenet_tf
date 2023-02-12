@@ -320,7 +320,7 @@ class Pointnet2Backbone_p(layers.Layer):
         sa1_features = layers.Concatenate(axis=1)([sa1_features1, sa1_features2])
         sa1_obj_logits = layers.Concatenate(axis=1)([sa1_obj_logits1, sa1_obj_logits2])
         
-        sa1_painted2 = tf.cast(tf.keras.activations.relu(tf.sign(sa1_obj_logits2)), tf.int32)
+        # sa1_painted2 = tf.cast(tf.keras.activations.relu(tf.sign(sa1_obj_logits2)), tf.int32)
         # sa1_painted1 = sa1_painted[:,:1024]
         # sa1_painted2 = sa1_painted[:,1024:]
         

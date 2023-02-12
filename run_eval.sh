@@ -9,9 +9,17 @@
 source /home/${USER}/.bashrc # Initiate your shell environment
 source ~/anaconda3/etc/profile.d/conda.sh
 conda activate votenet_tf # Activate your conda environment
+#sunrgbd
+CUDA_VISIBLE_DEVICES=0 python eval_tf.py  \
+--use_3d_nms --use_cls_nms --per_class_proposal \
+--batch_size 16 --ap_iou_thresholds 0.5 \
+--config_path configs/config_gf_2way_nofp_sep.json --size_cls_agnostic
+# --config_path configs/config_gf_baseline.json --size_cls_agnostic
+
+#scannet
 CUDA_VISIBLE_DEVICES=0 python eval_tf.py  \
 --use_3d_nms --use_cls_nms --per_class_proposal \
 --batch_size 16 --ap_iou_thresholds 0.25 \
---config_path configs/config_gf_scannet_2way_nofp_sep.json
+--config_path configs/config_gf_scannet_baseline.json
 
 
