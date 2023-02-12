@@ -231,6 +231,9 @@ elif DATASET == 'scannet':
     def val_worker_init_fn(worker_id):
         np.random.seed(2481757)
 
+    def val_worker_init_fn(worker_id):
+        np.random.seed(2481757)
+
     train_ds = DataLoader(TRAIN_DATASET, batch_size=BATCH_SIZE,
         shuffle=True, num_workers=4, worker_init_fn=my_worker_init_fn, drop_last=True)
     test_ds =DataLoader(TEST_DATASET, batch_size=BATCH_SIZE,

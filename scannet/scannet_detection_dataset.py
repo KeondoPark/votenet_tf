@@ -21,6 +21,7 @@ from model_util_scannet import rotate_aligned_boxes
 
 from model_util_scannet import ScannetDatasetConfig, read_matrix
 from PIL import Image
+import pickle
 
 DC = ScannetDatasetConfig()
 MAX_NUM_OBJ = 64
@@ -37,10 +38,71 @@ class ScannetDetectionDataset(Dataset):
         use_painted=False):
 
         self.use_painted = use_painted
+        self.seed = 2481757        
+        
+        self.num_points = num_points
+        self.use_color = use_color        
+        self.use_height = use_height
+        self.augment = augment
         #if self.use_painted:
         #    self.data_path = os.path.join(BASE_DIR, 'scannet_train_detection_data_painted')
-        #else:
+        #else:        
+
         self.data_path = os.path.join(BASE_DIR, 'scannet_train_detection_data')
+
+        # filename = os.path.join(self.data_path, f'{split_set}_data.pkl')
+        # if not os.path.exists(filename):
+        #     all_scan_names = list(set([os.path.basename(x)[0:12] \
+        #                                for x in os.listdir(self.data_path) if x.startswith('scene')]))
+        #     if split_set == 'all':
+        #         self.scan_names = all_scan_names
+        #     elif split_set in ['train', 'val', 'test']:
+        #         split_filenames = os.path.join(ROOT_DIR, 'scannet/meta_data',
+        #                                        'scannetv2_{}.txt'.format(split_set))
+        #         with open(split_filenames, 'r') as f:
+        #             self.scan_names = f.read().splitlines()
+        #             # remove unavailiable scans
+        #         num_scans = len(self.scan_names)
+        #         self.scan_names = [sname for sname in self.scan_names \
+        #                            if sname in all_scan_names]
+        #         print('kept {} scans out of {}'.format(len(self.scan_names), num_scans))
+        #         num_scans = len(self.scan_names)
+        #     else:
+        #         print('illegal split name')
+        #         return
+
+        #     mesh_vertices_list = []
+        #     instance_labels_list = []
+        #     semantic_labels_list = []
+        #     instance_bboxes_list = []
+        #     for scan_name in self.scan_names:
+        #         mesh_vertices = np.load(os.path.join(self.data_path, scan_name) + '_vert.npy')
+        #         instance_labels = np.load(os.path.join(self.data_path, scan_name) + '_ins_label.npy')
+        #         semantic_labels = np.load(os.path.join(self.data_path, scan_name) + '_sem_label.npy')
+        #         instance_bboxes = np.load(os.path.join(self.data_path, scan_name) + '_bbox.npy')
+        #         mesh_vertices_list.append(mesh_vertices)
+        #         instance_labels_list.append(instance_labels)
+        #         semantic_labels_list.append(semantic_labels)
+        #         instance_bboxes_list.append(instance_bboxes)
+
+        #     self.mesh_vertices_list = mesh_vertices_list
+        #     self.instance_labels_list = instance_labels_list
+        #     self.semantic_labels_list = semantic_labels_list
+        #     self.instance_bboxes_list = instance_bboxes_list
+
+        #     with open(filename, 'wb') as f:
+        #         pickle.dump((self.mesh_vertices_list, self.instance_labels_list,
+        #                      self.semantic_labels_list, self.instance_bboxes_list), f)
+        #     print(f"{filename} saved successfully")
+        #     assert len(self.scan_names) == len(self.mesh_vertices_list)
+
+        # else:
+        #     with open(filename, 'rb') as f:
+        #         self.mesh_vertices_list, self.instance_labels_list, \
+        #         self.semantic_labels_list, self.instance_bboxes_list = pickle.load(f)
+        #     print(f"{filename} loaded successfully")
+
+
         all_scan_names = list(set([os.path.basename(x)[0:12] \
             for x in os.listdir(self.data_path) if x.startswith('scene')]))
         if split_set=='all':            
@@ -79,13 +141,7 @@ class ScannetDetectionDataset(Dataset):
         self.semantic_labels_list = semantic_labels_list
         self.instance_bboxes_list = instance_bboxes_list
         
-        self.seed = 1111
         
-        
-        self.num_points = num_points
-        self.use_color = use_color        
-        self.use_height = use_height
-        self.augment = augment
        
     def __len__(self):
         return len(self.scan_names)
@@ -138,7 +194,7 @@ class ScannetDetectionDataset(Dataset):
         size_gts = np.zeros((MAX_NUM_OBJ, 3))
         
         point_cloud, choices = pc_util.random_sampling(point_cloud,
-            self.num_points, return_choices=True, seed=self.seed)        
+            self.num_points, return_choices=True)        
         instance_labels = instance_labels[choices]
         semantic_labels = semantic_labels[choices]
 
