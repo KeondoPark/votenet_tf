@@ -175,6 +175,41 @@ if DATASET == 'sunrgbd':
         augment=False,  shuffle=False, batch_size=BATCH_SIZE,
         use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
         use_painted=use_painted, DC=DATASET_CONFIG)
+    
+    
+    
+    # from sunrgbd_detection_dataset_tf import SunrgbdDetectionVotesDataset
+    # TRAIN_DATASET = SunrgbdDetectionVotesDataset('train', num_points=NUM_POINT,
+    #                                                 augment=True,
+    #                                                 use_color=False,
+    #                                                 use_height=True,
+    #                                                 use_v1=False)
+    # TEST_DATASET = SunrgbdDetectionVotesDataset('val', num_points=NUM_POINT,
+    #                                             augment=False,
+    #                                             use_color=False,
+    #                                             use_height=True,
+    #                                             use_v1=False)
+
+    # def my_worker_init_fn(worker_id):
+    #     np.random.seed(np.random.get_state()[1][0] + worker_id)
+    # def val_worker_init_fn(worker_id):
+    #     np.random.seed(2481757)
+    
+    # train_ds = DataLoader(TRAIN_DATASET,
+    #                                            batch_size=BATCH_SIZE,
+    #                                            shuffle=True,
+    #                                            num_workers=4,
+    #                                            worker_init_fn=my_worker_init_fn,
+    #                                            pin_memory=True,                                               
+    #                                            drop_last=True)
+
+    # test_ds = DataLoader(TEST_DATASET,
+    #                                           batch_size=BATCH_SIZE,
+    #                                           shuffle=False,
+    #                                           num_workers=4,
+    #                                           worker_init_fn=val_worker_init_fn,
+    #                                           pin_memory=True,                                              
+    #                                           drop_last=False)
 elif DATASET == 'scannet':
     sys.path.append(os.path.join(ROOT_DIR, 'scannet'))
     from scannet_detection_dataset import ScannetDetectionDataset, MAX_NUM_OBJ
@@ -193,14 +228,28 @@ elif DATASET == 'scannet':
     # Init datasets and dataloaders 
     def my_worker_init_fn(worker_id):
         np.random.seed(np.random.get_state()[1][0] + worker_id)
+    def val_worker_init_fn(worker_id):
+        np.random.seed(2481757)
 
     train_ds = DataLoader(TRAIN_DATASET, batch_size=BATCH_SIZE,
         shuffle=True, num_workers=4, worker_init_fn=my_worker_init_fn, drop_last=True)
     test_ds =DataLoader(TEST_DATASET, batch_size=BATCH_SIZE,
-        shuffle=False, num_workers=4, worker_init_fn=my_worker_init_fn)
+        shuffle=False, num_workers=4, worker_init_fn=val_worker_init_fn)
 else:
     print('Unknown dataset %s. Exiting...'%(FLAGS.dataset))
     exit(-1)
+
+
+if DATASET == 'sunrgbd':
+    
+    train_ds = TRAIN_DATASET.preprocess()
+    train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
+
+    test_ds = TEST_DATASET.preprocess()
+    test_ds = test_ds.prefetch(tf.data.AUTOTUNE)
+
+    # train_ds = mirrored_strategy.experimental_distribute_dataset(train_ds)
+    # test_ds = mirrored_strategy.experimental_distribute_dataset(test_ds)
 
 # Init the model and optimzier
 #device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -247,15 +296,7 @@ else:
     optimizer1 = tf.keras.optimizers.Adam(learning_rate=FLAGS.learning_rate)
     optimizer2 = tf.keras.optimizers.Adam(learning_rate=FLAGS.decoder_learning_rate)
 
-if DATASET == 'sunrgbd':
-    train_ds = TRAIN_DATASET.preprocess()
-    train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
 
-    test_ds = TEST_DATASET.preprocess()
-    test_ds = test_ds.prefetch(tf.data.AUTOTUNE)
-
-    # train_ds = mirrored_strategy.experimental_distribute_dataset(train_ds)
-    # test_ds = mirrored_strategy.experimental_distribute_dataset(test_ds)
 
 
 # Load checkpoint if there is any
@@ -505,11 +546,16 @@ def train(start_epoch):
 
         t_epoch = 0
         start = time.time()
+
+        stop_eval_early = False
         
         for batch_idx, batch_data in enumerate(train_ds):                   
                
             if DATASET == 'scannet':                
                 batch_data = torch_to_tf_data(batch_data)
+            
+            # if DATASET == 'sunrgbd':                
+            #     batch_data = torch_to_tf_data(batch_data)
 
             # train_loss += distributed_train_step(batch_data)                      
             train_loss += train_one_epoch(batch_data)  
@@ -539,14 +585,26 @@ def train(start_epoch):
             stat_dict = defaultdict(float) # collect statistics            
             ap_calculator = APCalculator(ap_iou_thresh=FLAGS.ap_iou_thresh,
                 class2type_map=DATASET_CONFIG.class2type)     
+
+            if 1+EPOCH_CNT == 100:
+                # Reset best mAP at 100 epochs
+                best_eval_mAP = 0.0                
+            
+            if 1+EPOCH_CNT < 100:
+                # at early stage of training, does not do the evaluation fully.
+                stop_eval_early = True
+
             for batch_idx, batch_data in enumerate(test_ds):                               
                 if DATASET == 'scannet':      
-                    batch_data = torch_to_tf_data(batch_data)                          
+                    batch_data = torch_to_tf_data(batch_data)  
+
+                # if DATASET == 'sunrgbd':                
+                #     batch_data = torch_to_tf_data(batch_data)                        
                 
                 if batch_idx % 10 == 0:
                     print('Eval batch: %d'%(batch_idx))
 
-                if 1+EPOCH_CNT < 100 and batch_idx * BATCH_SIZE >= 160:
+                if stop_eval_early and batch_idx * BATCH_SIZE >= 160:
                     break
                 
                 # curr_loss, end_points = distributed_eval_step(batch_data)
