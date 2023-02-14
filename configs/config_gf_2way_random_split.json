@@ -1,15 +1,16 @@
 {    
-    "model_id": "gf_2way_test14", 
+    "model_id": "gf_2way_random_split", 
     "dataset": "sunrgbd",
     "use_painted": true,   
     "two_way": true,       
-    "use_fp_mlp": true, 
+    "use_fp_mlp": false, 
     "sep_coords": true,
     "use_tflite": false,
     "activation": "relu6",
     "q_gran": "semantic",
-    "tflite_folder": "tflite/tflite_models/gf_2way",    
+    "tflite_folder": "tflite/tflite_models/gf_2way_random_split",    
     "use_edgetpu": false,    
     "use_multiThr": false,
-    "bfps_wght": [4,4,1,1]
+    "random_split": true,
+    "bfps_wght": [1,1,1,1]
 }
