@@ -4,10 +4,10 @@
     "use_painted": true,   
     "two_way": false,       
     "use_fp_mlp": true, 
-    "q_gran": "layer",
-    "use_tflite": false,
+    "q_gran": "semantic",
+    "use_tflite": true,
     "activation": "relu",
     "tflite_folder": "tflite/tflite_models/scannet_1way",    
-    "use_edgetpu": false,        
+    "use_edgetpu": true,        
     "use_multiThr": false
 }

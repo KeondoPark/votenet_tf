@@ -113,65 +113,12 @@ def compute_sa1_obj_loss_hard_topk(end_points, topk):
     K = sa1_xyz.shape[1]
     K2 = gt_center.shape[1]
 
-    # point_instance_label = end_points['point_instance_label']  # B, num_points
-    # object_assignment = tf.gather(point_instance_label, axis=1, indices=sa1_inds, batch_dims=1)  # B, num_seed
-    # object_assignment[object_assignment < 0] = K2 - 1  # set background points to the last gt bbox
-    # object_assignment = tf.where(object_assignment < 0, tf.constant(K2-1, tf.int64), object_assignment)
-    # object_assignment_one_hot = tf.one_hot(object_assignment, depth=K2, axis=-1) #(B, K, K2)    
-
-    # delta_xyz = tf.expand_dims(sa1_xyz,2) - tf.expand_dims(gt_center, 1)  # (B, K, K2, 3)
-    # delta_xyz = delta_xyz / (tf.expand_dims(gt_size,1) + 1e-6)  # (B, K, K2, 3)
-    # new_dist = tf.reduce_sum(delta_xyz ** 2, axis=-1) # (B, K, K2)
-
-    # euclidean_dist1 = tf.math.sqrt(new_dist + 1e-6)  # (B, K, K2)
-    # euclidean_dist1 = euclidean_dist1 * object_assignment_one_hot + 100 * (1 - object_assignment_one_hot)  # (B, K, K2)
-    # euclidean_dist1 = tf.transpose(euclidean_dist1, perm=[0,2,1])  # (B, K2, K)    
-    # topk_inds = tf.math.top_k(-euclidean_dist1, topk)[1] * box_label_mask[:, :, None] + (box_label_mask[:, :, None] - 1)  # (B, K2, topk)
-    # topk_inds = tf.reshape(topk_inds, [B,-1])  # B, K2xtopk
-
-    # topk_inds = tf.where(topk_inds < 0, tf.constant(K, tf.int32), topk_inds)
-
-    # batch_inds = tf.tile(tf.expand_dims(tf.range(B),-1), [1, K2 * topk]) 
-    # batch_topk_inds = tf.stack([batch_inds, topk_inds], -1) # (B, K2 * topk, 2)
-    # batch_topk_inds = tf.cast(batch_topk_inds, dtype=tf.int64)
-    # updates = tf.ones([B,K2 * topk], dtype=tf.int64)
-    # objectness_label = tf.scatter_nd(indices=batch_topk_inds, updates=updates, shape=[B,K+1])
-
-    # # WHen there are duplicates in topk, object labels are greater than 1... Need to make it 1 or 0
-    # objectness_label = tf.where(objectness_label > 0, tf.constant(1, tf.int64), tf.constant(0, tf.int64))
-    # objectness_label = objectness_label[:, :K] # (B, K)
-
-    # objectness_label_mask = tf.gather(point_instance_label, axis=1, indices=sa1_inds, batch_dims=1)  # B, num_seed
-    # objectness_label = tf.where(objectness_label_mask < 0, tf.constant(0, dtype=tf.int64), objectness_label)
-
     sa1_obj_gt = tf.gather(end_points['point_obj_mask'], axis=1, indices=sa1_inds, batch_dims=1)  # B,num_seed
     sa1_painted = tf.cast(tf.keras.activations.relu(tf.sign(sa1_obj_logits)), tf.int64)
-    
-    # print("point_obj_mask", tf.reduce_sum(end_points['point_obj_mask'], -1))
-    # print("sa1_obj_gt1", tf.reduce_sum(sa1_obj_gt[:,:1024], -1))
-    # print("sa1_obj_gt2", tf.reduce_sum(sa1_obj_gt[:,1024:], -1))
-    
-
-    # print("sa1_painted1", tf.reduce_sum(sa1_painted[:,:1024], -1))
-    # print("sa1_painted2", tf.reduce_sum(sa1_painted[:,1024:], -1))
-
-    # print("correct 1", tf.reduce_sum(sa1_painted[:,:1024] * sa1_obj_gt[:,:1024], -1))
-    # print("correct 2", tf.reduce_sum(sa1_painted[:,1024:] * sa1_obj_gt[:,1024:], -1))
-
-    # # print("bf dnn sa1_painted1", tf.reduce_sum(tf.cast(end_points['sa1_painted1'],tf.int64), -1))
-    # # print("bf dnn sa1_painted2", tf.reduce_sum(tf.cast(end_points['sa1_painted2'],tf.int64), -1))
-
-    # # print("bf dnn correct 1", tf.reduce_sum(tf.cast(end_points['sa1_painted1'],tf.int64) * sa1_obj_gt[:,:1024], -1))
-    # # print("bf dnn correct 2", tf.reduce_sum(tf.cast(end_points['sa1_painted2'],tf.int64) * sa1_obj_gt[:,1024:], -1))
-
-
-    # exit(0)
 
     end_points['sa1_obj_sum_gt'] = tf.reduce_sum(sa1_obj_gt)
     end_points['sa1_obj_sum_correct'] = tf.reduce_sum(sa1_painted * sa1_obj_gt)
     end_points['sa1_obj_sum_paint'] = tf.reduce_sum(sa1_painted)
-
-
     
     # Compute objectness loss
     criterion = SigmoidFocalClassificationLoss(alpha=0.5)
@@ -275,8 +222,7 @@ def compute_box_and_sem_cls_loss(end_points, config, num_decoder_layers,
         objectness_label = tf.cast(end_points[f'{prefix}objectness_label'], dtype=tf.float32) #(batch_size, MAX_NUM_OBJ)
         assigned_gt_center = tf.gather(gt_center, axis=1, indices=object_assignment, batch_dims=1) #(batch_size, num_proposal, 3)
         center_loss = huber_loss(assigned_gt_center - pred_center, delta=center_delta)
-        inv_obj_label = tf.divide(tf.constant(1.0, tf.float32), tf.reduce_sum(objectness_label)+1e-6)
-        # center_loss = tf.reduce_sum(center_loss*tf.expand_dims(objectness_label,-1))/(tf.reduce_sum(objectness_label)+1e-6)
+        inv_obj_label = tf.divide(tf.constant(1.0, tf.float32), tf.reduce_sum(objectness_label)+1e-6)        
         center_loss = tf.reduce_sum(center_loss*tf.expand_dims(objectness_label,-1)) * inv_obj_label
 
         # Compute heading loss
@@ -287,8 +233,7 @@ def compute_box_and_sem_cls_loss(end_points, config, num_decoder_layers,
             heading_class_loss = 0        
         else:
             criterion_heading_class = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE) #SparseCategoricalCrossentropy is used because heading_class_label is NOT one-hot    
-            heading_class_loss = criterion_heading_class(heading_class_label, end_points[f'{prefix}heading_scores']) # (B,K)    
-            # heading_class_loss = tf.reduce_sum(heading_class_loss * objectness_label) / (tf.reduce_sum(objectness_label)+1e-6)
+            heading_class_loss = criterion_heading_class(heading_class_label, end_points[f'{prefix}heading_scores']) # (B,K)                
             heading_class_loss = tf.reduce_sum(heading_class_loss * objectness_label) * inv_obj_label
 
     
@@ -300,7 +245,6 @@ def compute_box_and_sem_cls_loss(end_points, config, num_decoder_layers,
         heading_residual_normalized_error = \
             tf.reduce_sum(end_points[f'{prefix}heading_residuals_normalized']*heading_label_one_hot, axis=-1) - heading_residual_normalized_label
         heading_residual_normalized_loss = heading_delta * huber_loss(heading_residual_normalized_error, delta=heading_delta)
-        # heading_residual_normalized_loss = tf.reduce_sum(objectness_label * heading_residual_normalized_loss) / (tf.reduce_sum(objectness_label)+1e-6)
         heading_residual_normalized_loss = tf.reduce_sum(objectness_label * heading_residual_normalized_loss) * inv_obj_label
 
         # Compute size loss   
@@ -311,14 +255,11 @@ def compute_box_and_sem_cls_loss(end_points, config, num_decoder_layers,
             size_error = pred_size - size_label
             
             size_loss = size_delta * huber_loss(size_error, delta=size_delta)  # (B,K,3) 
-            # size_loss = tf.reduce_sum(size_loss * tf.expand_dims(objectness_label, -1)) / (
-            #         tf.reduce_sum(objectness_label) + 1e-6)
             size_loss = tf.reduce_sum(size_loss * tf.expand_dims(objectness_label, -1)) * inv_obj_label
         else:
             size_class_label = tf.gather(end_points['size_class_label'], axis=1, indices=object_assignment, batch_dims=1) # select (B,K) from (B,K2)
             criterion_size_class = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE)    
             size_class_loss = criterion_size_class(size_class_label, end_points[f'{prefix}size_scores']) # (B,K)
-            # size_class_loss = tf.reduce_sum(size_class_loss * objectness_label)/(tf.reduce_sum(objectness_label)+1e-6)
             size_class_loss = tf.reduce_sum(size_class_loss * objectness_label) * inv_obj_label
 
             #Create index used for tensorflow gather_nd... not very convenient compared to pytorch    
@@ -331,17 +272,14 @@ def compute_box_and_sem_cls_loss(end_points, config, num_decoder_layers,
             mean_size_label = tf.reduce_sum(size_label_one_hot_tiled * mean_size_arr_expanded, axis=2) # (B,K,3)
         
             size_residual_label_normalized = tf.divide(size_residual_label, mean_size_label) # (B,K,3)
-            size_residual_normalized_error = predicted_size_residual_normalized - size_residual_label_normalized
-            # size_residual_normalized_loss = tf.reduce_mean(size_delta * huber_loss(size_residual_normalized_error, delta=size_delta), axis=-1) # (B,K,3) -> (B,K)
-            size_residual_normalized_loss = size_delta * huber_loss(size_residual_normalized_error, delta=size_delta) # (B,K,3) -> (B,K)
-            # size_residual_normalized_loss = tf.reduce_sum(size_residual_normalized_loss*tf.expand_dims(objectness_label,-1))/(tf.reduce_sum(objectness_label)+1e-6)
+            size_residual_normalized_error = predicted_size_residual_normalized - size_residual_label_normalized            
+            size_residual_normalized_loss = size_delta * huber_loss(size_residual_normalized_error, delta=size_delta) # (B,K,3) -> (B,K)            
             size_residual_normalized_loss = tf.reduce_sum(size_residual_normalized_loss*tf.expand_dims(objectness_label,-1)) * inv_obj_label
 
         # 3.4 Semantic cls loss    
         sem_cls_label = tf.gather(end_points['sem_cls_label'], axis=1, indices=object_assignment, batch_dims=1)
         criterion_sem_cls = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE)    
-        sem_cls_loss = criterion_sem_cls(sem_cls_label, end_points[f'{prefix}sem_cls_scores']) # (B,K)
-        # sem_cls_loss = tf.reduce_sum(sem_cls_loss * objectness_label)/(tf.reduce_sum(objectness_label)+1e-6)
+        sem_cls_loss = criterion_sem_cls(sem_cls_label, end_points[f'{prefix}sem_cls_scores']) # (B,K)        
         sem_cls_loss = tf.reduce_sum(sem_cls_loss * objectness_label) * inv_obj_label
 
         end_points[f'{prefix}center_loss'] = center_loss
@@ -379,7 +317,8 @@ def get_loss(end_points, config, num_decoder_layers,
         query_points_generation_loss = 0.0
 
     if 'sa1_obj_logits' in end_points.keys():
-        sa1_obj_loss, end_points = compute_sa1_obj_loss_hard_topk(end_points, query_points_obj_topk)        
+        # sa1_obj_loss, end_points = compute_sa1_obj_loss_hard_topk(end_points, query_points_obj_topk)        
+        sa1_obj_loss = 0.0
         end_points['sa1_obj_loss'] = sa1_obj_loss
     else:
         sa1_obj_loss = 0.0

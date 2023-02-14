@@ -91,7 +91,7 @@ parser.add_argument('--obj_loss_coef', default=0.1, type=float, help='Loss weigh
 parser.add_argument('--box_loss_coef', default=1, type=float, help='Loss weight for box loss')
 parser.add_argument('--sem_cls_loss_coef', default=0.1, type=float, help='Loss weight for classification loss')
 parser.add_argument('--query_points_obj_topk', default=4, type=int, help='query_points_obj_topk')
-parser.add_argument('--clip_norm', default=0.1, type=float, help='gradient clipping max norm')
+parser.add_argument('--clip_norm', default=0.0, type=float, help='gradient clipping max norm')
 parser.add_argument('--decoder_normalization', default='layer', help='Which normalization method to use in decoder [layer or batch]')
 parser.add_argument('--light', action='store_true', help='Use light version of detector')
 
@@ -175,6 +175,7 @@ if DATASET == 'sunrgbd':
         augment=False,  shuffle=False, batch_size=BATCH_SIZE,
         use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
         use_painted=use_painted, DC=DATASET_CONFIG)
+    
 elif DATASET == 'scannet':
     sys.path.append(os.path.join(ROOT_DIR, 'scannet'))
     from scannet_detection_dataset import ScannetDetectionDataset, MAX_NUM_OBJ
@@ -193,6 +194,8 @@ elif DATASET == 'scannet':
     # Init datasets and dataloaders 
     def my_worker_init_fn(worker_id):
         np.random.seed(np.random.get_state()[1][0] + worker_id)
+    def val_worker_init_fn(worker_id):
+        np.random.seed(2481757)
 
     def val_worker_init_fn(worker_id):
         np.random.seed(2481757)
@@ -205,8 +208,19 @@ else:
     print('Unknown dataset %s. Exiting...'%(FLAGS.dataset))
     exit(-1)
 
+
+if DATASET == 'sunrgbd':
+    
+    train_ds = TRAIN_DATASET.preprocess()
+    train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
+
+    test_ds = TEST_DATASET.preprocess()
+    test_ds = test_ds.prefetch(tf.data.AUTOTUNE)
+
+    # train_ds = mirrored_strategy.experimental_distribute_dataset(train_ds)
+    # test_ds = mirrored_strategy.experimental_distribute_dataset(test_ds)
+
 # Init the model and optimzier
-#device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 num_input_channel = int(FLAGS.use_color)*3 + int(not FLAGS.no_height)*1
 
 ### Point Paiting : Sementation score is appended at the end of point cloud
@@ -242,23 +256,14 @@ criterion = loss_helper_tf.get_loss
 if FLAGS.optimizer == 'adamw':
     optimizer1 = tfa.optimizers.AdamW(learning_rate=FLAGS.learning_rate, weight_decay=FLAGS.weight_decay, epsilon=1e-08)
     optimizer2 = tfa.optimizers.AdamW(learning_rate=FLAGS.decoder_learning_rate, weight_decay=FLAGS.weight_decay, epsilon=1e-08)
-    # optimizer1.global_clipnorm = FLAGS.clip_norm
-    # optimizer2.global_clipnorm = FLAGS.clip_norm
-    # optimizer1 = tf.keras.optimizers.experimental.AdamW(learning_rate=FLAGS.learning_rate, weight_decay=FLAGS.weight_decay)
-    # optimizer2 = tf.keras.optimizers.experimental.AdamW(learning_rate=FLAGS.decoder_learning_rate, weight_decay=FLAGS.weight_decay)
+    if FLAGS.clip_norm > 0:
+        optimizer1.global_clipnorm = FLAGS.clip_norm
+        optimizer2.global_clipnorm = FLAGS.clip_norm    
 else:
     optimizer1 = tf.keras.optimizers.Adam(learning_rate=FLAGS.learning_rate)
     optimizer2 = tf.keras.optimizers.Adam(learning_rate=FLAGS.decoder_learning_rate)
 
-if DATASET == 'sunrgbd':
-    train_ds = TRAIN_DATASET.preprocess()
-    train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
 
-    test_ds = TEST_DATASET.preprocess()
-    test_ds = test_ds.prefetch(tf.data.AUTOTUNE)
-
-    # train_ds = mirrored_strategy.experimental_distribute_dataset(train_ds)
-    # test_ds = mirrored_strategy.experimental_distribute_dataset(test_ds)
 
 
 # Load checkpoint if there is any
@@ -508,6 +513,8 @@ def train(start_epoch):
 
         t_epoch = 0
         start = time.time()
+
+        stop_eval_early = False
         
         for batch_idx, batch_data in enumerate(train_ds):                   
                
@@ -530,9 +537,6 @@ def train(start_epoch):
                 train_loss = tf.constant(0.0, tf.float32)
                 #TRAIN_VISUALIZER.log_scalars({key:stat_dict[key]/batch_interval for key in stat_dict},
                 #    (EPOCH_CNT*len(TRAIN_DATASET)+(batch_idx))*BATCH_SIZE)
-                #for key in sorted(stat_dict.keys()):
-                #    log_string('mean %s: %f'%(key, stat_dict[key]/batch_interval))
-                #    stat_dict[key] = 0
         
         t_epoch = time.time() - start
         log_string("1 Epoch training time:" + str(t_epoch))        
@@ -542,14 +546,23 @@ def train(start_epoch):
             stat_dict = defaultdict(float) # collect statistics            
             ap_calculator = APCalculator(ap_iou_thresh=FLAGS.ap_iou_thresh,
                 class2type_map=DATASET_CONFIG.class2type)     
+
+            if 1+EPOCH_CNT == 150:
+                # Reset best mAP at 100 epochs
+                best_eval_mAP = 0.0                
+            
+            if 1+EPOCH_CNT < 150:
+                # at early stage of training, does not do the evaluation fully.
+                stop_eval_early = True
+
             for batch_idx, batch_data in enumerate(test_ds):                               
                 if DATASET == 'scannet':      
-                    batch_data = torch_to_tf_data(batch_data)                          
+                    batch_data = torch_to_tf_data(batch_data)                  
                 
                 if batch_idx % 10 == 0:
                     print('Eval batch: %d'%(batch_idx))
 
-                if 1+EPOCH_CNT < 100 and batch_idx * BATCH_SIZE >= 160:
+                if stop_eval_early and batch_idx * BATCH_SIZE >= 160:
                     break
                 
                 # curr_loss, end_points = distributed_eval_step(batch_data)
@@ -570,7 +583,9 @@ def train(start_epoch):
                                                                 CONFIG_DICT, 
                                                                 prefix='last_', 
                                                                 size_cls_agnostic=FLAGS.size_cls_agnostic)        
-                batch_gt_map_cls = parse_groundtruths(end_points, CONFIG_DICT)
+                batch_gt_map_cls = parse_groundtruths(end_points, 
+                                                    CONFIG_DICT, 
+                                                    size_cls_agnostic=FLAGS.size_cls_agnostic)
                 ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)    
 
 

@@ -41,109 +41,110 @@ from model_util_sunrgbd import SunrgbdDatasetConfig
 MAX_NUM_OBJ = 64 # maximum number of objects allowed per scene
 MEAN_COLOR_RGB = np.array([0.5,0.5,0.5]) # sunrgbd color is in 0~1
 
-class SunrgbdDetectionVotesDataset(keras.utils.Sequence):
+from torch.utils.data import Dataset
+DC = SunrgbdDatasetConfig()
+import pickle
+class SunrgbdDetectionVotesDataset(Dataset):
     def __init__(self, split_set='train', num_points=20000,
-        use_color=False, use_height=False, use_v1=False,
-        augment=False, scan_idx_list=None, DC=None):
+                 use_color=False, use_height=False, use_v1=False,
+                 augment=False, data_root=None):
 
-        assert(num_points<=50000)
-        self.use_v1 = use_v1 
-        if use_v1:
-            #self.data_path = os.path.join(ROOT_DIR,
-                #'sunrgbd/sunrgbd_pc_bbox_votes_50k_v1_%s'%(split_set))
-            self.data_path = os.path.join(DATA_DIR,
-                'sunrgbd_pc_bbox_votes_50k_v1_%s'%(split_set))
-        else:
-            #self.data_path = os.path.join(ROOT_DIR,
-                #'sunrgbd/sunrgbd_pc_bbox_votes_50k_v2_%s'%(split_set))
-            self.data_path = os.path.join(DATA_DIR,
-                'sunrgbd_pc_bbox_votes_50k_v2_%s'%(split_set))
+        assert (num_points <= 50000)
+        self.use_v1 = use_v1
 
-        self.raw_data_path = os.path.join(ROOT_DIR, 'sunrgbd/sunrgbd_trainval')
-        self.scan_names = sorted(list(set([os.path.basename(x)[0:6] \
-            for x in os.listdir(self.data_path)])))
-        if scan_idx_list is not None:
-            self.scan_names = [self.scan_names[i] for i in scan_idx_list]
         self.num_points = num_points
         self.augment = augment
         self.use_color = use_color
         self.use_height = use_height
-        self.DC = DC
-       
+        
+        self.data_path = os.path.join(DATA_DIR,'gf_sunrgbd_pc_%s_painted_tf2'%(split_set))
+
+        pickle_filename = os.path.join(self.data_path, 'all_obbs_modified_nearest_has_empty.pkl')
+        with open(pickle_filename, 'rb') as f:
+            self.bboxes_list = pickle.load(f)
+        print(f"{pickle_filename} loaded successfully !!!")
+
+        pickle_filename = os.path.join(self.data_path, 'all_pc_modified_nearest_has_empty.pkl')
+        with open(pickle_filename, 'rb') as f:
+            self.point_cloud_list = pickle.load(f)
+        print(f"{pickle_filename} loaded successfully !!!")
+
+        pickle_filename = os.path.join(self.data_path, 'all_point_labels_nearest_has_empty.pkl')
+        with open(pickle_filename, 'rb') as f:
+            self.point_labels_list = pickle.load(f)
+        print(f"{pickle_filename} loaded successfully !!!")
+
     def __len__(self):
-        return len(self.scan_names)
+        return len(self.point_cloud_list)
 
     def __getitem__(self, idx):
         """
         Returns a dict with following keys:
             point_clouds: (N,3+C)
             center_label: (MAX_NUM_OBJ,3) for GT box center XYZ
+            sem_cls_label: (MAX_NUM_OBJ,) semantic class index
             heading_class_label: (MAX_NUM_OBJ,) with int values in 0,...,NUM_HEADING_BIN-1
             heading_residual_label: (MAX_NUM_OBJ,)
             size_classe_label: (MAX_NUM_OBJ,) with int values in 0,...,NUM_SIZE_CLUSTER
             size_residual_label: (MAX_NUM_OBJ,3)
-            sem_cls_label: (MAX_NUM_OBJ,) semantic class index
-            box_label_mask: (MAX_NUM_OBJ) as 0/1 with 1 indicating a unique box            
+            box_label_mask: (MAX_NUM_OBJ) as 0/1 with 1 indicating a unique box
+            point_obj_mask: (N,) with 0/1 with 1 indicating the point is in one of the object's OBB.
+            point_instance_label: (N,) with int values in -1,...,num_box, indicating which object the point belongs to, -1 means a backgound point.
             scan_idx: int scan index in scan_names list
             max_gt_bboxes: unused
         """
-        scan_name = self.scan_names[idx]
-        point_cloud = np.load(os.path.join(self.data_path, scan_name)+'_pc.npz')['pc'] # Nx6
-        bboxes = np.load(os.path.join(self.data_path, scan_name)+'_bbox.npy') # K,8
-        
-        ############### NEED IMPLEMENTATION
+        point_cloud = self.point_cloud_list[idx]  # Nx6
+        bboxes = self.bboxes_list[idx]  # K,8
         point_obj_mask = self.point_labels_list[idx][:, 0]
         point_instance_label = self.point_labels_list[idx][:, -1]
 
-
         if not self.use_color:
-            point_cloud = point_cloud[:,0:3]
+            point_cloud = point_cloud[:, 0:3]
         else:
-            point_cloud = point_cloud[:,0:6]
-            point_cloud[:,3:] = (point_cloud[:,3:]-MEAN_COLOR_RGB)
+            point_cloud = point_cloud[:, 0:6]
+            point_cloud[:, 3:] = (point_cloud[:, 3:] - MEAN_COLOR_RGB)
 
         if self.use_height:
-            floor_height = np.percentile(point_cloud[:,2],0.99)
-            height = point_cloud[:,2] - floor_height
-            point_cloud = np.concatenate([point_cloud, np.expand_dims(height, 1)],1) # (N,4) or (N,7)
+            floor_height = np.percentile(point_cloud[:, 2], 0.99)
+            height = point_cloud[:, 2] - floor_height
+            point_cloud = np.concatenate([point_cloud, np.expand_dims(height, 1)], 1)  # (N,4) or (N,7)
 
         # ------------------------------- DATA AUGMENTATION ------------------------------
         if self.augment:
             if np.random.random() > 0.5:
                 # Flipping along the YZ plane
-                point_cloud[:,0] = -1 * point_cloud[:,0]
-                bboxes[:,0] = -1 * bboxes[:,0]
-                bboxes[:,6] = np.pi - bboxes[:,6]
-                point_votes[:,[1,4,7]] = -1 * point_votes[:,[1,4,7]]
+                point_cloud[:, 0] = -1 * point_cloud[:, 0]
+                bboxes[:, 0] = -1 * bboxes[:, 0]
+                bboxes[:, 6] = np.pi - bboxes[:, 6]
 
             # Rotation along up-axis/Z-axis
-            rot_angle = (np.random.random()*np.pi/3) - np.pi/6 # -30 ~ +30 degree
-            rot_mat = sunrgbd_utils.rotz(rot_angle)            
+            rot_angle = (np.random.random() * np.pi / 3) - np.pi / 6  # -30 ~ +30 degree
+            rot_mat = sunrgbd_utils.rotz(rot_angle)
 
-            point_cloud[:,0:3] = np.dot(point_cloud[:,0:3], np.transpose(rot_mat))
-            bboxes[:,0:3] = np.dot(bboxes[:,0:3], np.transpose(rot_mat))
-            bboxes[:,6] -= rot_angle            
+            point_cloud[:, 0:3] = np.dot(point_cloud[:, 0:3], np.transpose(rot_mat))
+            bboxes[:, 0:3] = np.dot(bboxes[:, 0:3], np.transpose(rot_mat))
+            bboxes[:, 6] -= rot_angle
 
             # Augment RGB color
             if self.use_color:
-                rgb_color = point_cloud[:,3:6] + MEAN_COLOR_RGB
-                rgb_color *= (1+0.4*np.random.random(3)-0.2) # brightness change for each channel
-                rgb_color += (0.1*np.random.random(3)-0.05) # color shift for each channel
-                rgb_color += np.expand_dims((0.05*np.random.random(point_cloud.shape[0])-0.025), -1) # jittering on each pixel
+                rgb_color = point_cloud[:, 3:6] + MEAN_COLOR_RGB
+                rgb_color *= (1 + 0.4 * np.random.random(3) - 0.2)  # brightness change for each channel
+                rgb_color += (0.1 * np.random.random(3) - 0.05)  # color shift for each channel
+                rgb_color += np.expand_dims((0.05 * np.random.random(point_cloud.shape[0]) - 0.025),
+                                            -1)  # jittering on each pixel
                 rgb_color = np.clip(rgb_color, 0, 1)
                 # randomly drop out 30% of the points' colors
-                rgb_color *= np.expand_dims(np.random.random(point_cloud.shape[0])>0.3,-1)
-                point_cloud[:,3:6] = rgb_color - MEAN_COLOR_RGB
+                rgb_color *= np.expand_dims(np.random.random(point_cloud.shape[0]) > 0.3, -1)
+                point_cloud[:, 3:6] = rgb_color - MEAN_COLOR_RGB
 
             # Augment point cloud scale: 0.85x-1.15x
-            scale_ratio = np.random.random()*0.3+0.85
-            scale_ratio = np.expand_dims(np.tile(scale_ratio,3),0)
-            point_cloud[:,0:3] *= scale_ratio
-            bboxes[:,0:3] *= scale_ratio
-            bboxes[:,3:6] *= scale_ratio
-            
+            scale_ratio = np.random.random() * 0.3 + 0.85
+            scale_ratio = np.expand_dims(np.tile(scale_ratio, 3), 0)
+            point_cloud[:, 0:3] *= scale_ratio
+            bboxes[:, 0:3] *= scale_ratio
+            bboxes[:, 3:6] *= scale_ratio
             if self.use_height:
-                point_cloud[:,-1] *= scale_ratio[0,0]
+                point_cloud[:, -1] *= scale_ratio[0, 0]
 
         # ------------------------------- LABELS ------------------------------
         box3d_centers = np.zeros((MAX_NUM_OBJ, 3))
@@ -155,61 +156,63 @@ class SunrgbdDetectionVotesDataset(keras.utils.Sequence):
         label_mask = np.zeros((MAX_NUM_OBJ))
         label_mask[0:bboxes.shape[0]] = 1
         max_bboxes = np.zeros((MAX_NUM_OBJ, 8))
-        max_bboxes[0:bboxes.shape[0],:] = bboxes
+        max_bboxes[0:bboxes.shape[0], :] = bboxes
 
         for i in range(bboxes.shape[0]):
             bbox = bboxes[i]
             semantic_class = bbox[7]
             box3d_center = bbox[0:3]
-            angle_class, angle_residual = self.DC.angle2class(bbox[6])
+            angle_class, angle_residual = DC.angle2class(bbox[6])
             # NOTE: The mean size stored in size2class is of full length of box edges,
-            # while in sunrgbd_data.py data dumping we dumped *half* length l,w,h.. so have to time it by 2 here 
-            box3d_size = bbox[3:6]*2
-            size_class, size_residual = self.DC.size2class(box3d_size, self.DC.class2type[semantic_class])
-            box3d_centers[i,:] = box3d_center
+            # while in sunrgbd_data.py data dumping we dumped *half* length l,w,h.. so have to time it by 2 here
+            box3d_size = bbox[3:6] * 2
+            size_class, size_residual = DC.size2class(box3d_size, DC.class2type[semantic_class])
+            box3d_centers[i, :] = box3d_center
             angle_classes[i] = angle_class
             angle_residuals[i] = angle_residual
             size_classes[i] = size_class
             size_residuals[i] = size_residual
-            box3d_sizes[i,:] = box3d_size
+            box3d_sizes[i, :] = box3d_size
 
-        target_bboxes_mask = label_mask 
+        target_bboxes_mask = label_mask
         target_bboxes = np.zeros((MAX_NUM_OBJ, 6))
+        target_bboxes[:, 0:3] += 1000.0
+        size_gts = np.zeros((MAX_NUM_OBJ, 3))
         for i in range(bboxes.shape[0]):
             bbox = bboxes[i]
             corners_3d = sunrgbd_utils.my_compute_box_3d(bbox[0:3], bbox[3:6], bbox[6])
             # compute axis aligned box
-            xmin = np.min(corners_3d[:,0])
-            ymin = np.min(corners_3d[:,1])
-            zmin = np.min(corners_3d[:,2])
-            xmax = np.max(corners_3d[:,0])
-            ymax = np.max(corners_3d[:,1])
-            zmax = np.max(corners_3d[:,2])
-            target_bbox = np.array([(xmin+xmax)/2, (ymin+ymax)/2, (zmin+zmax)/2, xmax-xmin, ymax-ymin, zmax-zmin])
-            target_bboxes[i,:] = target_bbox
+            xmin = np.min(corners_3d[:, 0])
+            ymin = np.min(corners_3d[:, 1])
+            zmin = np.min(corners_3d[:, 2])
+            xmax = np.max(corners_3d[:, 0])
+            ymax = np.max(corners_3d[:, 1])
+            zmax = np.max(corners_3d[:, 2])
+            target_bbox = np.array(
+                [(xmin + xmax) / 2, (ymin + ymax) / 2, (zmin + zmax) / 2, xmax - xmin, ymax - ymin, zmax - zmin])
+            target_bboxes[i, :] = target_bbox
+            size_gts[i, :] = target_bbox[3:6]
 
         point_cloud, choices = pc_util.random_sampling(point_cloud, self.num_points, return_choices=True)
         point_obj_mask = point_obj_mask[choices]
         point_instance_label = point_instance_label[choices]
-        
-        target_bboxes_semcls = np.zeros((MAX_NUM_OBJ))
-        target_bboxes_semcls[0:bboxes.shape[0]] = bboxes[:,-1] # from 0 to 9
-        import tensorflow as tf
+
         ret_dict = {}
-        ret_dict['point_clouds'] = tf.convert_to_tensor(point_cloud, dtype=tf.float32)
-        ret_dict['center_label'] = tf.convert_to_tensor(target_bboxes[:,0:3], dtype=tf.float32)
-        ret_dict['heading_class_label'] = tf.convert_to_tensor(angle_classes, dtype=tf.int32)
-        ret_dict['heading_residual_label'] = tf.convert_to_tensor(angle_residuals, dtype=tf.float32)
-        ret_dict['size_class_label'] = tf.convert_to_tensor(size_classes, dtype=tf.int32)
-        ret_dict['size_residual_label'] = tf.convert_to_tensor(size_residuals, dtype=tf.float32)
+        ret_dict['point_clouds'] = point_cloud.astype(np.float32)
+        ret_dict['center_label'] = target_bboxes.astype(np.float32)[:, 0:3]
+        ret_dict['heading_class_label'] = angle_classes.astype(np.int64)
+        ret_dict['heading_residual_label'] = angle_residuals.astype(np.float32)
+        ret_dict['size_class_label'] = size_classes.astype(np.int64)
+        ret_dict['size_residual_label'] = size_residuals.astype(np.float32)        
         target_bboxes_semcls = np.zeros((MAX_NUM_OBJ))
-        target_bboxes_semcls[0:bboxes.shape[0]] = bboxes[:,-1] # from 0 to 9
-        ret_dict['sem_cls_label'] = tf.convert_to_tensor(target_bboxes_semcls, dtype=tf.int32)
-        ret_dict['box_label_mask'] = tf.convert_to_tensor(target_bboxes_mask, dtype=tf.float32)
-        ret_dict['point_obj_mask'] = tf.convert_to_tensor(point_obj_mask, dtype=tf.float32)
-        ret_dict['point_instance_label'] = tf.convert_to_tensor(point_instance_label, dtype=tf.int32)
-        ret_dict['scan_idx'] = tf.convert_to_tensor(np.array(idx), dtype=tf.int32)
-        ret_dict['max_gt_bboxes'] = tf.convert_to_tensor(max_bboxes, dtype=tf.float32)
+        target_bboxes_semcls[0:bboxes.shape[0]] = bboxes[:, -1]  # from 0 to 9
+        ret_dict['sem_cls_label'] = target_bboxes_semcls.astype(np.int64)
+        ret_dict['box_label_mask'] = target_bboxes_mask.astype(np.float32)
+        ret_dict['point_obj_mask'] = point_obj_mask.astype(np.int64)
+        ret_dict['point_instance_label'] = point_instance_label.astype(np.int64)
+        ret_dict['size_gts'] = size_gts.astype(np.float32)
+        ret_dict['scan_idx'] = np.array(idx).astype(np.int64)
+        ret_dict['max_gt_bboxes'] = max_bboxes
         return ret_dict
 
 
@@ -235,9 +238,9 @@ class SunrgbdDetectionDataset_tfrecord():
         if DC.include_person:
             self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf_person2'%(split_set))
         elif self.use_painted:
-            self.data_path = os.path.join(DATA_DIR,'gf_sunrgbd_pc_%s_painted_tf'%(split_set))
+            self.data_path = os.path.join(DATA_DIR,'gf_sunrgbd_pc_%s_painted_tf2'%(split_set))
         else:
-            self.data_path = os.path.join(DATA_DIR,'gf_sunrgbd_pc_%s_tf'%(split_set))
+            self.data_path = os.path.join(DATA_DIR,'gf_sunrgbd_pc_%s_tf2'%(split_set))
 
         if DC.include_small:
             self.data_path += '_sm'
@@ -245,7 +248,8 @@ class SunrgbdDetectionDataset_tfrecord():
         print(self.data_path)
 
         if split_set == 'val':
-            tf.random.set_seed(1234)
+            np.random.seed(2481757)
+            tf.random.set_seed(2481757)
 
         self.raw_data_path = os.path.join(ROOT_DIR, 'sunrgbd/sunrgbd_trainval')
         self.num_points = num_points
@@ -316,8 +320,9 @@ class SunrgbdDetectionDataset_tfrecord():
 
     def sample_points(self, point_cloud, bboxes, point_labels, n_valid_box):        
         n_pc = point_cloud.shape[1]        
-
-        choice_indices = tf.random.uniform([self.num_points], minval=0, maxval=n_pc, dtype=tf.int64)
+        # choice_indices = tf.random.uniform([self.num_points], minval=0, maxval=n_pc, dtype=tf.int64)
+        all_indices = tf.random.shuffle(tf.range(n_pc))
+        choice_indices = all_indices[:self.num_points]
         choice_indices = tf.tile(tf.expand_dims(choice_indices,0), [tf.shape(point_cloud)[0],1])
         
         point_cloud = tf.gather(point_cloud, choice_indices, axis=1, batch_dims=1)
@@ -407,7 +412,6 @@ class SunrgbdDetectionDataset_tfrecord():
                 point_cloud = tf.concat((pc_coords, pc_height), axis=-1)
         
         bboxes = tf.concat((bboxes_coords, bboxes_edges, bboxes_angle, bboxes[:,:,7:]), axis=-1)
-        # point_votes = tf.concat((votes0, votes1, votes2, votes3, point_votes[:,:,10:]), axis=-1)           
         
         return point_cloud, bboxes, point_labels, n_valid_box
 
@@ -447,10 +451,6 @@ class SunrgbdDetectionDataset_tfrecord():
         target_bboxes_semcls = np.zeros((B, MAX_NUM_OBJ))
         size_gts = np.zeros((B, MAX_NUM_OBJ, 3))
 
-        #point_cloud_sampled = np.zeros((B, self.num_points, point_cloud.shape[2]))
-        #point_votes_sampled = np.zeros((B, self.num_points, point_votes.shape[2]-1))
-        #point_votes_mask = np.zeros((B, self.num_points))
-
         for b in range(B):
             n_box = n_valid_box[b]
             
@@ -485,52 +485,6 @@ class SunrgbdDetectionDataset_tfrecord():
             target_bboxes_semcls[b,:n_box] = bboxes[b,:n_box,-1] # from 0 to 9
 
         size_gts = target_bboxes[:,:,3:6]
-
-            # label_mask[b,:n_box] = 1
-            # max_bboxes[b,:n_box,:] = bboxes[b,:n_box,:]
-
-            # for i in range(n_box):
-            #     bbox = bboxes[b,i]
-            #     semantic_class = bbox[7]
-            #     box3d_center = bbox[0:3]
-            #     angle_class, angle_residual = self.DC.angle2class(bbox[6])
-            #     # NOTE: The mean size stored in size2class is of full length of box edges,
-            #     # while in sunrgbd_data.py data dumping we dumped *half* length l,w,h.. so have to time it by 2 here 
-            #     #box3d_size = bbox[3:6]*2
-            #     box3d_size = bbox[3:6]
-            #     #box3d_size *= 2
-            #     size_class = semantic_class         
-            #     #mean_size =  self.type_mean_size_np[size_class.numpy().astype(np.int32)]         
-            #     #size_residual = 2 * box3d_size - mean_size
-            #     size_residual = 2 * box3d_size - self.type_mean_size_np[size_class.numpy().astype(np.int32)]
-            #     #size_class, size_residual = size2class(box3d_size, class2type[semantic_class])
-            #     box3d_centers[b,i,:] = box3d_center
-            #     angle_classes[b,i] = angle_class
-            #     angle_residuals[b,i] = angle_residual
-            #     size_classes[b,i] = size_class
-            #     size_residuals[b,i] = size_residual
-            #     box3d_sizes[b,i,:] = 2 * box3d_size
-            
-            # target_bboxes_mask = label_mask 
-            # target_bboxes[b,0:3] += 1000.0
-
-                   
-            
-            # for i in range(n_box):
-            #     bbox = bboxes[b,i]
-            #     corners_3d = sunrgbd_utils.my_compute_box_3d(bbox[0:3], bbox[3:6], bbox[6])
-            #     # compute axis aligned box
-            #     xmin = np.min(corners_3d[:,0])
-            #     ymin = np.min(corners_3d[:,1])
-            #     zmin = np.min(corners_3d[:,2])
-            #     xmax = np.max(corners_3d[:,0])
-            #     ymax = np.max(corners_3d[:,1])
-            #     zmax = np.max(corners_3d[:,2])
-            #     target_bbox = np.array([(xmin+xmax)/2, (ymin+ymax)/2, (zmin+zmax)/2, xmax-xmin, ymax-ymin, zmax-zmin])
-            #     target_bboxes[b,i,:] = target_bbox
-            #     size_gts[b, i, :] = target_bbox[3:6]
-
-            
         
         point_cloud = tf.constant(point_cloud, dtype=tf.float32)        
         center_label = tf.constant(target_bboxes[:,:,0:3], dtype=tf.float32)

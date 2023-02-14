@@ -310,10 +310,13 @@ def run_eval():
 
         batch_pred_map_cls, pred_mask = parse_predictions(end_points, 
                                                                 CONFIG_DICT, 
+                                                                # prefix='0head_', 
                                                                 prefix='last_', 
                                                                 size_cls_agnostic=FLAGS.size_cls_agnostic) 
 
-        batch_gt_map_cls = parse_groundtruths(end_points, CONFIG_DICT) 
+        batch_gt_map_cls = parse_groundtruths(end_points, 
+                                            CONFIG_DICT, 
+                                            size_cls_agnostic=FLAGS.size_cls_agnostic) 
 
 
 

@@ -127,44 +127,38 @@ class Pointnet2Backbone(layers.Layer):
         sa1_xyz, sa1_features, sa1_inds, sa1_grp_feats = self.sa1(xyz, features, time_record)        
         end_points['sa1_xyz'] = sa1_xyz
         end_points['sa1_features'] = sa1_features
-        end_points['sa1_inds'] = sa1_inds        
-        # end_points['sa1_grouped_features'] = sa1_grouped_features
+        end_points['sa1_inds'] = sa1_inds                
 
         #print("========================== SA2 ===============================")
         #xyz, features, fps_inds = self.sa2(xyz, features) # this fps_inds is just 0,1,...,1023
         sa2_xyz, sa2_features, sa2_inds, sa2_grp_feats = self.sa2(sa1_xyz, sa1_features, time_record) # this fps_inds is just 0,1,...,1023        
         end_points['sa2_xyz'] = sa2_xyz
         end_points['sa2_features'] = sa2_features
-        end_points['sa2_inds'] = sa2_inds        
-        # end_points['sa2_grouped_features'] = sa2_grouped_features
+        end_points['sa2_inds'] = sa2_inds                
 
         #print("========================== SA3 ===============================")
         #xyz, features, fps_inds = self.sa3(xyz, features) # this fps_inds is just 0,1,...,511
         sa3_xyz, sa3_features, sa3_inds, sa3_grp_feats = self.sa3(sa2_xyz, sa2_features, time_record) # this fps_inds is just 0,1,...,511        
         end_points['sa3_xyz'] = sa3_xyz
         end_points['sa3_features'] = sa3_features
-        end_points['sa3_inds'] = sa3_inds        
-        # end_points['sa3_grouped_features'] = sa3_grouped_features
+        end_points['sa3_inds'] = sa3_inds                
 
 
         #print("========================== SA4 ===============================")        
         sa4_xyz, sa4_features, sa4_inds, sa4_grp_feats = self.sa4(sa3_xyz, sa3_features, time_record) # this fps_inds is just 0,1,...,255        
         end_points['sa4_xyz'] = sa4_xyz
         end_points['sa4_features'] = sa4_features
-        end_points['sa4_inds'] = sa4_inds        
-        # end_points['sa4_grouped_features'] = sa4_grouped_features
+        end_points['sa4_inds'] = sa4_inds                
               
 
         # --------- 2 FEATURE UPSAMPLING LAYERS --------
         #print("========================== FP1 ===============================")
-        features, prop_features = self.fp1(end_points['sa3_xyz'], end_points['sa4_xyz'], end_points['sa3_features'], end_points['sa4_features'])
-        #fp1_features, fp1_grouped_features = self.fp1(sa3_xyz, sa4_xyz, sa3_features, sa4_features, sa4_ball_query_idx, sa4_inds)
-        # end_points['fp1_grouped_features'] = prop_features
+        features, prop_features = self.fp1(end_points['sa3_xyz'], end_points['sa4_xyz'], end_points['sa3_features'], end_points['sa4_features'])        
         
         #print("========================== FP2 ===============================")
         fp2_features, fp2_grp_feats = self.fp2(end_points['sa2_xyz'], end_points['sa3_xyz'], end_points['sa2_features'], features)        
         end_points['fp2_features'] = fp2_features
-        # end_points['fp2_grouped_features'] = fp2_grouped_features
+        
         end_points['fp2_xyz'] = end_points['sa2_xyz']        
         num_seed = sa2_inds.shape[1]
         end_points['fp2_inds'] = end_points['sa1_inds'][:,0:num_seed] # indices among the entire input point clouds  
@@ -206,7 +200,7 @@ class Pointnet2Backbone_p(layers.Layer):
         
         self.sa2 = SamplingAndGrouping(
                 npoint=512,
-                radius=0.6,
+                radius=0.4,
                 nsample=32,                
                 use_xyz=True,
                 normalize_xyz=True                
@@ -399,16 +393,6 @@ class Pointnet2Backbone_p(layers.Layer):
             = self.sa4(sa3_xyz, sa3_painted, sa3_features, bg1=True, wght1=self.bfps_wght[3])
         sa4_features = self.sa4_mlp(sa4_grp_feats)
 
-        # end_points['sa1_grouped_features1'] = sa1_grouped_features1
-        # end_points['sa1_grouped_features2'] = sa1_grouped_features2
-
-        # end_points['sa2_grouped_features1'] = sa2_grouped_features1
-        # end_points['sa2_grouped_features2'] = sa2_grouped_features2
-       
-        # end_points['sa3_grouped_features1'] = sa3_grouped_features1
-        # end_points['sa3_grouped_features2'] = sa3_grouped_features2
-
-        # end_points['sa4_grouped_features'] = sa4_grouped_features
 
         # --------- 2 FEATURE UPSAMPLING LAYERS --------
         #print("========================== FP1 ===============================")
@@ -416,12 +400,9 @@ class Pointnet2Backbone_p(layers.Layer):
         
         #print("========================== FP2 ===============================")
         fp2_features, fp2_grp_feats = self.fp2(sa2_xyz, sa3_xyz, sa2_features, fp1_features)        
-
-        # end_points['fp1_grouped_features'] = fp1_grouped_features
-        end_points['fp2_features'] = fp2_features
-        # end_points['fp2_grouped_features'] = fp2_grouped_features
-        end_points['fp2_xyz'] = sa2_xyz
-        seed_inds1 = tf.gather(sa1_inds1, axis=1, indices=sa2_inds1, batch_dims=1)
+        
+        end_points['fp2_features'] = fp2_features        
+        end_points['fp2_xyz'] = sa2_xyz        
         
         if self.random_split:            
             sa1_inds1 = tf.gather(choice_indices1, axis=1, indices=sa1_inds1, batch_dims=1)            

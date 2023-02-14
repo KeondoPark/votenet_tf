@@ -1,5 +1,5 @@
 {    
-    "model_id": "scannet_2way_nofp_sep", 
+    "model_id": "scannet_2way", 
     "dataset": "scannet",
     "use_painted": true,   
     "two_way": true,       
@@ -7,7 +7,8 @@
     "q_gran": "group",
     "use_tflite": true,
     "activation": "relu",
-    "tflite_folder": "tflite/tflite_models/scannet_2way_nofp_sep_2",    
+    "tflite_folder": "tflite/tflite_models/scannet_2way",    
     "use_edgetpu": false,    
-    "use_multiThr": false
+    "use_multiThr": false,
+    "bfps_wght": [4,4,1,1]
 }
