@@ -69,7 +69,7 @@ class QueryAndGroup(layers.Layer):
             assert(self.sample_uniformly)
 
     #def forward(self, xyz, new_xyz, batch_distances, inds, features=None):
-    def call(self, xyz, new_xyz, features=None, ball_inds=None, knn=False, attn=None):
+    def call(self, xyz, new_xyz, features=None, ball_inds=None, knn=False, attn=None, run_cpu=False):
         # type: (QueryAndGroup, torch.Tensor. torch.Tensor, torch.Tensor) -> Tuple[Torch.Tensor]
         r"""
         Parameters
@@ -87,7 +87,10 @@ class QueryAndGroup(layers.Layer):
         
         if ball_inds is None:
             if not knn:
-                idx, pts_cnt = tf_grouping.query_ball_point(self.radius, self.nsample, xyz, new_xyz)
+                if run_cpu:
+                    idx, pts_cnt = tf_grouping.query_ball_point_cpu(self.radius, self.nsample, xyz, new_xyz)
+                else:
+                    idx, pts_cnt = tf_grouping.query_ball_point(self.radius, self.nsample, xyz, new_xyz)
             else:
                 idx, _ = tf_grouping.knn_with_attention(self.nsample, xyz, new_xyz, attn)
         else:
@@ -104,7 +107,10 @@ class QueryAndGroup(layers.Layer):
                     all_ind = tf.concat([unique_ind, unique_ind[sample_ind]], axis=0)
                     idx[i_batch, i_region, :] = all_ind
         start = time.time()
-        grouped_xyz = tf_grouping.group_point(xyz, idx)  # (B, npoint, nsample, 3)        
+        if run_cpu:
+            grouped_xyz = tf_grouping.group_point_cpu(xyz, idx)  # (B, npoint, nsample, 3)        
+        else:
+            grouped_xyz = tf_grouping.group_point(xyz, idx)  # (B, npoint, nsample, 3)        
         grouped_xyz -= tf.expand_dims(new_xyz, axis=-2)
         
         if self.normalize_xyz and not knn:            
@@ -113,7 +119,10 @@ class QueryAndGroup(layers.Layer):
         #dist = tf.math.sqrt(tf.reduce_sum(grouped_xyz * grouped_xyz, axis=-1, keepdims=True))        
 
         if features is not None:
-            grouped_features = tf_grouping.group_point(features, idx)
+            if run_cpu:
+                grouped_features = tf_grouping.group_point_cpu(features, idx)
+            else:
+                grouped_features = tf_grouping.group_point(features, idx)
             #grouped_features = grouping_operation_nocuda(features, idx)
             if self.use_xyz:
                 new_features = tf.concat(

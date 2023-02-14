@@ -1,0 +1,320 @@
+Start: 1675774765.6743388
+Votenet data preprocessing time:0.0312955379486084
+Deeplab inference time:0.8130559921264648
+Pointpainting time:0.06517219543457031
+Start:0.07069230079650879
+sa1 Runtime for Sampling and Grouping:10.35558295249939
+sa1 Runtime for shared MLP:0.17032575607299805
+sa2 Runtime for Sampling and Grouping:1.2425932884216309
+sa2 Runtime for shared MLP:0.3139638900756836
+sa3 Runtime for Sampling and Grouping:0.460599422454834
+sa3 Runtime for shared MLP:0.33518505096435547
+sa4 Runtime for Sampling and Grouping:0.24229836463928223
+sa4 Runtime for shared MLP:0.08828592300415039
+SA End:0.44704508781433105
+Voting and Proposal time:0.5898120403289795
+Total inference time: 15.225908 
+Start: 1675774807.5604913
+Votenet data preprocessing time:0.029961347579956055
+Deeplab inference time:0.8041732311248779
+Pointpainting time:0.0648796558380127
+Start:0.06473255157470703
+sa1 Runtime for Sampling and Grouping:10.48480749130249
+sa1 Runtime for shared MLP:0.17026019096374512
+sa2 Runtime for Sampling and Grouping:1.2430849075317383
+sa2 Runtime for shared MLP:0.2677304744720459
+sa3 Runtime for Sampling and Grouping:0.46724534034729004
+sa3 Runtime for shared MLP:0.3213627338409424
+sa4 Runtime for Sampling and Grouping:0.23450255393981934
+sa4 Runtime for shared MLP:0.07596278190612793
+SA End:0.4131505489349365
+Voting and Proposal time:0.4871842861175537
+Total inference time: 15.129038 
+Start: 1675774849.6290126
+Votenet data preprocessing time:0.029564857482910156
+Deeplab inference time:0.8111860752105713
+Pointpainting time:0.06848835945129395
+Start:0.061491966247558594
+sa1 Runtime for Sampling and Grouping:10.306157350540161
+sa1 Runtime for shared MLP:0.1617565155029297
+sa2 Runtime for Sampling and Grouping:1.241973638534546
+sa2 Runtime for shared MLP:0.27864718437194824
+sa3 Runtime for Sampling and Grouping:0.460202693939209
+sa3 Runtime for shared MLP:0.3436245918273926
+sa4 Runtime for Sampling and Grouping:0.26028871536254883
+sa4 Runtime for shared MLP:0.0835108757019043
+SA End:0.42221903800964355
+Voting and Proposal time:0.514235258102417
+Total inference time: 15.043347 
+Start: 1675774891.439613
+Votenet data preprocessing time:0.03194785118103027
+Deeplab inference time:0.8151159286499023
+Pointpainting time:0.06473827362060547
+Start:0.06457805633544922
+sa1 Runtime for Sampling and Grouping:10.492656469345093
+sa1 Runtime for shared MLP:0.18766999244689941
+sa2 Runtime for Sampling and Grouping:1.2420616149902344
+sa2 Runtime for shared MLP:0.31347012519836426
+sa3 Runtime for Sampling and Grouping:0.46511411666870117
+sa3 Runtime for shared MLP:0.35152578353881836
+sa4 Runtime for Sampling and Grouping:0.24582314491271973
+sa4 Runtime for shared MLP:0.09674620628356934
+SA End:0.4377458095550537
+Voting and Proposal time:0.58207106590271
+Total inference time: 15.391264 
+Start: 1675774933.5319808
+Votenet data preprocessing time:0.03277087211608887
+Deeplab inference time:0.8157095909118652
+Pointpainting time:0.06487083435058594
+Start:0.06471920013427734
+sa1 Runtime for Sampling and Grouping:10.495163679122925
+sa1 Runtime for shared MLP:0.17783498764038086
+sa2 Runtime for Sampling and Grouping:1.2376525402069092
+sa2 Runtime for shared MLP:0.2726755142211914
+sa3 Runtime for Sampling and Grouping:0.45128440856933594
+sa3 Runtime for shared MLP:0.32976341247558594
+sa4 Runtime for Sampling and Grouping:0.24879145622253418
+sa4 Runtime for shared MLP:0.07720661163330078
+SA End:0.41173720359802246
+Voting and Proposal time:0.5360360145568848
+Total inference time: 15.216216 
+Start: 1675774975.5414572
+Votenet data preprocessing time:0.031737327575683594
+Deeplab inference time:0.8078186511993408
+Pointpainting time:0.06515932083129883
+Start:0.06382536888122559
+sa1 Runtime for Sampling and Grouping:10.420331001281738
+sa1 Runtime for shared MLP:0.16927289962768555
+sa2 Runtime for Sampling and Grouping:1.234255075454712
+sa2 Runtime for shared MLP:0.2769496440887451
+sa3 Runtime for Sampling and Grouping:0.4620389938354492
+sa3 Runtime for shared MLP:0.3241274356842041
+sa4 Runtime for Sampling and Grouping:0.24394559860229492
+sa4 Runtime for shared MLP:0.07694578170776367
+SA End:0.416168212890625
+Voting and Proposal time:0.5904650688171387
+Total inference time: 15.183040 
+Start: 1675775017.3936574
+Votenet data preprocessing time:0.0317535400390625
+Deeplab inference time:0.798513650894165
+Pointpainting time:0.06487083435058594
+Start:0.06390523910522461
+sa1 Runtime for Sampling and Grouping:10.349925994873047
+sa1 Runtime for shared MLP:0.18518805503845215
+sa2 Runtime for Sampling and Grouping:1.235839605331421
+sa2 Runtime for shared MLP:0.29082465171813965
+sa3 Runtime for Sampling and Grouping:0.46483778953552246
+sa3 Runtime for shared MLP:0.3495907783508301
+sa4 Runtime for Sampling and Grouping:0.24625754356384277
+sa4 Runtime for shared MLP:0.08739876747131348
+SA End:0.41368651390075684
+Voting and Proposal time:0.5763988494873047
+Total inference time: 15.158992 
+Start: 1675775059.2716584
+Votenet data preprocessing time:0.029779672622680664
+Deeplab inference time:0.8216497898101807
+Pointpainting time:0.06448125839233398
+Start:0.06628990173339844
+sa1 Runtime for Sampling and Grouping:10.473651885986328
+sa1 Runtime for shared MLP:0.19627761840820312
+sa2 Runtime for Sampling and Grouping:1.2351996898651123
+sa2 Runtime for shared MLP:0.29913759231567383
+sa3 Runtime for Sampling and Grouping:0.4639434814453125
+sa3 Runtime for shared MLP:0.344696044921875
+sa4 Runtime for Sampling and Grouping:0.24800825119018555
+sa4 Runtime for shared MLP:0.08806443214416504
+SA End:0.43909263610839844
+Voting and Proposal time:0.5018572807312012
+Total inference time: 15.272130 
+Start: 1675775101.3494644
+Votenet data preprocessing time:0.03254985809326172
+Deeplab inference time:0.8193652629852295
+Pointpainting time:0.06529426574707031
+Start:0.06670379638671875
+sa1 Runtime for Sampling and Grouping:10.470139265060425
+sa1 Runtime for shared MLP:0.19649767875671387
+sa2 Runtime for Sampling and Grouping:1.234224796295166
+sa2 Runtime for shared MLP:0.3009352684020996
+sa3 Runtime for Sampling and Grouping:0.4743318557739258
+sa3 Runtime for shared MLP:0.33975744247436523
+sa4 Runtime for Sampling and Grouping:0.24718809127807617
+sa4 Runtime for shared MLP:0.08476877212524414
+SA End:0.4478111267089844
+Voting and Proposal time:0.5333964824676514
+Total inference time: 15.312964 
+Start: 1675775143.3167078
+Votenet data preprocessing time:0.03190326690673828
+Deeplab inference time:0.8226795196533203
+Pointpainting time:0.0647273063659668
+Start:0.06247854232788086
+sa1 Runtime for Sampling and Grouping:10.486119747161865
+sa1 Runtime for shared MLP:0.18785643577575684
+sa2 Runtime for Sampling and Grouping:1.2478077411651611
+sa2 Runtime for shared MLP:0.3028547763824463
+sa3 Runtime for Sampling and Grouping:0.4831702709197998
+sa3 Runtime for shared MLP:0.34638428688049316
+sa4 Runtime for Sampling and Grouping:0.24857592582702637
+sa4 Runtime for shared MLP:0.0897359848022461
+SA End:0.42136073112487793
+Voting and Proposal time:0.5839822292327881
+Total inference time: 15.379637 
+Start: 1675775185.3086686
+Votenet data preprocessing time:0.031239986419677734
+Deeplab inference time:0.8135671615600586
+Pointpainting time:0.06517863273620605
+Start:0.06513833999633789
+sa1 Runtime for Sampling and Grouping:10.305677652359009
+sa1 Runtime for shared MLP:0.17487525939941406
+sa2 Runtime for Sampling and Grouping:1.2347960472106934
+sa2 Runtime for shared MLP:0.26773619651794434
+sa3 Runtime for Sampling and Grouping:0.46083974838256836
+sa3 Runtime for shared MLP:0.3188974857330322
+sa4 Runtime for Sampling and Grouping:0.24969100952148438
+sa4 Runtime for shared MLP:0.08422040939331055
+SA End:0.4287590980529785
+Voting and Proposal time:0.5691845417022705
+Total inference time: 15.069802 
+Start: 1675775227.3892324
+Votenet data preprocessing time:0.03137016296386719
+Deeplab inference time:0.8115105628967285
+Pointpainting time:0.06521248817443848
+Start:0.07924795150756836
+sa1 Runtime for Sampling and Grouping:10.32063889503479
+sa1 Runtime for shared MLP:0.17835283279418945
+sa2 Runtime for Sampling and Grouping:1.2408831119537354
+sa2 Runtime for shared MLP:0.2700612545013428
+sa3 Runtime for Sampling and Grouping:0.45124340057373047
+sa3 Runtime for shared MLP:0.32359743118286133
+sa4 Runtime for Sampling and Grouping:0.24445199966430664
+sa4 Runtime for shared MLP:0.07558298110961914
+SA End:0.42149806022644043
+Voting and Proposal time:0.5411965847015381
+Total inference time: 15.054848 
+Start: 1675775269.258926
+Votenet data preprocessing time:0.03131461143493652
+Deeplab inference time:0.8273823261260986
+Pointpainting time:0.06577134132385254
+Start:0.06703996658325195
+sa1 Runtime for Sampling and Grouping:10.336514711380005
+sa1 Runtime for shared MLP:0.199540376663208
+sa2 Runtime for Sampling and Grouping:1.2551062107086182
+sa2 Runtime for shared MLP:0.2991459369659424
+sa3 Runtime for Sampling and Grouping:0.46959924697875977
+sa3 Runtime for shared MLP:0.3485133647918701
+sa4 Runtime for Sampling and Grouping:0.24332475662231445
+sa4 Runtime for shared MLP:0.08843541145324707
+SA End:0.4174203872680664
+Voting and Proposal time:0.5502488613128662
+Total inference time: 15.199358 
+Start: 1675775311.1869264
+Votenet data preprocessing time:0.029776334762573242
+Deeplab inference time:0.8136980533599854
+Pointpainting time:0.06408119201660156
+Start:0.06001687049865723
+sa1 Runtime for Sampling and Grouping:10.48294448852539
+sa1 Runtime for shared MLP:0.18795299530029297
+sa2 Runtime for Sampling and Grouping:1.2399327754974365
+sa2 Runtime for shared MLP:0.29204273223876953
+sa3 Runtime for Sampling and Grouping:0.44858741760253906
+sa3 Runtime for shared MLP:0.34105896949768066
+sa4 Runtime for Sampling and Grouping:0.23898601531982422
+sa4 Runtime for shared MLP:0.09370923042297363
+SA End:0.4302237033843994
+Voting and Proposal time:0.5231022834777832
+Total inference time: 15.246113 
+Start: 1675775353.2706134
+Votenet data preprocessing time:0.029479265213012695
+Deeplab inference time:0.8214950561523438
+Pointpainting time:0.0650637149810791
+Start:0.07131290435791016
+sa1 Runtime for Sampling and Grouping:10.473550081253052
+sa1 Runtime for shared MLP:0.1940934658050537
+sa2 Runtime for Sampling and Grouping:1.2478888034820557
+sa2 Runtime for shared MLP:0.2741694450378418
+sa3 Runtime for Sampling and Grouping:0.45719146728515625
+sa3 Runtime for shared MLP:0.33475613594055176
+sa4 Runtime for Sampling and Grouping:0.23867106437683105
+sa4 Runtime for shared MLP:0.08985781669616699
+SA End:0.43113255500793457
+Voting and Proposal time:0.5314610004425049
+Total inference time: 15.260123 
+Start: 1675775395.133841
+Votenet data preprocessing time:0.031592369079589844
+Deeplab inference time:0.818800687789917
+Pointpainting time:0.06576657295227051
+Start:0.06395292282104492
+sa1 Runtime for Sampling and Grouping:10.417449474334717
+sa1 Runtime for shared MLP:0.19258856773376465
+sa2 Runtime for Sampling and Grouping:1.2404329776763916
+sa2 Runtime for shared MLP:0.30671048164367676
+sa3 Runtime for Sampling and Grouping:0.47412824630737305
+sa3 Runtime for shared MLP:0.3522474765777588
+sa4 Runtime for Sampling and Grouping:0.24072027206420898
+sa4 Runtime for shared MLP:0.08298802375793457
+SA End:0.42394447326660156
+Voting and Proposal time:0.528566837310791
+Total inference time: 15.239889 
+Start: 1675775437.0730386
+Votenet data preprocessing time:0.0317230224609375
+Deeplab inference time:0.8045744895935059
+Pointpainting time:0.06448554992675781
+Start:0.07077717781066895
+sa1 Runtime for Sampling and Grouping:10.343815565109253
+sa1 Runtime for shared MLP:0.18147540092468262
+sa2 Runtime for Sampling and Grouping:1.2396743297576904
+sa2 Runtime for shared MLP:0.2756032943725586
+sa3 Runtime for Sampling and Grouping:0.4597470760345459
+sa3 Runtime for shared MLP:0.31948089599609375
+sa4 Runtime for Sampling and Grouping:0.23866772651672363
+sa4 Runtime for shared MLP:0.07783961296081543
+SA End:0.41431689262390137
+Voting and Proposal time:0.540719747543335
+Total inference time: 15.062901 
+Start: 1675775478.7434313
+Votenet data preprocessing time:0.029999494552612305
+Deeplab inference time:0.8119113445281982
+Pointpainting time:0.06493711471557617
+Start:0.06168103218078613
+sa1 Runtime for Sampling and Grouping:10.34534502029419
+sa1 Runtime for shared MLP:0.16298842430114746
+sa2 Runtime for Sampling and Grouping:1.2407310009002686
+sa2 Runtime for shared MLP:0.26336193084716797
+sa3 Runtime for Sampling and Grouping:0.44610071182250977
+sa3 Runtime for shared MLP:0.32219862937927246
+sa4 Runtime for Sampling and Grouping:0.24018597602844238
+sa4 Runtime for shared MLP:0.0796210765838623
+SA End:0.40769004821777344
+Voting and Proposal time:0.514634370803833
+Total inference time: 14.991386 
+Start: 1675775520.4688177
+Votenet data preprocessing time:0.03179168701171875
+Deeplab inference time:0.8031282424926758
+Pointpainting time:0.06450223922729492
+Start:0.05971956253051758
+sa1 Runtime for Sampling and Grouping:10.480758905410767
+sa1 Runtime for shared MLP:0.1662304401397705
+sa2 Runtime for Sampling and Grouping:1.2525560855865479
+sa2 Runtime for shared MLP:0.27605390548706055
+sa3 Runtime for Sampling and Grouping:0.46413111686706543
+sa3 Runtime for shared MLP:0.33481478691101074
+sa4 Runtime for Sampling and Grouping:0.24652791023254395
+sa4 Runtime for shared MLP:0.07809233665466309
+SA End:0.4097151756286621
+Voting and Proposal time:0.4954957962036133
+Total inference time: 15.163518 
+Start: 1675775562.3774178
+Votenet data preprocessing time:0.03138279914855957
+Deeplab inference time:0.7969419956207275
+Pointpainting time:0.06449127197265625
+Start:0.062276601791381836
+sa1 Runtime for Sampling and Grouping:10.50516128540039
+sa1 Runtime for shared MLP:0.16339349746704102
+sa2 Runtime for Sampling and Grouping:1.2194082736968994
+sa2 Runtime for shared MLP:0.2747163772583008
+sa3 Runtime for Sampling and Grouping:0.44293665885925293
+sa3 Runtime for shared MLP:0.32218432426452637
+sa4 Runtime for Sampling and Grouping:0.23738360404968262
+sa4 Runtime for shared MLP:0.07563924789428711
+SA End:0.4144434928894043
+Voting and Proposal time:0.5255227088928223
+Total inference time: 15.135882 

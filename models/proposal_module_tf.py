@@ -29,6 +29,7 @@ def decode_scores(net, end_points, num_class, num_heading_bin, num_size_cluster,
             'size_scores', 'size_residuals_normalized', 'size_residuals', 'sem_cls_scores' to end_points
                 
     """
+
     objectness_scores = net[:,:,0:2]
     end_points['objectness_scores'] = objectness_scores    
 
@@ -174,7 +175,7 @@ class ProposalModule(layers.Layer):
             log_string('Unknown sampling strategy: %s. Exiting!'%(self.sampling))
             exit()        
         
-        if self.use_tflite:                
+        if self.use_tflite:        
             self.interpreter.set_tensor(self.input_details[0]['index'], va_grouped_features)            
             if len(self.input_details) > 1:
                 self.interpreter.set_tensor(self.input_details[1]['index'], xyz)
