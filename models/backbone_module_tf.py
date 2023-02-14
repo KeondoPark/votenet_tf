@@ -33,7 +33,7 @@ class Pointnet2Backbone(layers.Layer):
             Number of input channels in the feature descriptor for each point.
             e.g. 3 for RGB.
     """
-    def __init__(self, input_feature_dim=0, model_config=None):
+    def __init__(self, input_feature_dim=0, model_config=None, run_cpu=False):
         super().__init__()
 
         use_tflite = model_config['use_tflite']
@@ -48,7 +48,8 @@ class Pointnet2Backbone(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True,
                 model_config=model_config,
-                layer_name='sa1'
+                layer_name='sa1',
+                run_cpu=run_cpu
             )
 
         self.sa2 = PointnetSAModuleVotes(
@@ -59,7 +60,8 @@ class Pointnet2Backbone(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True,
                 model_config=model_config,
-                layer_name='sa2'
+                layer_name='sa2',
+                run_cpu=run_cpu
             )
 
         self.sa3 = PointnetSAModuleVotes(
@@ -70,7 +72,8 @@ class Pointnet2Backbone(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True,
                 model_config=model_config,
-                layer_name='sa3'
+                layer_name='sa3',
+                run_cpu=run_cpu
             )
 
         self.sa4 = PointnetSAModuleVotes(
@@ -81,15 +84,16 @@ class Pointnet2Backbone(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True,
                 model_config=model_config,
-                layer_name='sa4'
+                layer_name='sa4',
+                run_cpu=run_cpu
             )
 
         if use_fp_mlp:
-            self.fp1 = PointnetFPModule(mlp=[256+256,256,256], m=512, model_config=model_config, layer_name='fp1')
-            self.fp2 = PointnetFPModule(mlp=[256+256,256,256], m=1024, model_config=model_config, layer_name='fp2')
+            self.fp1 = PointnetFPModule(mlp=[256+256,256,256], m=512, model_config=model_config, layer_name='fp1', run_cpu=run_cpu)
+            self.fp2 = PointnetFPModule(mlp=[256+256,256,256], m=1024, model_config=model_config, layer_name='fp2', run_cpu=run_cpu)
         else:
-            self.fp1 = PointnetFPModule(mlp=None, m=512, model_config=model_config)
-            self.fp2 = PointnetFPModule(mlp=None, m=1024, model_config=model_config)
+            self.fp1 = PointnetFPModule(mlp=None, m=512, model_config=model_config, run_cpu=run_cpu)
+            self.fp2 = PointnetFPModule(mlp=None, m=1024, model_config=model_config, run_cpu=run_cpu)
 
     def _break_up_pc(self, pc):
         xyz = pc[:,:,0:3]
@@ -410,7 +414,7 @@ class Pointnet2Backbone_tflite(layers.Layer):
             Number of input channels in the feature descriptor for each point.
             e.g. 3 for RGB.
     """
-    def __init__(self, input_feature_dim=0, model_config=None, num_class=10):
+    def __init__(self, input_feature_dim=0, model_config=None, num_class=10, run_cpu=False):
         super().__init__()
 
         self.sa1 = SamplingAndGrouping(
@@ -418,7 +422,8 @@ class Pointnet2Backbone_tflite(layers.Layer):
                 radius=0.2,
                 nsample=64,                
                 use_xyz=True,
-                normalize_xyz=True                
+                normalize_xyz=True,
+                run_cpu=run_cpu               
             )
         
         self.sa2 = SamplingAndGrouping(
@@ -426,7 +431,8 @@ class Pointnet2Backbone_tflite(layers.Layer):
                 radius=0.4,
                 nsample=32,                
                 use_xyz=True,
-                normalize_xyz=True                
+                normalize_xyz=True,
+                run_cpu=run_cpu
             )        
 
         self.sa3 = SamplingAndGrouping(
@@ -434,7 +440,8 @@ class Pointnet2Backbone_tflite(layers.Layer):
                 radius=0.8,
                 nsample=16,                
                 use_xyz=True,
-                normalize_xyz=True                
+                normalize_xyz=True,
+                run_cpu=run_cpu
             )        
         
         self.sa4 = SamplingAndGrouping(
@@ -442,49 +449,63 @@ class Pointnet2Backbone_tflite(layers.Layer):
                 radius=1.2,
                 nsample=16,                
                 use_xyz=True,
-                normalize_xyz=True                
-            )        
+                normalize_xyz=True,
+                run_cpu=run_cpu
+            )    
 
+        self.fp1 = PointnetFPModule(mlp=None, m=512, model_config=model_config, layer_name='fp1', run_cpu=run_cpu)
+        self.fp2 = PointnetFPModule(mlp=None, m=1024, model_config=model_config, layer_name='fp2', run_cpu=run_cpu)      
         
         self.use_multiThr = model_config['use_multiThr']
         self.use_edgetpu = model_config['use_edgetpu']
-        
-        self.fp1 = PointnetFPModule(mlp=None, m=512, model_config=model_config, layer_name='fp1')
-        self.fp2 = PointnetFPModule(mlp=None, m=1024, model_config=model_config, layer_name='fp2')                        
+        self.use_tflite = model_config['use_tflite']
+        self.num_class = num_class
+        self.run_cpu = run_cpu
+
+        if self.use_multiThr:
+            # For multithreading
+            self._executor = ThreadPoolExecutor(2)
         
         tflite_folder = model_config['tflite_folder']
+        self.bfps_wght = model_config["bfps_wght"]
         
         #Preparation to use tflite
-        if self.use_edgetpu:
-            from pycoral.utils.edgetpu import make_interpreter                        
-            self.sa1_interpreter = make_interpreter(os.path.join(ROOT_DIR, tflite_folder, 'sa1_quant_edgetpu.tflite'))
-            self.sa2_interpreter = make_interpreter(os.path.join(ROOT_DIR, tflite_folder, 'sa2_quant_edgetpu.tflite'))
-            self.sa3_interpreter = make_interpreter(os.path.join(ROOT_DIR, tflite_folder, 'sa3_quant_edgetpu.tflite'))
-            self.sa4_interpreter = make_interpreter(os.path.join(ROOT_DIR, tflite_folder, 'sa4_quant_edgetpu.tflite'))
+
+        if self.use_tflite:
+            if self.use_edgetpu:
+                from pycoral.utils.edgetpu import make_interpreter                        
+                self.sa1_interpreter = make_interpreter(os.path.join(ROOT_DIR, tflite_folder, 'sa1_quant_edgetpu.tflite'))
+                self.sa2_interpreter = make_interpreter(os.path.join(ROOT_DIR, tflite_folder, 'sa2_quant_edgetpu.tflite'))
+                self.sa3_interpreter = make_interpreter(os.path.join(ROOT_DIR, tflite_folder, 'sa3_quant_edgetpu.tflite'))
+                self.sa4_interpreter = make_interpreter(os.path.join(ROOT_DIR, tflite_folder, 'sa4_quant_edgetpu.tflite'))
+            else:
+                self.sa1_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR, tflite_folder, 'sa1_quant.tflite'))
+                self.sa2_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR, tflite_folder, 'sa2_quant.tflite'))
+                self.sa3_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR, tflite_folder, 'sa3_quant.tflite'))
+                self.sa4_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR, tflite_folder, 'sa4_quant.tflite'))
+
+            self.sa1_interpreter.allocate_tensors()
+            self.sa2_interpreter.allocate_tensors()
+            self.sa3_interpreter.allocate_tensors()
+            self.sa4_interpreter.allocate_tensors()
+
+            self.sa1_input_details = self.sa1_interpreter.get_input_details()
+            self.sa2_input_details = self.sa2_interpreter.get_input_details()
+            self.sa3_input_details = self.sa3_interpreter.get_input_details()
+            self.sa4_input_details = self.sa4_interpreter.get_input_details()
+
+            self.sa1_output_details = self.sa1_interpreter.get_output_details()
+            self.sa2_output_details = self.sa2_interpreter.get_output_details()
+            self.sa3_output_details = self.sa3_interpreter.get_output_details()
+            self.sa4_output_details = self.sa4_interpreter.get_output_details()
+
         else:
-            self.sa1_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR, tflite_folder, 'sa1_quant.tflite'))
-            self.sa2_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR, tflite_folder, 'sa2_quant.tflite'))
-            self.sa3_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR, tflite_folder, 'sa3_quant.tflite'))
-            self.sa4_interpreter = tf.lite.Interpreter(model_path=os.path.join(ROOT_DIR, tflite_folder, 'sa4_quant.tflite'))
+            self.sa1_mlp = PointnetMLP(mlp=[input_feature_dim, 64, 64, 128], nsample=64, model_config=model_config)
+            self.sa2_mlp = PointnetMLP(mlp=[128, 128, 128, 256], nsample=32, model_config=model_config)
+            self.sa3_mlp = PointnetMLP(mlp=[256, 128, 128, 256], nsample=16, model_config=model_config)
+            self.sa4_mlp = PointnetMLP(mlp=[256, 128, 128, 256], nsample=16, model_config=model_config)
         
-        self.sa1_interpreter.allocate_tensors()
-        self.sa2_interpreter.allocate_tensors()
-        self.sa3_interpreter.allocate_tensors()
-        self.sa4_interpreter.allocate_tensors()
-
-        self.sa1_input_details = self.sa1_interpreter.get_input_details()
-        self.sa2_input_details = self.sa2_interpreter.get_input_details()
-        self.sa3_input_details = self.sa3_interpreter.get_input_details()
-        self.sa4_input_details = self.sa4_interpreter.get_input_details()
-
-        self.sa1_output_details = self.sa1_interpreter.get_output_details()
-        self.sa2_output_details = self.sa2_interpreter.get_output_details()
-        self.sa3_output_details = self.sa3_interpreter.get_output_details()
-        self.sa4_output_details = self.sa4_interpreter.get_output_details()
-
-        # For multithreading
-        self._executor = ThreadPoolExecutor(2)
-        self.num_class = num_class
+      
 
     def _break_up_pc(self, pc):
         xyz = pc[:,:,0:3]        
@@ -569,28 +590,32 @@ class Pointnet2Backbone_tflite(layers.Layer):
             xyz = pointcloud[:,:,:3]      
 
             # Run deeplab with different thread
-            future0 = self._executor.submit(run_semantic_seg_tflite, imgs, False, deeplab_tflite_file)  
+            future0 = self._executor.submit(run_semantic_seg_tflite, imgs, False, 
+                                            deeplab_tflite_file, edgetpu=self.use_edgetpu)  
 
             # While EdgeTPU is working on 2D semantic segmentation, do point sampling, ball query
             sa1_inds1 = tf_sampling.farthest_point_sample(1024, xyz) # First sampling is not biased FPS, i.e. weight = 1
             sa1_new_xyz1 = tf_sampling.gather_point(xyz, sa1_inds1)
             sa1_ball_inds1, _ = tf_grouping.query_ball_point(0.2, 64, xyz, sa1_new_xyz1)
-            
+
+            xyz_np = xyz.numpy()
+            calib_start = time.time()
             # Prepare projection betwen 2d-3d
             uv_list, filter_idx_list = [], []
             for calib in calibs:
-                uv, d, filter_idx = calib.project_upright_depth_to_image(xyz[0]) #uv: (N, 2)
+                uv, d, filter_idx = calib.project_upright_depth_to_image(xyz_np[0]) #uv: (N, 2)
                 uv = np.rint(uv - 1)
                 uv_list.append(uv)
                 filter_idx_list.append(filter_idx)
+            calib_end = time.time()
             
             # Wait for pointpainting results
-            pred_prob_list = future0.result()            
-            time_record.append(('Deeplab inference time:', time.time()))      
-
-            features = np.zeros((1, xyz.shape[1], self.num_class+1+1))
-            isPainted = np.zeros((1, xyz.shape[1]), dtype=np.int32)
-            features[:,:,-1] = pointcloud[:,:,-1]
+            pred_prob_list, deeplab_end_time = future0.result()            
+            time_record.append(('Deeplab inference time:', deeplab_end_time))      
+            painting_start = time.time()
+           
+            features = np.zeros((1, xyz_np.shape[1], self.num_class+1+1))
+            isPainted = np.zeros((1, xyz_np.shape[1]), dtype=np.int32)            
 
             for pred_prob, uv, filter_idx in zip(pred_prob_list, uv_list, filter_idx_list): 
                 pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)] # (npoint, num_class + 1 + 1 )
@@ -602,7 +627,15 @@ class Pointnet2Backbone_tflite(layers.Layer):
                 isPainted[0, filter_idx] = _isPainted
                 features[0, filter_idx, :-1] = pred_prob/255
             
-            time_record.append(('Pointpainting time:', time.time()))
+            painting_time = time.time() - painting_start            
+            
+            # commonly, sampling and calib are completed before deeplab result is returned
+            # but in some settings, it takes longer - this code makes ist more consistent.
+            calib_time = max(0, calib_end - max(deeplab_end_time, calib_start))            
+            
+            time_record.append(('Pointpainting time:', deeplab_end_time + calib_time + painting_time))
+            features[:,:,-1] = pointcloud[:,:,-1] # Add height
+
         else:
             xyz, isPainted, features = self._break_up_pc(pointcloud)
         
@@ -610,133 +643,168 @@ class Pointnet2Backbone_tflite(layers.Layer):
         # ------------------------------- SA1-------------------------------        
 
         # Initial FPS, in multithreading case, this simply concatenates xyz-coordinates and features of sampled points
-        sa1_xyz1, sa1_inds1, sa1_grouped_features1, sa1_painted1 = self.sa1(xyz, isPainted, features, sa1_inds1, new_xyz=sa1_new_xyz1, ball_inds=sa1_ball_inds1, bg1=True, wght1=1)        
+        sa1_xyz1, sa1_inds1, sa1_grp_feats1, sa1_painted1 \
+            = self.sa1(xyz, isPainted, features, sa1_inds1, 
+                       new_xyz=sa1_new_xyz1, ball_inds=sa1_ball_inds1, bg1=True, wght1=1)        
         with tf.device('cpu'):
-            sa1_xyz1, sa1_inds1, sa1_grouped_features1, sa1_painted1 = tf.identity(sa1_xyz1), tf.identity(sa1_inds1), tf.identity(sa1_grouped_features1), tf.identity(sa1_painted1)
+            sa1_xyz1, sa1_inds1, sa1_grp_feats1, sa1_painted1 \
+                = tf.identity(sa1_xyz1), tf.identity(sa1_inds1), tf.identity(sa1_grp_feats1), tf.identity(sa1_painted1)
         time_record.append(("SA1 sampling and grouping 1:", time.time()))   
         
         # Pointnet
         if self.use_multiThr:
-            future1 = self._executor.submit(self.call_tflite, self.sa1_interpreter, sa1_grouped_features1, self.sa1_input_details, self.sa1_output_details)            
+            future1 = self._executor.submit(self.call_tflite, self.sa1_interpreter, sa1_grp_feats1, self.sa1_input_details, self.sa1_output_details)
         else:
-            sa1_features1 = self.call_tflite(self.sa1_interpreter, sa1_grouped_features1, self.sa1_input_details, self.sa1_output_details)                        
+            sa1_feats1 = self.call_tflite(self.sa1_interpreter, sa1_grp_feats1, self.sa1_input_details, self.sa1_output_details)                        
                 
         time_record.append(("SA1 MLP 1:", time.time()))
+        del sa1_grp_feats1
 
         # Exclude the first sampled points from input, for the second sampling
-        new_xyz, new_isPainted, new_features, mask = self._remove_sampled(xyz, sa1_inds1, isPainted, features)             
+        new_xyz, new_isPainted, new_feats, mask = self._remove_sampled(xyz, sa1_inds1, isPainted, features)             
         
         # Biased FPS
-        sa1_xyz2, sa1_inds2, sa1_grouped_features2, sa1_painted2 = self.sa1(new_xyz, new_isPainted, new_features, bg1=True, wght1=4, xyz_ball=xyz, features_ball=features)        
+        sa1_xyz2, sa1_inds2, sa1_grp_feats2, sa1_painted2 \
+            = self.sa1(new_xyz, new_isPainted, new_feats, 
+                       bg1=True, wght1=self.bfps_wght[0], xyz_ball=xyz, features_ball=features)        
+        
         with tf.device('cpu'):
-            sa1_xyz2, sa1_inds2, sa1_grouped_features2, sa1_painted2 = tf.identity(sa1_xyz2), tf.identity(sa1_inds2), tf.identity(sa1_grouped_features2), tf.identity(sa1_painted2)
+            sa1_xyz2, sa1_inds2, sa1_grp_feats2, sa1_painted2 \
+                = tf.identity(sa1_xyz2), tf.identity(sa1_inds2), tf.identity(sa1_grp_feats2), tf.identity(sa1_painted2)
+        
         time_record.append(("SA1 sampling and grouping 2:", time.time()))
+        
         
         # Pointnet
         if self.use_multiThr:
-            sa1_features1 = future1.result()        
-            future2 = self._executor.submit(self.call_tflite, self.sa1_interpreter, sa1_grouped_features2, self.sa1_input_details, self.sa1_output_details)
+            sa1_feats1 = future1.result()        
+            future2 = self._executor.submit(self.call_tflite, self.sa1_interpreter, sa1_grp_feats2, self.sa1_input_details, self.sa1_output_details)
         else:
-            sa1_features2 = self.call_tflite(self.sa1_interpreter, sa1_grouped_features2, self.sa1_input_details, self.sa1_output_details)                        
+            sa1_feats2 = self.call_tflite(self.sa1_interpreter, sa1_grp_feats2, self.sa1_input_details, self.sa1_output_details)                        
                 
         time_record.append(("SA1 MLP 2:", time.time()))               
+        del sa1_grp_feats2
+
 
         # ------------------------------- SA2-------------------------------        
         # Normal FPS
-        sa2_xyz1, sa2_inds1, sa2_grouped_features1, sa2_painted1 = self.sa2(sa1_xyz1, sa1_painted1, sa1_features1, bg1=True, wght1=1)        
+        sa2_xyz1, sa2_inds1, sa2_grp_feats1, sa2_painted1 \
+            = self.sa2(sa1_xyz1, sa1_painted1, sa1_feats1, bg1=True, wght1=1)        
+
         with tf.device('cpu'):
-            sa2_xyz1, sa2_inds1, sa2_grouped_features1, sa2_painted1 = tf.identity(sa2_xyz1), tf.identity(sa2_inds1), tf.identity(sa2_grouped_features1), tf.identity(sa2_painted1)
+            sa2_xyz1, sa2_inds1, sa2_grp_feats1, sa2_painted1 \
+                = tf.identity(sa2_xyz1), tf.identity(sa2_inds1), tf.identity(sa2_grp_feats1), tf.identity(sa2_painted1)
+
         time_record.append(("SA2 sampling and grouping 1:", time.time()))                 
         
         
         if self.use_multiThr:
-            sa1_features2 = future2.result()
-            future1 = self._executor.submit(self.call_tflite, self.sa2_interpreter, sa2_grouped_features1, self.sa2_input_details, self.sa2_output_details)                
+            sa1_feats2 = future2.result()
+            future1 = self._executor.submit(self.call_tflite, self.sa2_interpreter, sa2_grp_feats1, self.sa2_input_details, self.sa2_output_details)                
         else:
-            sa2_features1 = self.call_tflite(self.sa2_interpreter, sa2_grouped_features1, self.sa2_input_details, self.sa2_output_details)
+            sa2_feats1 = self.call_tflite(self.sa2_interpreter, sa2_grp_feats1, self.sa2_input_details, self.sa2_output_details)
                 
         time_record.append(("SA2 MLP 1:", time.time()))
+        del sa2_grp_feats1
         
         sa1_xyz = layers.Concatenate(axis=1)([sa1_xyz1, sa1_xyz2])
-        sa1_features = layers.Concatenate(axis=1)([sa1_features1, sa1_features2])        
+        sa1_feats = layers.Concatenate(axis=1)([sa1_feats1, sa1_feats2])   
+        
+
 
         # Biased FPS
-        sa2_xyz2, sa2_inds2, sa2_grouped_features2, sa2_painted2 = self.sa2(sa1_xyz2, sa1_painted2, sa1_features2, bg1=True, wght1=4, xyz_ball=sa1_xyz, features_ball=sa1_features)        
+        sa2_xyz2, sa2_inds2, sa2_grp_feats2, sa2_painted2 \
+            = self.sa2(sa1_xyz2, sa1_painted2, sa1_feats2, 
+                       bg1=True, wght1=self.bfps_wght[1], xyz_ball=sa1_xyz, features_ball=sa1_feats)        
+        del sa1_xyz1, sa1_xyz2, sa1_feats1, sa1_feats2, sa1_painted1, sa1_painted2    
+
         with tf.device('cpu'):
-            sa2_xyz2, sa2_inds2, sa2_grouped_features2, sa2_painted2 = tf.identity(sa2_xyz2), tf.identity(sa2_inds2), tf.identity(sa2_grouped_features2), tf.identity(sa2_painted2)
+            sa2_xyz2, sa2_inds2, sa2_grp_feats2, sa2_painted2 \
+                = tf.identity(sa2_xyz2), tf.identity(sa2_inds2), tf.identity(sa2_grp_feats2), tf.identity(sa2_painted2)
+        
         time_record.append(("SA2 sampling and grouping 2:", time.time()))        
 
         
         if self.use_multiThr:
-            sa2_features1 = future1.result()
-            future2 = self._executor.submit(self.call_tflite, self.sa2_interpreter, sa2_grouped_features2, self.sa2_input_details, self.sa2_output_details)                
+            sa2_feats1 = future1.result()
+            future2 = self._executor.submit(self.call_tflite, self.sa2_interpreter, sa2_grp_feats2, self.sa2_input_details, self.sa2_output_details)                
         else:
-            sa2_features2 = self.call_tflite(self.sa2_interpreter, sa2_grouped_features2, self.sa2_input_details, self.sa2_output_details)        
+            sa2_feats2 = self.call_tflite(self.sa2_interpreter, sa2_grp_feats2, self.sa2_input_details, self.sa2_output_details)        
         time_record.append(("SA2 MLP 2:", time.time()))
+        del sa2_grp_feats2
+
 
         # ------------------------------- SA3-------------------------------        
          # Normal FPS
-        sa3_xyz1, sa3_inds1, sa3_grouped_features1, sa3_painted1 = self.sa3(sa2_xyz1, sa2_painted1, sa2_features1, bg1=True, wght1=1)
+        sa3_xyz1, sa3_inds1, sa3_grp_feats1, sa3_painted1 \
+            = self.sa3(sa2_xyz1, sa2_painted1, sa2_feats1, bg1=True, wght1=1)
+        
         with tf.device('cpu'):
-            sa3_xyz1, sa3_inds1, sa3_grouped_features1, sa3_painted1 = tf.identity(sa3_xyz1), tf.identity(sa3_inds1), tf.identity(sa3_grouped_features1), tf.identity(sa3_painted1)
+            sa3_xyz1, sa3_inds1, sa3_grp_feats1, sa3_painted1 \
+                = tf.identity(sa3_xyz1), tf.identity(sa3_inds1), tf.identity(sa3_grp_feats1), tf.identity(sa3_painted1)
+        
         time_record.append(("SA3 sampling and grouping 1:", time.time()))
 
         
         if self.use_multiThr:            
-            sa2_features2 = future2.result()
-            future1 = self._executor.submit(self.call_tflite, self.sa3_interpreter, sa3_grouped_features1, self.sa3_input_details, self.sa3_output_details)
+            sa2_feats2 = future2.result()
+            future1 = self._executor.submit(self.call_tflite, self.sa3_interpreter, sa3_grp_feats1, self.sa3_input_details, self.sa3_output_details)
         else:
-            sa3_features1 = self.call_tflite(self.sa3_interpreter, sa3_grouped_features1, self.sa3_input_details, self.sa3_output_details)
+            sa3_feats1 = self.call_tflite(self.sa3_interpreter, sa3_grp_feats1, self.sa3_input_details, self.sa3_output_details)
+        
         time_record.append(("SA3 MLP 1:", time.time()))
+        del sa3_grp_feats1
 
         sa2_xyz = layers.Concatenate(axis=1)([sa2_xyz1, sa2_xyz2])
-        sa2_features = layers.Concatenate(axis=1)([sa2_features1, sa2_features2])        
+        sa2_feats = layers.Concatenate(axis=1)([sa2_feats1, sa2_feats2])        
+        
 
         # Second sampling, but Normal FPS
-        sa3_xyz2, sa3_inds2, sa3_grouped_features2, sa3_painted2 = self.sa3(sa2_xyz2, sa2_painted2, sa2_features2, bg1=True, wght1=1, xyz_ball=sa2_xyz, features_ball=sa2_features)        
+        sa3_xyz2, sa3_inds2, sa3_grp_feats2, sa3_painted2 \
+            = self.sa3(sa2_xyz2, sa2_painted2, sa2_feats2, 
+                       bg1=True, wght1=self.bfps_wght[2], xyz_ball=sa2_xyz, features_ball=sa2_feats)        
+        del sa2_xyz1, sa2_xyz2, sa2_feats1, sa2_feats2, sa2_painted1, sa2_painted2    
+
         with tf.device('cpu'):
-            sa3_xyz2, sa3_inds2, sa3_grouped_features2, sa3_painted2 = tf.identity(sa3_xyz2), tf.identity(sa3_inds2), tf.identity(sa3_grouped_features2), tf.identity(sa3_painted2)
+            sa3_xyz2, sa3_inds2, sa3_grp_feats2, sa3_painted2 \
+                = tf.identity(sa3_xyz2), tf.identity(sa3_inds2), tf.identity(sa3_grp_feats2), tf.identity(sa3_painted2)
+
         time_record.append(("SA3 sampling and grouping 2:", time.time()))
 
         
         if self.use_multiThr:
-            sa3_features1 = future1.result()
-            future2 = self._executor.submit(self.call_tflite, self.sa3_interpreter, sa3_grouped_features2, self.sa3_input_details, self.sa3_output_details)
+            sa3_feats1 = future1.result()
+            future2 = self._executor.submit(self.call_tflite, self.sa3_interpreter, sa3_grp_feats2, self.sa3_input_details, self.sa3_output_details)
         else:
-            sa3_features2 = self.call_tflite(self.sa3_interpreter, sa3_grouped_features2, self.sa3_input_details, self.sa3_output_details)            
+            sa3_feats2 = self.call_tflite(self.sa3_interpreter, sa3_grp_feats2, self.sa3_input_details, self.sa3_output_details)            
         
         time_record.append(("SA3 MLP 2:", time.time()))
+        del sa3_grp_feats2
 
-                     
         if self.use_multiThr:
-            sa3_features2 = future2.result()               
+            sa3_feats2 = future2.result()               
 
         # Fuse two pointsets
         sa3_xyz = layers.Concatenate(axis=1)([sa3_xyz1, sa3_xyz2])
-        sa3_features = layers.Concatenate(axis=1)([sa3_features1, sa3_features2])        
+        sa3_feats = layers.Concatenate(axis=1)([sa3_feats1, sa3_feats2])        
         sa3_painted = layers.Concatenate(axis=1)([sa3_painted1, sa3_painted2])
+        del sa3_xyz1, sa3_xyz2, sa3_feats1, sa3_feats2, sa3_painted1, sa3_painted2    
+
 
          # ------------------------------- SA4-------------------------------  
-        sa4_xyz, sa4_inds, sa4_grouped_features, sa4_painted = self.sa4(sa3_xyz, sa3_painted, sa3_features, bg1=True, wght1=1)
+        sa4_xyz, sa4_inds, sa4_grp_feats, _ = self.sa4(sa3_xyz, sa3_painted, sa3_feats, bg1=True, wght1=self.bfps_wght[3])
         time_record.append(("SA4 sampling and grouping:", time.time()))             
 
-        sa4_features = self.call_tflite(self.sa4_interpreter, sa4_grouped_features, self.sa4_input_details, self.sa4_output_details)
-
+        sa4_feats = self.call_tflite(self.sa4_interpreter, sa4_grp_feats, self.sa4_input_details, self.sa4_output_details)
         time_record.append(("SA4 MLP:", time.time()))             
-        
-        end_points['sa1_grouped_features1'] = sa1_grouped_features1        
-        end_points['sa1_grouped_features2'] = sa1_grouped_features2
-        end_points['sa2_grouped_features1'] = sa2_grouped_features1        
-        end_points['sa2_grouped_features2'] = sa2_grouped_features2
-        end_points['sa3_grouped_features1'] = sa3_grouped_features1        
-        end_points['sa3_grouped_features2'] = sa3_grouped_features2
+        del sa4_grp_feats
 
         # --------- 2 FEATURE UPSAMPLING LAYERS --------
         #print("========================== FP1 ===============================")
-        fp1_features, fp1_grouped_features = self.fp1(sa3_xyz, sa4_xyz, sa3_features, sa4_features)
+        fp1_features, fp1_grouped_features = self.fp1(sa3_xyz, sa4_xyz, sa3_feats, sa4_feats)
         
         #print("========================== FP2 ===============================")
-        fp2_features, fp2_grouped_features = self.fp2(sa2_xyz, sa3_xyz, sa2_features, fp1_features)        
+        fp2_features, fp2_grouped_features = self.fp2(sa2_xyz, sa3_xyz, sa2_feats, fp1_features)        
 
         
         end_points['fp2_features'] = fp2_features        

@@ -91,7 +91,8 @@ def run_semantic_segmentation_graph(image, sess, input_size):
 
     return seg_prob, seg_class
 
-def run_semantic_seg(imgs, save_result=False, save_name='semantic_result', graph_file='sunrgbd_COCO_15.pb', input_size=(513,513)):    
+def run_semantic_seg(imgs, save_result=False, save_name='semantic_result', 
+                    graph_file='sunrgbd_COCO_15.pb', input_size=(513,513)):    
     '''
     Run semantic segmentation with tensorflow graph file(.pb)
     imgs: list of input RGB images
@@ -125,7 +126,8 @@ def run_semantic_seg(imgs, save_result=False, save_name='semantic_result', graph
     return pred_prob_list, pred_class_list
 
 
-def run_semantic_seg_tflite(img_list, save_result=False, tflite_file='sunrgbd_COCO_15_quant_edgetpu.tflite'):
+def run_semantic_seg_tflite(img_list, save_result=False, 
+                            tflite_file='sunrgbd_COCO_15_quant_edgetpu.tflite', edgetpu=True):
     '''
     Run semantic segmentation with tensorflow graph file(.pb)
     img_list: list of input RGB images
@@ -141,9 +143,12 @@ def run_semantic_seg_tflite(img_list, save_result=False, tflite_file='sunrgbd_CO
     # print(Process().memory_info().rss)    
 
     #Initialize interpreter    
-    interpreter = make_interpreter(os.path.join(BASE_DIR,'saved_model', tflite_file))
+    if edgetpu:
+      interpreter = make_interpreter(os.path.join(BASE_DIR,'saved_model', tflite_file))
+    else:
+      interpreter = tf.lite.Interpreter(model_path=os.path.join(BASE_DIR,'saved_model', tflite_file))
     interpreter.allocate_tensors()
-    width, height = common.input_size(interpreter)          
+    width, height = common.input_size(interpreter)
 
     #Get input size
     orig_w, orig_h = img_list[0].size  
@@ -174,7 +179,8 @@ def run_semantic_seg_tflite(img_list, save_result=False, tflite_file='sunrgbd_CO
         pred_class = np.argmax(pred_prob, axis=-1) 
         save_semantic_result(img, pred_class)
 
-    return pred_prob_list
+    end_time = time.time()
+    return pred_prob_list, end_time
 
 if __name__ == '__main__':
   import os, sys

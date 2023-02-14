@@ -5,9 +5,9 @@
     "two_way": false,       
     "use_fp_mlp": true, 
     "q_gran": "semantic",
-    "use_tflite": true,
+    "use_tflite": false,
     "activation": "relu",
     "tflite_folder": "tflite/tflite_models/scannet_1way_fp",    
-    "use_edgetpu": true,        
+    "use_edgetpu": false,        
     "use_multiThr": false
 }

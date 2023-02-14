@@ -30,7 +30,6 @@ def decode_scores(net, end_points, num_class, num_heading_bin, num_size_cluster,
                 
     """
 
-
     objectness_scores = net[:,:,0:2]
     end_points['objectness_scores'] = objectness_scores    
 
@@ -202,8 +201,7 @@ class ProposalModule(layers.Layer):
             log_string('Unknown sampling strategy: %s. Exiting!'%(self.sampling))
             exit()        
         
-        if self.use_tflite:
-        # if False:        
+        if self.use_tflite:        
             self.interpreter.set_tensor(self.input_details[0]['index'], va_grouped_features)            
             if len(self.input_details) > 1:
                 self.interpreter.set_tensor(self.input_details[1]['index'], xyz)
@@ -270,26 +268,6 @@ class ProposalModule(layers.Layer):
             offset = layers.Reshape((self.npoint, 3))(offset)                
             center = xyz + offset            
             net = layers.Reshape((self.npoint, net.shape[-1]))(net)      
-
-        # new_features = self.mlp_module(va_grouped_features)
-        # features = self.max_pool(new_features)
-        
-        # # --------- PROPOSAL GENERATION ---------
-        # net = self.relu1(self.bn1(self.conv1(features)))
-        # net = self.relu2(self.bn2(self.conv2(net)))
-        # net = self.conv3(net)
-        # offset = net[:,:,:,0:3]
-        # net = net[:,:,:,3:]
-        # w, b = self.conv3.get_weights()
-        # # print("Weight", w[0,0,0,3:3+2+self.num_heading_bin+self.num_size_cluster])
-        # # exit(0)
-
-        # offset = layers.Reshape((self.npoint, 3))(offset)                
-        # center = xyz + offset            
-        # net = layers.Reshape((self.npoint, net.shape[-1]))(net) 
-        # print("Center", center[0,0]) 
-        # print("net", net[0,0])       
-            
 
         # Return from expanded shape
         end_points['aggregated_vote_xyz'] = xyz # (batch_size, num_proposal, 3)
