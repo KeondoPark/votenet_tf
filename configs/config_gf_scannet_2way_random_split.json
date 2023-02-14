@@ -1,5 +1,5 @@
 {   
-    "model_id": "gf_scannet_2way_test40", 
+    "model_id": "gf_scannet_2way_random_split", 
     "dataset": "scannet",
     "use_painted": true,   
     "two_way": true,       
@@ -9,5 +9,6 @@
     "use_tflite": false,
     "tflite_folder": "tflite/tflite_models/gf_scannet_2way",        
     "use_multiThr": false,
-    "bfps_wght": [2,2,2,2]
+    "bfps_wght": [1,1,1,1],
+    "random_split": true
 }

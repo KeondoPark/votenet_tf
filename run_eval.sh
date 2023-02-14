@@ -17,9 +17,9 @@ CUDA_VISIBLE_DEVICES=0 python eval_tf.py  \
 # --config_path configs/config_gf_baseline.json --size_cls_agnostic
 
 #scannet
-CUDA_VISIBLE_DEVICES=0 python eval_tf.py  \
+CUDA_VISIBLE_DEVICES=2 python eval_tf.py  \
 --use_3d_nms --use_cls_nms --per_class_proposal \
---batch_size 16 --ap_iou_thresholds 0.25 \
---config_path configs/config_gf_scannet_baseline.json
+--batch_size 16 --ap_iou_thresholds 0.5 --faster_eval \
+--config_path configs/config_gf_scannet_2way_nofp_sep.json
 
 

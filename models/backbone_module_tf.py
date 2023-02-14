@@ -191,6 +191,9 @@ class Pointnet2Backbone_p(layers.Layer):
 
         use_fp_mlp = model_config['use_fp_mlp']
         self.bfps_wght = model_config["bfps_wght"]
+        self.random_split = False
+        if "random_split" in model_config:
+            self.random_split =  model_config["random_split"]   
 
         self.sa1 = SamplingAndGrouping(
                 npoint=1024,
@@ -286,8 +289,27 @@ class Pointnet2Backbone_p(layers.Layer):
                 XXX_features: float32 Tensor of shape (B,K,D)
                 XXX-inds: int64 Tensor of shape (B,K) values in [0,N-1]
         """        
-        if not end_points: end_points = {}        
-        xyz, isPainted, features = self._break_up_pc(pointcloud)
+        if not end_points: end_points = {}                       
+
+        B = tf.shape(pointcloud)[0]
+        N = tf.shape(pointcloud)[1]
+
+        if self.random_split:            
+            all_indices = tf.random.shuffle(tf.range(N))
+            choice_indices1 = all_indices[:N//2]
+            choice_indices1 = tf.tile(tf.expand_dims(choice_indices1,0), [B,1])
+            choice_indices2 = all_indices[N//2:]
+            choice_indices2 = tf.tile(tf.expand_dims(choice_indices2,0), [B,1])
+            
+            pointcloud1 = tf.gather(pointcloud, indices=choice_indices1, axis=1, batch_dims=1)
+            pointcloud2 = tf.gather(pointcloud, indices=choice_indices2, axis=1, batch_dims=1)                       
+
+            xyz1, isPainted1, features1 = self._break_up_pc(pointcloud1)
+            xyz2, isPainted2, features2 = self._break_up_pc(pointcloud2)
+            xyz, isPainted, features = xyz1, isPainted1, features1
+
+        else:
+            xyz, isPainted, features = self._break_up_pc(pointcloud) 
         
         # --------- 4 SET ABSTRACTION LAYERS ---------
         # ------------------------------- SA1-------------------------------                
@@ -297,8 +319,13 @@ class Pointnet2Backbone_p(layers.Layer):
         sa1_xyz1, sa1_inds1, sa1_grp_feats1, sa1_painted1 = self.sa1(xyz, isPainted, features, bg1=True, wght1=1)
         time_record.append(("SA1 sampling and grouping 1:", time.time()))        
 
-        # Remove sampled points from xyz
-        new_xyz, new_isPainted, new_features, mask = self._remove_sampled(xyz, sa1_inds1, isPainted, features)             
+        if self.random_split:
+            new_xyz, new_isPainted, new_features = xyz2, isPainted2, features2
+            xyz = tf.concat([xyz1, xyz2], axis=1)            
+            features = tf.concat([features1, features2], axis=1)            
+        else:
+            # Remove sampled points from xyz
+            new_xyz, new_isPainted, new_features, mask = self._remove_sampled(xyz, sa1_inds1, isPainted, features)             
         
         sa1_obj_logits1, sa1_features1 = self.sa1_mlp(sa1_grp_feats1)        
 
@@ -396,18 +423,25 @@ class Pointnet2Backbone_p(layers.Layer):
         end_points['fp2_xyz'] = sa2_xyz
         seed_inds1 = tf.gather(sa1_inds1, axis=1, indices=sa2_inds1, batch_dims=1)
         
-        # Necessary if excluding first sampling points
-        B = tf.shape(xyz)[0]
-        N = tf.shape(xyz)[1]
-        
-        all_inds = tf.tile(tf.expand_dims(tf.range(N), 0), [B,1])
-        rem_inds = tf.boolean_mask(all_inds, tf.logical_not(mask))
-        rem_inds = tf.reshape(rem_inds, [B,-1])
-        sa1_2_inds2 = tf.gather(sa1_inds2, axis=1, indices=sa2_inds2, batch_dims=1)
-        seed_inds2 = tf.gather(rem_inds, indices=sa1_2_inds2, batch_dims=1)   
+        if self.random_split:            
+            sa1_inds1 = tf.gather(choice_indices1, axis=1, indices=sa1_inds1, batch_dims=1)            
+            seed_inds1 = tf.gather(sa1_inds1, axis=1, indices=sa2_inds1, batch_dims=1)            
 
-        sa1_inds2_from_orig = tf.gather(rem_inds, indices=sa1_inds2, batch_dims=1)         
-        sa1_inds = layers.Concatenate(axis=1)([sa1_inds1, sa1_inds2_from_orig])
+            sa1_inds2 = tf.gather(choice_indices2, axis=1, indices=sa1_inds2, batch_dims=1)            
+            seed_inds2 = tf.gather(sa1_inds2, axis=1, indices=sa2_inds2, batch_dims=1)
+            sa1_inds = layers.Concatenate(axis=1)([sa1_inds1, sa1_inds2])
+            
+        else:
+            # Necessary if excluding first sampling points        
+            seed_inds1 = tf.gather(sa1_inds1, axis=1, indices=sa2_inds1, batch_dims=1)
+            all_inds = tf.tile(tf.expand_dims(tf.range(N), 0), [B,1])
+            rem_inds = tf.boolean_mask(all_inds, tf.logical_not(mask))
+            rem_inds = tf.reshape(rem_inds, [B,-1])
+            sa1_2_inds2 = tf.gather(sa1_inds2, axis=1, indices=sa2_inds2, batch_dims=1)
+            seed_inds2 = tf.gather(rem_inds, indices=sa1_2_inds2, batch_dims=1)        
+
+            sa1_inds2_from_orig = tf.gather(rem_inds, indices=sa1_inds2, batch_dims=1)         
+            sa1_inds = layers.Concatenate(axis=1)([sa1_inds1, sa1_inds2_from_orig])
 
         
         end_points['sa1_xyz'] = sa1_xyz        
