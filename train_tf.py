@@ -194,8 +194,6 @@ elif DATASET == 'scannet':
     # Init datasets and dataloaders 
     def my_worker_init_fn(worker_id):
         np.random.seed(np.random.get_state()[1][0] + worker_id)
-    def val_worker_init_fn(worker_id):
-        np.random.seed(2481757)
 
     def val_worker_init_fn(worker_id):
         np.random.seed(2481757)
