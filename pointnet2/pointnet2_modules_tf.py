@@ -23,6 +23,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 ROOT_DIR = os.path.dirname(BASE_DIR)
 
+sys.path.append(os.path.join(ROOT_DIR, 'models'))
+import repsurf_utils_tf
+
 import pointnet2_utils_tf
 import tf_utils
 from typing import List
@@ -48,7 +51,8 @@ class PointnetSAModuleVotes(layers.Layer):
             sample_uniformly: bool = False,
             ret_unique_cnt: bool = False,
             model_config = None,
-            layer_name = 'sa1'
+            layer_name = 'sa1',
+            use_repsurf = True
     ):
         super().__init__()
 
@@ -64,6 +68,8 @@ class PointnetSAModuleVotes(layers.Layer):
         self.normalize_xyz = normalize_xyz
         self.ret_unique_cnt = ret_unique_cnt
         self.layer_name = layer_name
+        self.use_repsurf = use_repsurf
+        self.pos_channel = 6 # 3 (coords) + 3(polar coords)
 
         if npoint is not None:
             self.grouper = pointnet2_utils_tf.QueryAndGroup(radius, nsample,
@@ -97,6 +103,15 @@ class PointnetSAModuleVotes(layers.Layer):
             self.output_details = self.interpreter.get_output_details()
         else:
             act = model_config['activation'] if 'activation' in model_config else 'relu6'
+
+            self.mlp_l0 = layers.Conv2D(mlp_spec[1], 1)
+            self.mlp_f0 = layers.Conv2D(mlp_spec[1], 1)
+            self.bn_l0 = layers.BatchNormalization(axis=-1)
+            self.bn_f0 = layers.BatchNormalization(axis=-1)
+            
+            maxval = 6 if act == 'relu6' else None           
+            self.relu0 = layers.ReLU(maxval)
+
             self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=bn, activation=act, input_shape=[npoint, nsample, mlp_spec[0]])        
             
             #This is to make it EdgeTPU-compatible
@@ -134,7 +149,14 @@ class PointnetSAModuleVotes(layers.Layer):
             xyz, inds
         ) if self.npoint is not None else None
         
-        
+        if self.use_repsurf:
+            xyz_polar = repsurf_utils_tf.xyz2sphere(xyz)
+            # new_xyz_polar = tf_sampling.gather_point(
+            #     xyz_polar, inds
+            # ) if self.npoint is not None else None
+
+            features = layers.Concatenate(axis=-1)([xyz_polar, features])
+
 
         if not self.ret_unique_cnt:            
             grouped_features= self.grouper(
@@ -158,6 +180,17 @@ class PointnetSAModuleVotes(layers.Layer):
             
         else:              
             time_record.append((f"{self.layer_name} Runtime for Sampling and Grouping:", time.time()))
+
+            if self.use_repsurf:
+                loc = grouped_features[:,:,:,:self.pos_channel]
+                feat = grouped_features[:,:,:,self.pos_channel:]        
+
+                loc = self.bn_l0(self.mlp_l0(loc))
+                feat = self.bn_f0(self.mlp_f0(feat))
+
+                grouped_features = loc + feat
+                grouped_features = self.relu0(grouped_features)
+
             new_features = self.mlp_module(
                     grouped_features
                 )  # (B, npoint, nsample, mlp[-1])
@@ -198,7 +231,8 @@ class SamplingAndGrouping(layers.Layer):
             use_xyz: bool = True,                        
             normalize_xyz: bool = False, # noramlize local XYZ with radius
             sample_uniformly: bool = False,
-            ret_unique_cnt: bool = False
+            ret_unique_cnt: bool = False,
+            return_polar: bool = True
     ):
         super().__init__()
 
@@ -209,6 +243,7 @@ class SamplingAndGrouping(layers.Layer):
         self.use_xyz = use_xyz                
         self.normalize_xyz = normalize_xyz
         self.ret_unique_cnt = ret_unique_cnt
+        self.return_polar = return_polar
 
         if npoint is not None:
             self.grouper = pointnet2_utils_tf.QueryAndGroup(radius, nsample,
@@ -240,7 +275,7 @@ class SamplingAndGrouping(layers.Layer):
         inds: (B, npoint) tensor of the inds
         ball_quer_idx: (B, npoint, nsample) Index of ball queried points
         grouped_features: (B, npoint, nsample, C+3) Required to create tflite
-        """
+        """       
         
         if inds is None:                        
             if bg2:                                                    
@@ -256,6 +291,14 @@ class SamplingAndGrouping(layers.Layer):
             new_xyz = tf_sampling.gather_point(
                 xyz, inds
             ) if self.npoint is not None else None
+
+            if self.return_polar:
+                xyz_polar = repsurf_utils_tf.xyz2sphere(xyz)
+                # new_xyz_polar = tf_sampling.gather_point(
+                #     xyz_polar, inds
+                # ) if self.npoint is not None else None
+
+                features = layers.Concatenate(axis=-1)([xyz_polar, features])
 
         if not self.ret_unique_cnt:      
             if xyz_ball is None and features_ball is None:
@@ -330,6 +373,64 @@ class PointnetMLP(layers.Layer):
             return logit, new_features
         else:
             return new_features
+
+class SurfPointnetMLP(layers.Layer):
+    ''' Only shareMLP and maxpooling from PointnetSAModuleVotes '''
+
+    def __init__(
+            self,
+            *,            
+            npoint: int = None,            
+            nsample: int = None,            
+            use_xyz: bool = True,                                    
+            mlp: List[int], 
+            bn: bool = True, 
+            model_config = None            
+    ):
+        super().__init__()
+
+        self.nsample = nsample        
+        self.npoint = npoint
+        self.pos_channel = 6 # euclidean + polar coordinates
+
+        mlp_spec = mlp
+        if use_xyz and len(mlp_spec)>0:
+            mlp_spec[0] += 3  
+        act = model_config['activation'] if 'activation' in model_config['activation'] else 'relu6'
+
+        self.mlp_l0 = layers.Conv2D(mlp_spec[1], 1)
+        self.mlp_f0 = layers.Conv2D(mlp_spec[1], 1)
+        self.bn_l0 = layers.BatchNormalization(axis=-1)
+        self.bn_f0 = layers.BatchNormalization(axis=-1)
+        
+        maxval = 6 if act == 'relu6' else None           
+        self.relu0 = layers.ReLU(maxval)
+
+        self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=bn, activation=act, input_shape=[npoint, nsample, mlp_spec[0]], add_logit_branch=add_logit_branch)        
+        self.max_pool = layers.MaxPooling2D(pool_size=(1, 16), strides=(1,16), data_format="channels_last")
+        self.max_pool2 = layers.MaxPooling2D(pool_size=(1, int(self.nsample/16)), strides=(1,int(self.nsample/16)), data_format="channels_last")        
+
+        
+    def call(self, features):
+
+        loc = features[:,:,:,:self.pos_channel]
+        feat = features[:,:,:,self.pos_channel:]        
+
+        loc = self.bn_l0(self.mlp_l0(loc))
+        feat = self.bn_f0(self.mlp_f0(feat))
+
+        grouped_features = loc + feat
+        grouped_features = self.relu0(grouped_features)
+
+        new_features = self.mlp_module(grouped_features)
+
+        if self.nsample == 16:
+            new_features = self.max_pool(new_features)  # (B, npoint, 1, mlp[-1])
+        elif self.nsample > 16:
+            new_features = self.max_pool2(self.max_pool(new_features))  # (B, npoint, 1, mlp[-1])
+
+        new_features = layers.Reshape((-1, new_features.shape[-1]))(new_features)
+        return new_features
 
 class PointnetFPModule(layers.Layer):
     r"""Propigates the features of one set to another

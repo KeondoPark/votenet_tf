@@ -9,12 +9,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 ROOT_DIR = os.path.dirname(BASE_DIR)
 
+sys.path.append(os.path.join(BASE_DIR, 'pointops'))
 sys.path.append(os.path.join(ROOT_DIR, 'pointnet2'))
-
-from tf_ops.sampling import tf_sampling
+from knn import knn_sample
 from tf_ops.grouping import tf_grouping
-from tf_ops.interpolation import tf_interpolate
-
 
 
 # def sample_and_group(npoint, nsample, xyz, normal, feature, return_polar=False):
@@ -112,21 +110,26 @@ def xyz2sphere(xyz, normalize=True):
     :param xyz: [B, N, 3] 
     :return: (rho, theta, phi) [B, N, 3] 
     """
+    pi = tf.constant(3.14159265359, dtype=tf.float32)
     rho = tf.math.sqrt(tf.reduce_sum(tf.math.pow(xyz, 2), axis=-1, keepdims=True)) #(B, N, 1)
     rho = tf.clip_by_value(rho, clip_value_min=0, clip_value_max=tf.float32.max)  # range: [0, inf]
     theta = tf.math.acos(xyz[..., 2, None] / rho)  # range: [0, pi]
     phi = tf.math.atan2(xyz[..., 1, None], xyz[..., 0, None])  # range: [-pi, pi]
     # check nan
-    theta = tf.where(rho == 0, 0.0, theta)
+    theta = tf.where(tf.math.is_nan(theta), 0.0, theta)
+    phi = tf.where(tf.math.is_nan(phi), tf.cast(tf.sign(xyz[..., 1, None]),tf.float32) * pi/2.0, phi)
+    # print("rho max", tf.reduce_max(rho))
+    # print("theta max", tf.reduce_max(theta))
+    # print("phi max", tf.reduce_max(phi))
 
     if normalize:
-        theta = theta / np.pi  # [0, 1]
-        phi = phi / (2 * np.pi) + .5  # [0, 1]
+        theta = theta / pi  # [0, 1]
+        phi = phi / (2 * pi) + .5  # [0, 1]
     out = tf.concat([rho, theta, phi], axis=-1)
     return out
 
 
-def group_by_umbrella_v2(xyz, new_xyz, k=9):
+def group_by_umbrella_v2(xyz, new_xyz, offset, new_offset, k=9):
     """
     Group a set of points into umbrella surfaces
 
@@ -136,14 +139,16 @@ def group_by_umbrella_v2(xyz, new_xyz, k=9):
     :return: [N', K-1, 3, 3]
     """
     M = new_xyz.shape[1]
-    group_idx, _ = knn_point(xyz, new_xyz, k)  # (B, M, K)    
-    xyz_tile = tf.tile(tf.expand_dims(xyz, -3), [1,M,1,1])
+    group_idx, _ = knn_sample(xyz, new_xyz, offset, new_offset, k)  # (B, M, K)        
+    group_idx = group_idx[:,:,1:]# prevent the center point itself is included in the group    
+    # xyz_tile = tf.tile(tf.expand_dims(xyz, -3), [1,M,1,1])
     
     
     #axis: xyz_tile's shape, batch_dims: indices's shape
-    group_xyz = tf.gather(xyz_tile, axis=-2, indices=group_idx, batch_dims=-1) #(B, M, K, 3)     
+    # group_xyz = tf.gather(xyz, axis=-2, indices=group_idx, batch_dims=-1) #(B, M, K, 3)     
+    group_xyz = tf_grouping.group_point(xyz, group_idx)    
     
-    group_xyz_norm = group_xyz - tf.expand_dims(new_xyz, axis=-2) #(B, M, K, 3)
+    group_xyz_norm = group_xyz - tf.tile(tf.expand_dims(new_xyz, axis=-2),[1,1,k-1,1]) #(B, M, K, 3)
     group_phi = xyz2sphere(_fixed_rotate(group_xyz_norm))[..., 2]  # (B, M, K)
     sort_idx = tf.argsort(group_phi, axis=-1)  # (B, M, K)
     
@@ -179,10 +184,13 @@ def group_by_umbrella(xyz, new_xyz, offset, new_offset, k=9):
     # group_centriod = torch.zeros_like(sorted_group_xyz)
     # umbrella_group_xyz = torch.cat([group_centriod, sorted_group_xyz, sorted_group_xyz_roll], dim=-2)
     
-    group_idx, _ = knn_point(xyz, new_xyz, k)  # (B, M, K)
-    xyz_tile = tf.tile(tf.expand_dims(xyz, 1), [1,M,1,1])
-    group_xyz = tf.gather(xyz_tile, axis=2, indices=group_idx, batch_dims=2) #(B, M, K, 3)    
-    group_xyz_norm = group_xyz - tf.expand_dims(new_xyz, axis=-2) #(B, M, K, 3)
+    group_idx, _ = knn_sample(xyz, new_xyz, offset, new_offset, k)  # (B, M, K)
+    
+    # xyz_tile = tf.tile(tf.expand_dims(xyz, 1), [1,M,1,1])
+    # group_xyz = tf.gather(xyz_tile, axis=2, indices=group_idx, batch_dims=2) #(B, M, K, 3)    
+    group_xyz = tf_grouping.group_point(xyz, group_idx)   
+    group_xyz_norm = group_xyz - tf.tile(tf.expand_dims(new_xyz, axis=-2),[1,1,k,1]) #(B, M, K, 3) 
+    # group_xyz_norm = group_xyz - tf.expand_dims(new_xyz, axis=-2) #(B, M, K, 3)
     group_phi = xyz2sphere(group_xyz_norm)[..., 2]  # (B, M, K)
     sort_idx = tf.argsort(group_phi, axis=-1)  # (B, M, K)
 
@@ -208,14 +216,14 @@ def cal_normal(group_xyz, random_inv=False, is_group=False):
     """
     Calculate Normal Vector (Unit Form + First Term Positive)
 
-    input: group_xyz: [B, N, 3, 3]
+    input: group_xyz: [B, M, K, 3, 3]
     output: unit normal vector: [B, N, 3]
     """
-    edge_vec1 = group_xyz[..., 1, :] - group_xyz[..., 0, :]  # [B, N, 3]
-    edge_vec2 = group_xyz[..., 2, :] - group_xyz[..., 0, :]  # [B, N, 3]
+    edge_vec1 = group_xyz[..., 1, :] - group_xyz[..., 0, :]  # [B, M, K, 3]
+    edge_vec2 = group_xyz[..., 2, :] - group_xyz[..., 0, :]  # [B, M, K, 3]
 
-    nor = tf.linalg.cross(edge_vec1, edge_vec2) # [B, N, 3]
-    unit_nor = nor / tf.norm(nor, axis=-1, keepdims=True)  # [B, N, 3] 
+    nor = tf.linalg.cross(edge_vec1, edge_vec2) # [B, M, K, 3]
+    unit_nor = nor / tf.norm(nor, axis=-1, keepdims=True)  # [B, M, K, 3] 
     if not is_group:
         pos_mask = tf.where(unit_nor[..., 0] > 0, 1.0, -1.0) # keep x_n positive        
     else:
@@ -269,14 +277,15 @@ def check_nan_umb(normal, center, pos=None):
     """
     B = tf.shape(normal)[0]
     N = normal.shape[1]
+    K = normal.shape[2]
     
     mask = tf.reduce_sum(tf.cast(tf.math.is_nan(normal),tf.int32), axis=-1) > 0 # boolean (B, N, K) if NaN 1, else 0    
-    mask_first = tf.math.argmax(tf.cast(~mask,tf.int32), axis=-1) # index of not NaN, (B, N)
+    mask_first = tf.math.argmax(tf.cast(~mask,tf.int32), axis=-1) # index of not NaN, (B, N)    
 
-    normal_first = tf.gather(normal, indices=tf.expand_dims(mask_first,-1), axis=-2, batch_dims=-2)
+    normal_first = tf.gather(normal, indices=tf.expand_dims(mask_first,-1), axis=2, batch_dims=2) #(B, N, 1, 3)
     normal_first = tf.tile(normal_first, [1, 1, K, 1])
     
-    center_first = tf.gather(center, indices=tf.expand_dims(mask_first,-1), axis=-2, batch_dims=-2)
+    center_first = tf.gather(center, indices=tf.expand_dims(mask_first,-1), axis=2, batch_dims=2) #(B, N, 1, 3)
     center_first = tf.tile(center_first, [1, 1, K, 1]) 
     
     mask = tf.expand_dims(mask,-1)
@@ -284,9 +293,12 @@ def check_nan_umb(normal, center, pos=None):
     normal = tf.where(mask_tile, normal_first, normal)
     center = tf.where(mask_tile, center_first, center)
 
-    if pos is not None:        
-        pos_first = tf.gather(pos, indices=tf.expand_dims(mask_first,-1), axis=1, batch_dims=1)
+    if pos is not None:  
+        mask = tf.reduce_sum(tf.cast(tf.math.is_nan(pos),tf.int32), axis=-1) > 0 # boolean (B, N, K) if NaN 1, else 0    
+        mask_first = tf.math.argmax(tf.cast(~mask,tf.int32), axis=-1) # index of not NaN, (B, N)          
+        pos_first = tf.gather(pos, indices=tf.expand_dims(mask_first,-1), axis=2, batch_dims=2) #(B, N, 1, 1)
         pos_first = tf.tile(pos_first, [1, 1, K, 1]) 
+        mask = tf.expand_dims(mask, -1)
         pos = tf.where(mask, pos_first, pos)
         return normal, center, pos
     return normal, center
@@ -297,7 +309,7 @@ class UmbrellaSurfaceConstructor(layers.Layer):
     Umbrella Surface Representation Constructor
     """
 
-    def __init__(self, k, in_channel, out_channel, random_inv=True, sort='fix', act='relu'):
+    def __init__(self, k, out_channel, random_inv=True, sort='fix', act='relu'):
         super(UmbrellaSurfaceConstructor, self).__init__()
         self.k = k
         self.random_inv = random_inv
@@ -306,7 +318,7 @@ class UmbrellaSurfaceConstructor(layers.Layer):
         self.bn1 = layers.BatchNormalization(axis=-1)
         self.conv2 = layers.Conv2D(filters=out_channel, kernel_size=1) 
          
-         if act == 'relu6':
+        if act == 'relu6':
             maxval = 6
         else:
             maxval = None
@@ -315,12 +327,98 @@ class UmbrellaSurfaceConstructor(layers.Layer):
         self.sort_func = sort_factory(sort)
 
     def call(self, center, offset):
+        '''
+        center: poincloud (B, N, 3)
+        offset: secion in pointcloud (int) (B, S)
+        '''
+        # umbrella surface reconstruction
+        group_xyz = self.sort_func(center, center, offset, offset, k=self.k)  # [N, K-1, 3 (points), 3 (coord.)]
+        # (B, M, K, 3, 3)
+        # print("*"*20, "xyz")
+        # print(group_xyz)
+
+        # normal
+        group_normal = cal_normal(group_xyz, random_inv=self.random_inv, is_group=True)
+        # (B, M, K, 3)
+        # print("*"*20, "normal")
+        # print(group_normal)
+
+        # coordinate
+        group_center = cal_center(group_xyz)
+        # print("*"*20, "group_center")
+        # print(group_center)
+        # (B, M, K, 3)
+
+        # polar
+        group_polar = xyz2sphere(group_center) 
+        # print("*"*20, "group_polar")
+        # print(group_polar)
+        # (B, M, K, 3)
+
+        # surface position
+        group_pos = cal_const(group_normal, group_center)
+        # print("*"*20, "group_pos")
+        # print(group_pos)
+        
+        # (B, M, K, 1)
+
+        group_normal, group_center, group_pos = check_nan_umb(group_normal, group_center, group_pos)
+        # (B, M, K, 3), (B, M, K, 3), (B, M, K, 1)
+
+        # mask_normal = tf.reduce_sum(tf.cast(tf.math.is_nan(group_normal),tf.int32), axis=-1) # boolean (B, N, K) if NaN 1, else 0    
+        # mask_center = tf.reduce_sum(tf.cast(tf.math.is_nan(group_center),tf.int32), axis=-1) # boolean (B, N, K) if NaN 1, else 0    
+        # mask_pos = tf.reduce_sum(tf.cast(tf.math.is_nan(group_pos),tf.int32), axis=-1) # boolean (B, N, K) if NaN 1, else 0    
+        # mask_polar = tf.reduce_sum(tf.cast(tf.math.is_nan(group_polar),tf.int32), axis=-1) # boolean (B, N, K) if NaN 1, else 0    
+        
+        # print(tf.reduce_max(group_normal))
+        # print(tf.reduce_max(group_center))
+        # print(tf.reduce_max(group_pos))
+        # if tf.reduce_sum(mask_pos) > 0:
+        #     print("!"*20, "pos nan")
+        #     print(group_pos)
+        # print(tf.reduce_max(group_polar))
+        
+
+        new_feature = tf.concat([group_polar, group_normal, group_pos, group_center], axis=-1)  # P+N+SP+C: 10
+        # (B, M, K, 10)        
+
+        # mapping
+        new_feature = self.conv2(self.relu1(self.bn1(self.conv1(new_feature))))        
+        # (B, M, K, 10)
+        # print("*"*20, "new_feature")
+        # print(new_feature)
+        
+
+        # aggregation
+        new_feature = tf.reduce_sum(new_feature, axis=2)
+        #(B, M, 10)
+        # print(tf.reduce_max(new_feature))
+
+        return new_feature
+
+
+class UmbrellaSurface_Extractor(layers.Layer):
+    """
+    Umbrella Surface Representation Constructor
+    """
+
+    def __init__(self, k, random_inv=True, sort='fix'):
+        super(UmbrellaSurface_Extractor, self).__init__()
+        self.k = k
+        self.random_inv = random_inv
+        self.sort_func = sort_factory(sort)
+
+    def call(self, center, offset):
+        '''
+        center: poincloud (B, N, 3)
+        offset: secion in pointcloud (int) (B, S)
+        '''
         # umbrella surface reconstruction
         group_xyz = self.sort_func(center, center, offset, offset, k=self.k)  # [N, K-1, 3 (points), 3 (coord.)]
         # (B, M, K, 3, 3)
 
         # normal
-        group_normal = cal_normal(group_xyz, offset, random_inv=self.random_inv, is_group=True)
+        group_normal = cal_normal(group_xyz, random_inv=self.random_inv, is_group=True)
         # (B, M, K, 3)
 
         # coordinate
@@ -332,20 +430,67 @@ class UmbrellaSurfaceConstructor(layers.Layer):
         # (B, M, K, 3)
 
         # surface position
-        group_pos = cal_const(group_normal, group_center)
+        group_pos = cal_const(group_normal, group_center)        
         # (B, M, K, 1)
 
         group_normal, group_center, group_pos = check_nan_umb(group_normal, group_center, group_pos)
         # (B, M, K, 3), (B, M, K, 3), (B, M, K, 1)
 
-        new_feature = tf.concat([group_polar, group_normal, group_pos, group_center], dim=-1)  # P+N+SP+C: 10
-        # (B, M, K, 10)
-        # new_feature = new_feature.transpose(1, 2).contiguous()  # [N, C, G]
-
-        # mapping
-        new_feature = self.conv2(self.relu1(self.bn1(self.conv1(new_feature))))        
-
-        # aggregation
-        new_feature = tf.reduce_sum(new_feature, axis=1)
+        new_feature = tf.concat([group_polar, group_normal, group_pos, group_center], axis=-1)  # P+N+SP+C: 10
+        # (B, M, K, 10)        
 
         return new_feature
+
+class UmbrellaSurface_Learner(layers.Layer):
+    """
+    Umbrella Surface Representation Constructor
+    """
+
+    def __init__(self, out_channel=10, act='relu'):
+        super(UmbrellaSurface_Learner, self).__init__()
+
+        self.conv1 = layers.Conv2D(filters=out_channel, kernel_size=1) 
+        self.bn1 = layers.BatchNormalization(axis=-1)
+        self.conv2 = layers.Conv2D(filters=out_channel, kernel_size=1) 
+         
+        if act == 'relu6':
+            maxval = 6
+        else:
+            maxval = None
+        self.relu1 = layers.ReLU(maxval)
+        
+
+    def call(self, feature):
+        '''
+        center: poincloud (B, N, 3)
+        offset: secion in pointcloud (int) (B, S)
+        '''      
+        # mapping
+        new_feature = self.conv2(self.relu1(self.bn1(self.conv1(feature))))        
+        # (B, M, K, 10)
+
+        # aggregation
+        new_feature = tf.reduce_sum(new_feature, axis=2)
+        #(B, M, 10)
+
+        return new_feature
+
+
+if __name__ == '__main__':
+    B, N = 8, 20000
+    pointcloud = tf.convert_to_tensor(np.random.random([8,20000,3]), dtype=tf.float32)
+    offset = tf.convert_to_tensor(np.arange(N // 1000)*1000 + 1000, dtype=tf.int32)
+
+    class testModel(tf.keras.Model):
+        def __init__(self):
+            super().__init__()
+            self.umb_constructor = UmbrellaSurfaceConstructor(k=9, out_channel=10, random_inv=True, sort='fix', act='relu')
+        
+        def call(self, center, offset):
+            out = self.umb_constructor(center, offset)
+            return out
+
+
+    model = testModel()
+    out = model(pointcloud, offset)
+    print(out.shape)

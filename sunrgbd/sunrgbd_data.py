@@ -27,6 +27,7 @@ print(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, '../utils/'))
 sys.path.append(os.path.join(BASE_DIR, '..'))
 sys.path.append(os.path.join(BASE_DIR, '../deeplab'))
+sys.path.append(os.path.join(BASE_DIR, '../models'))
 import pc_util
 import sunrgbd_utils
 from tqdm import tqdm
@@ -35,6 +36,7 @@ import time
 #from deeplab import run_semantic_segmentation_graph
 import deeplab
 import pickle
+import repsurf_utils_tf
 
 import json
 ROOT_DIR = os.path.dirname(BASE_DIR)
@@ -571,7 +573,7 @@ def extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=
 
 
 
-def gf_extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=20000,
+def rsgf_extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_point=20000,
                          type_whitelist=DEFAULT_TYPE_WHITELIST,
                          save_votes=False, use_v1=False, skip_empty_scene=True, pointpainting=False):
 
@@ -610,12 +612,13 @@ def gf_extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_poi
         """Returns an int64_list from a bool / enum / int / uint."""
         return tf.train.Feature(int64_list=tf.train.Int64List(value=input_list))
     
-    def create_example(point_cloud, bboxes, point_labels, n_valid_box):    
+    def create_example(point_cloud, bboxes, point_labels, n_valid_box, repsurf_feature):    
         feature = {        
             'point_cloud': _float_feature(list(point_cloud.reshape((-1)))),
             'bboxes': _float_feature(list(bboxes.reshape((-1)))),
             'point_labels':_float_feature(list(point_labels.reshape((-1)))),
-            'n_valid_box':_int64_feature([n_valid_box])
+            'n_valid_box':_int64_feature([n_valid_box]),
+            'repsurf_feature':_float_feature(list(repsurf_feature.reshape((-1)))),
         }
 
         return tf.train.Example(features=tf.train.Features(feature=feature))
@@ -632,9 +635,9 @@ def gf_extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_poi
     MAX_NUM_OBJ = 64
     num_sunrgbd_class = len(type_whitelist)
     
-    all_obbs = []
-    all_pc_upright_depth_subsampled = []
-    all_point_votes = []
+    # all_obbs = []
+    # all_pc_upright_depth_subsampled = []
+    # all_point_votes = []
 
     # Load semantic segmentation model(Written and trained in TF1.15)
     if pointpainting:
@@ -668,7 +671,6 @@ def gf_extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_poi
                 
                 assert len(objects) <= MAX_NUM_OBJ
 
-                
                 cnt = 0
 
                 object_list = []
@@ -694,19 +696,29 @@ def gf_extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_poi
                 pc_upright_depth = dataset.get_depth(data_idx)
                 pc_upright_depth_subsampled = pc_util.random_sampling(pc_upright_depth, num_point)
 
-                np.savez_compressed(os.path.join(output_folder, '%06d_pc.npz' % (data_idx)),
-                                    pc=pc_upright_depth_subsampled)
-                np.save(os.path.join(output_folder, '%06d_bbox.npy' % (data_idx)), obbs)
-                # pickle save
-                with open(os.path.join(output_folder, '%06d_pc.pkl' % (data_idx)), 'wb') as f:
-                    pickle.dump(pc_upright_depth_subsampled, f)
-                    print(f"{os.path.join(output_folder, '%06d_pc.pkl' % (data_idx))} saved successfully !!")
-                with open(os.path.join(output_folder, '%06d_bbox.pkl' % (data_idx)), 'wb') as f:
-                    pickle.dump(obbs, f)
-                    print(f"{os.path.join(output_folder, '%06d_bbox.pkl' % (data_idx))} saved successfully !!")
+                
+                xyz = tf.convert_to_tensor(pc_upright_depth_subsampled[:,:3])
+                xyz = tf.expand_dims(xyz, axis=0)                
+                offset = tf.convert_to_tensor(np.arange(num_point // 1000)*1000 + 1000, dtype=tf.int32)
+                offset = tf.expand_dims(offset, axis=0)
+
+                umb_extractor = repsurf_utils_tf.UmbrellaSurface_Extractor(k=9)
+                repsurf_feature = umb_extractor(xyz, offset)
+                repsurf_feature = np.squeeze(repsurf_feature.numpy(), axis=0)
+
+                # np.savez_compressed(os.path.join(output_folder, '%06d_pc.npz' % (data_idx)),
+                #                     pc=pc_upright_depth_subsampled)
+                # np.save(os.path.join(output_folder, '%06d_bbox.npy' % (data_idx)), obbs)
+                # # pickle save
+                # with open(os.path.join(output_folder, '%06d_pc.pkl' % (data_idx)), 'wb') as f:
+                #     pickle.dump(pc_upright_depth_subsampled, f)
+                #     print(f"{os.path.join(output_folder, '%06d_pc.pkl' % (data_idx))} saved successfully !!")
+                # with open(os.path.join(output_folder, '%06d_bbox.pkl' % (data_idx)), 'wb') as f:
+                #     pickle.dump(obbs, f)
+                #     print(f"{os.path.join(output_folder, '%06d_bbox.pkl' % (data_idx))} saved successfully !!")
                 # add to collection
-                all_pc_upright_depth_subsampled.append(pc_upright_depth_subsampled)
-                all_obbs.append(obbs)
+                # all_pc_upright_depth_subsampled.append(pc_upright_depth_subsampled)
+                # all_obbs.append(obbs)
 
                 if pointpainting:
                     ########## Add 2D segmentation result to point cloud(Point Painting) ##########
@@ -801,46 +813,46 @@ def gf_extract_sunrgbd_data_tfrecord(idx_filename, split, output_folder, num_poi
                         assert point_votes[ip, 11] == -1, "error"
                         assert point_votes[ip, 12] == -1, "error"
 
-                print(f"{data_idx}_votes.npz has {i_obj} gt bboxes")
-                np.savez_compressed(os.path.join(output_folder, '%06d_votes.npz' % (data_idx)),
-                                    point_votes=point_votes)
-                with open(os.path.join(output_folder, '%06d_votes.pkl' % (data_idx)), 'wb') as f:
-                    pickle.dump(point_votes, f)
-                    print(f"{os.path.join(output_folder, '%06d_votes.pkl' % (data_idx))} saved successfully !!")
-                all_point_votes.append(point_votes)
+                # print(f"{data_idx}_votes.npz has {i_obj} gt bboxes")
+                # np.savez_compressed(os.path.join(output_folder, '%06d_votes.npz' % (data_idx)),
+                #                     point_votes=point_votes)
+                # with open(os.path.join(output_folder, '%06d_votes.pkl' % (data_idx)), 'wb') as f:
+                #     pickle.dump(point_votes, f)
+                #     print(f"{os.path.join(output_folder, '%06d_votes.pkl' % (data_idx))} saved successfully !!")
+                # all_point_votes.append(point_votes)
 
                 point_labels = point_votes[:,[0,10]]
                 
-                if pointpainting:
-                    tf_example = create_example(painted_pc, obbs, point_labels, n_valid_box) 
-                else:
-                    tf_example = create_example(pc_upright_depth_subsampled, obbs, point_labels, n_valid_box)
+                if pointpainting:                    
+                    tf_example = create_example(painted_pc, obbs, point_labels, n_valid_box, repsurf_feature) 
+                else:                    
+                    tf_example = create_example(pc_upright_depth_subsampled, obbs, point_labels, n_valid_box, repsurf_feature)
                                 
                 writer.write(tf_example.SerializeToString())   
 
-    pickle_filename = os.path.join(output_folder, 'all_obbs_modified_nearest_has_empty.pkl')
-    with open(pickle_filename, 'wb') as f:
-        pickle.dump(all_obbs, f)
-        print(f"{pickle_filename} saved successfully !!")
+    # pickle_filename = os.path.join(output_folder, 'all_obbs_modified_nearest_has_empty.pkl')
+    # with open(pickle_filename, 'wb') as f:
+    #     pickle.dump(all_obbs, f)
+    #     print(f"{pickle_filename} saved successfully !!")
 
-    pickle_filename = os.path.join(output_folder, 'all_pc_modified_nearest_has_empty.pkl')
-    with open(pickle_filename, 'wb') as f:
-        pickle.dump(all_pc_upright_depth_subsampled, f)
-        print(f"{pickle_filename} saved successfully !!")
+    # pickle_filename = os.path.join(output_folder, 'all_pc_modified_nearest_has_empty.pkl')
+    # with open(pickle_filename, 'wb') as f:
+    #     pickle.dump(all_pc_upright_depth_subsampled, f)
+    #     print(f"{pickle_filename} saved successfully !!")
 
-    pickle_filename = os.path.join(output_folder, 'all_point_votes_nearest_has_empty.pkl')
-    with open(pickle_filename, 'wb') as f:
-        pickle.dump(all_point_votes, f)
-        print(f"{pickle_filename} saved successfully !!")
+    # pickle_filename = os.path.join(output_folder, 'all_point_votes_nearest_has_empty.pkl')
+    # with open(pickle_filename, 'wb') as f:
+    #     pickle.dump(all_point_votes, f)
+    #     print(f"{pickle_filename} saved successfully !!")
 
-    all_point_labels = []
-    for point_votes in all_point_votes:
-        point_labels = point_votes[:, [0, 10]]
-        all_point_labels.append(point_labels)
-    pickle_filename = os.path.join(output_folder, 'all_point_labels_nearest_has_empty.pkl')
-    with open(pickle_filename, 'wb') as f:
-        pickle.dump(all_point_labels, f)
-        print(f"{pickle_filename} saved successfully !!")
+    # all_point_labels = []
+    # for point_votes in all_point_votes:
+    #     point_labels = point_votes[:, [0, 10]]
+    #     all_point_labels.append(point_labels)
+    # pickle_filename = os.path.join(output_folder, 'all_point_labels_nearest_has_empty.pkl')
+    # with open(pickle_filename, 'wb') as f:
+    #     pickle.dump(all_point_labels, f)
+    #     print(f"{pickle_filename} saved successfully !!")
 
 
 
@@ -1252,11 +1264,11 @@ if __name__=='__main__':
     if args.tfrecord and not args.painted:
         gf_extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/train_data_idx.txt'),
             split = 'training',
-            output_folder = os.path.join(DATA_DIR, 'gf_sunrgbd_pc_train_tf2'),
+            output_folder = os.path.join(DATA_DIR, 'rsgf_sunrgbd_pc_train_tf'),
             num_point=50000, use_v1=True, skip_empty_scene=False)
         gf_extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval/val_data_idx.txt'),
             split = 'training',
-            output_folder = os.path.join(DATA_DIR, 'gf_sunrgbd_pc_val_tf2'),
+            output_folder = os.path.join(DATA_DIR, 'rsgf_sunrgbd_pc_val_tf'),
             num_point=50000, use_v1=True, skip_empty_scene=False)
 
     if args.painted:
@@ -1270,8 +1282,8 @@ if __name__=='__main__':
         else:
             train_data_idx_file = 'train_data_idx.txt'
             val_data_idx_file = 'val_data_idx.txt'
-            output_folder_train = 'gf_sunrgbd_pc_train_painted_tf2'
-            output_folder_val = 'gf_sunrgbd_pc_val_painted_tf2'
+            output_folder_train = 'rsgf_sunrgbd_pc_train_painted_tf'
+            output_folder_val = 'rsgf_sunrgbd_pc_val_painted_tf'
 
         if args.include_small:
             output_folder_train += '_sm'
@@ -1289,11 +1301,11 @@ if __name__=='__main__':
         #     include_person=args.include_person, include_small = args.include_small)
 
 
-        gf_extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval', train_data_idx_file),
+        rsgf_extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval', train_data_idx_file),
             split = 'training',
             output_folder = os.path.join(DATA_DIR, output_folder_train),
             num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True)
-        gf_extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval', val_data_idx_file),
+        rsgf_extract_sunrgbd_data_tfrecord(os.path.join(DATA_DIR, 'sunrgbd_trainval', val_data_idx_file),
             split = 'training',
             output_folder = os.path.join(DATA_DIR, output_folder_val),
             num_point=50000, use_v1=True, skip_empty_scene=False, pointpainting=True)

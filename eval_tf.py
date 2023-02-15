@@ -151,11 +151,11 @@ elif DATASET == 'scannet':
         use_painted=use_painted)
 
     # Init datasets and dataloaders 
-    def my_worker_init_fn(worker_id):
-        np.random.seed(np.random.get_state()[1][0] + worker_id)
+    def val_worker_init_fn(worker_id):
+        np.random.seed(2481757)
     
     test_ds =DataLoader(TEST_DATASET, batch_size=BATCH_SIZE,
-        shuffle=False, num_workers=4, worker_init_fn=my_worker_init_fn)
+        shuffle=False, num_workers=4, worker_init_fn=val_worker_init_fn)
 
 else:
     print('Unknown dataset %s. Exiting...'%(DATASET))

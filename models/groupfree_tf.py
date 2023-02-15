@@ -91,7 +91,7 @@ class GroupFreeNet(tf.keras.Model):
                                             size_cls_agnostic=size_cls_agnostic, 
                                             decoder_normalization=decoder_normalization)            
 
-    def call(self, point_cloud, imgs=None, calibs=None, deeplab_tflite_file=None):
+    def call(self, point_cloud, repsurf_feature, imgs=None, calibs=None, deeplab_tflite_file=None):
         """ Forward pass of the network
 
         Args:
@@ -116,9 +116,9 @@ class GroupFreeNet(tf.keras.Model):
             end_points: list
         """
         if self.use_tflite and self.use_multiThr:
-            end_points = self.backbone_net(point_cloud, imgs=imgs, calibs=calibs, deeplab_tflite_file=deeplab_tflite_file)
+            end_points = self.backbone_net(point_cloud, repsurf_feature, imgs=imgs, calibs=calibs, deeplab_tflite_file=deeplab_tflite_file)
         else:
-            end_points = self.backbone_net(point_cloud)
+            end_points = self.backbone_net(point_cloud, repsurf_feature)
         # --------- HOUGH VOTING ---------
         end_points['seed_inds'] = end_points['fp2_inds']
         end_points['seed_xyz'] = end_points['fp2_xyz']

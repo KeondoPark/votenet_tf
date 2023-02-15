@@ -81,10 +81,7 @@ class QueryAndGroup(layers.Layer):
         Returns
         -------
         new_features : (B, 3 + C, npoint, nsample) tensor
-        """
-
-        
-        
+        """  
         if ball_inds is None:
             if not knn:
                 idx, pts_cnt = tf_grouping.query_ball_point(self.radius, self.nsample, xyz, new_xyz)

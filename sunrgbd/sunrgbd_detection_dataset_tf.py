@@ -221,13 +221,14 @@ class SunrgbdDetectionDataset_tfrecord():
     def __init__(self, split_set='train', num_points=20000,
         use_color=False, use_height=False, 
         augment=False, batch_size=8, shuffle=True,
-        use_painted=False, DC=None):
+        use_painted=False, use_repsurf=True, DC=None):
 
         assert(num_points<=50000)
         self.use_painted = use_painted
         self.dim_features = 6        
         self.DC = DC
         self.num_class = DC.num_class
+        self.use_repsurf = use_repsurf        
 
         if self.use_painted:
             self.dim_features = 3 + (self.num_class) + 1 + 1 # xyz + num_class + 1(background) + 1(isPainted)
@@ -235,9 +236,9 @@ class SunrgbdDetectionDataset_tfrecord():
         if DC.include_person:
             self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf_person2'%(split_set))
         elif self.use_painted:
-            self.data_path = os.path.join(DATA_DIR,'gf_sunrgbd_pc_%s_painted_tf2'%(split_set))
+            self.data_path = os.path.join(DATA_DIR,'rsgf_sunrgbd_pc_%s_painted_tf'%(split_set))
         else:
-            self.data_path = os.path.join(DATA_DIR,'gf_sunrgbd_pc_%s_tf2'%(split_set))
+            self.data_path = os.path.join(DATA_DIR,'rsgf_sunrgbd_pc_%s_tf'%(split_set))
 
         if DC.include_small:
             self.data_path += '_sm'
@@ -245,7 +246,8 @@ class SunrgbdDetectionDataset_tfrecord():
         print(self.data_path)
 
         if split_set == 'val':
-            tf.random.set_seed(1234)
+            np.random.seed(2481757)
+            tf.random.set_seed(2481757)
 
         self.raw_data_path = os.path.join(ROOT_DIR, 'sunrgbd/sunrgbd_trainval')
         self.num_points = num_points
@@ -301,7 +303,8 @@ class SunrgbdDetectionDataset_tfrecord():
             'point_cloud': tf.io.FixedLenFeature([N_POINT*(self.dim_features)], tf.float32),                
             'bboxes': tf.io.FixedLenFeature([N_BOX*8],tf.float32),
             'point_labels': tf.io.FixedLenFeature([N_POINT*2], tf.float32),    
-            'n_valid_box': tf.io.FixedLenFeature([], tf.int64)
+            'n_valid_box': tf.io.FixedLenFeature([], tf.int64),
+            'repsurf_feature':  tf.io.FixedLenFeature([N_POINT*8*10], tf.float32) #8 triangles, 10 features
         }
         # Parse the input tf.train.Example proto using the dictionary above.
         return tf.io.parse_single_example(example_proto, feature_description)
@@ -311,30 +314,32 @@ class SunrgbdDetectionDataset_tfrecord():
         bboxes = tf.reshape(features['bboxes'], [-1, N_BOX, 8])
         point_labels = tf.reshape(features['point_labels'], [-1, N_POINT, 2])
         n_valid_box = tf.reshape(features['n_valid_box'], [-1])
+        repsurf_feature = tf.reshape(features['repsurf_feature'], [-1, N_POINT, 8, 10])            
         
-        return point_cloud, bboxes, point_labels, n_valid_box
+        return point_cloud, bboxes, point_labels, n_valid_box, repsurf_feature
 
-    def sample_points(self, point_cloud, bboxes, point_labels, n_valid_box):        
+    def sample_points(self, point_cloud, bboxes, point_labels, n_valid_box, repsurf_feature):        
         n_pc = point_cloud.shape[1]        
 
         choice_indices = tf.random.uniform([self.num_points], minval=0, maxval=n_pc, dtype=tf.int64)
         choice_indices = tf.tile(tf.expand_dims(choice_indices,0), [tf.shape(point_cloud)[0],1])
         
         point_cloud = tf.gather(point_cloud, choice_indices, axis=1, batch_dims=1)
-        point_labels = tf.gather(point_labels, choice_indices, axis=1, batch_dims=1)        
+        point_labels = tf.gather(point_labels, choice_indices, axis=1, batch_dims=1)
+        repsurf_feature = tf.gather(repsurf_feature, choice_indices, axis=1, batch_dims=1)
     
-        return point_cloud, bboxes, point_labels, n_valid_box
+        return point_cloud, bboxes, point_labels, n_valid_box, repsurf_feature
 
-    def preprocess_color(self, point_cloud, bboxes, point_labels, n_valid_box):    
+    def preprocess_color(self, point_cloud, bboxes, point_labels, n_valid_box, repsurf_feature):    
         # Not used
         MEAN_COLOR_RGB=tf.constant([0.5,0.5,0.5])
         point_cloud = point_cloud[:,:,0:6]
         pc_coord = point_cloud[:,:,:3]
         pc_RGB = point_cloud[:,:,3:]-MEAN_COLOR_RGB
         point_cloud = tf.concat((pc_coord, pc_RGB), axis=-1)
-        return point_cloud, bboxes, point_labels, n_valid_box
+        return point_cloud, bboxes, point_labels, n_valid_box, repsurf_feature
 
-    def preprocess_height(self, point_cloud, bboxes, point_labels, n_valid_box):
+    def preprocess_height(self, point_cloud, bboxes, point_labels, n_valid_box, repsurf_feature):
         y_coords = point_cloud[:, :, 2]
         y_coords = tf.sort(y_coords, direction='DESCENDING', axis=-1)
         floor_height = y_coords[:, int(0.99*self.num_points), None]         
@@ -344,9 +349,9 @@ class SunrgbdDetectionDataset_tfrecord():
         #elif not self.augment:
         else:
             point_cloud = tf.concat([point_cloud[:,:,:3], tf.expand_dims(height, axis=-1)], axis=-1) # (N,4)
-        return point_cloud, bboxes, point_labels, n_valid_box
+        return point_cloud, bboxes, point_labels, n_valid_box, repsurf_feature
     
-    def augment_tensor(self, point_cloud, bboxes, point_labels, n_valid_box):
+    def augment_tensor(self, point_cloud, bboxes, point_labels, n_valid_box, repsurf_feature):
         pi = 3.141592653589793
         # Flipping along the YZ plane
         if tf.random.uniform(shape=[]) > 0.5:        
@@ -409,9 +414,9 @@ class SunrgbdDetectionDataset_tfrecord():
         bboxes = tf.concat((bboxes_coords, bboxes_edges, bboxes_angle, bboxes[:,:,7:]), axis=-1)
         # point_votes = tf.concat((votes0, votes1, votes2, votes3, point_votes[:,:,10:]), axis=-1)           
         
-        return point_cloud, bboxes, point_labels, n_valid_box
+        return point_cloud, bboxes, point_labels, n_valid_box, repsurf_feature
 
-    def _get_output(self, point_cloud, bboxes, point_labels, n_valid_box):
+    def _get_output(self, point_cloud, bboxes, point_labels, n_valid_box, repsurf_feature):
 
 
         def my_compute_box_3d_arr(center, size, heading_angle):    
@@ -484,53 +489,7 @@ class SunrgbdDetectionDataset_tfrecord():
             target_bboxes[b,:n_box] = np.stack([(xmin+xmax)/2, (ymin+ymax)/2, (zmin+zmax)/2, xmax-xmin, ymax-ymin, zmax-zmin], axis=-1)
             target_bboxes_semcls[b,:n_box] = bboxes[b,:n_box,-1] # from 0 to 9
 
-        size_gts = target_bboxes[:,:,3:6]
-
-            # label_mask[b,:n_box] = 1
-            # max_bboxes[b,:n_box,:] = bboxes[b,:n_box,:]
-
-            # for i in range(n_box):
-            #     bbox = bboxes[b,i]
-            #     semantic_class = bbox[7]
-            #     box3d_center = bbox[0:3]
-            #     angle_class, angle_residual = self.DC.angle2class(bbox[6])
-            #     # NOTE: The mean size stored in size2class is of full length of box edges,
-            #     # while in sunrgbd_data.py data dumping we dumped *half* length l,w,h.. so have to time it by 2 here 
-            #     #box3d_size = bbox[3:6]*2
-            #     box3d_size = bbox[3:6]
-            #     #box3d_size *= 2
-            #     size_class = semantic_class         
-            #     #mean_size =  self.type_mean_size_np[size_class.numpy().astype(np.int32)]         
-            #     #size_residual = 2 * box3d_size - mean_size
-            #     size_residual = 2 * box3d_size - self.type_mean_size_np[size_class.numpy().astype(np.int32)]
-            #     #size_class, size_residual = size2class(box3d_size, class2type[semantic_class])
-            #     box3d_centers[b,i,:] = box3d_center
-            #     angle_classes[b,i] = angle_class
-            #     angle_residuals[b,i] = angle_residual
-            #     size_classes[b,i] = size_class
-            #     size_residuals[b,i] = size_residual
-            #     box3d_sizes[b,i,:] = 2 * box3d_size
-            
-            # target_bboxes_mask = label_mask 
-            # target_bboxes[b,0:3] += 1000.0
-
-                   
-            
-            # for i in range(n_box):
-            #     bbox = bboxes[b,i]
-            #     corners_3d = sunrgbd_utils.my_compute_box_3d(bbox[0:3], bbox[3:6], bbox[6])
-            #     # compute axis aligned box
-            #     xmin = np.min(corners_3d[:,0])
-            #     ymin = np.min(corners_3d[:,1])
-            #     zmin = np.min(corners_3d[:,2])
-            #     xmax = np.max(corners_3d[:,0])
-            #     ymax = np.max(corners_3d[:,1])
-            #     zmax = np.max(corners_3d[:,2])
-            #     target_bbox = np.array([(xmin+xmax)/2, (ymin+ymax)/2, (zmin+zmax)/2, xmax-xmin, ymax-ymin, zmax-zmin])
-            #     target_bboxes[b,i,:] = target_bbox
-            #     size_gts[b, i, :] = target_bbox[3:6]
-
-            
+        size_gts = target_bboxes[:,:,3:6]            
         
         point_cloud = tf.constant(point_cloud, dtype=tf.float32)        
         center_label = tf.constant(target_bboxes[:,:,0:3], dtype=tf.float32)
@@ -546,21 +505,22 @@ class SunrgbdDetectionDataset_tfrecord():
         point_instance_label = tf.constant(tf.cast(point_labels[:,:,-1],dtype=tf.int64), dtype=tf.int64)
         
         max_gt_bboxes = tf.constant(max_bboxes, dtype=tf.float32) 
+        repsurf_feature = tf.constant(point_cloud, dtype=tf.float32)
         
         return point_cloud, center_label, heading_class_label, heading_residual_label, size_class_label, \
-            size_residual_label, sem_cls_label, box_label_mask, point_obj_mask, point_instance_label, max_gt_bboxes, size_gts
+            size_residual_label, sem_cls_label, box_label_mask, point_obj_mask, point_instance_label, max_gt_bboxes, size_gts, repsurf_feature
         # return output
 
-    def tf_get_output(self, point_cloud, bboxes, point_labels, n_valid_box):
+    def tf_get_output(self, point_cloud, bboxes, point_labels, n_valid_box, repsurf_feature):
 
         [point_cloud, center_label, heading_class_label, heading_residual_label, size_class_label, \
-            size_residual_label, sem_cls_label, box_label_mask, point_obj_mask, point_instance_label, max_gt_bboxes, size_gts] \
+            size_residual_label, sem_cls_label, box_label_mask, point_obj_mask, point_instance_label, max_gt_bboxes, size_gts, repsurf_feature] \
                 = tf.py_function(func=self._get_output, inp=[point_cloud, bboxes, point_labels, n_valid_box],
                                  Tout= [tf.float32, tf.float32, tf.int64, tf.float32, tf.int64,  
                                         tf.float32, tf.int64, tf.float32, tf.int64, tf.int64,
-                                        tf.float32, tf.float32])
+                                        tf.float32, tf.float32, tf.float32])
         return point_cloud, center_label, heading_class_label, heading_residual_label, size_class_label, \
-            size_residual_label, sem_cls_label, box_label_mask, point_obj_mask, point_instance_label, max_gt_bboxes, size_gts
+            size_residual_label, sem_cls_label, box_label_mask, point_obj_mask, point_instance_label, max_gt_bboxes, size_gts, repsurf_feature
     
 
 

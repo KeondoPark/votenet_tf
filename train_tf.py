@@ -91,7 +91,7 @@ parser.add_argument('--obj_loss_coef', default=0.1, type=float, help='Loss weigh
 parser.add_argument('--box_loss_coef', default=1, type=float, help='Loss weight for box loss')
 parser.add_argument('--sem_cls_loss_coef', default=0.1, type=float, help='Loss weight for classification loss')
 parser.add_argument('--query_points_obj_topk', default=4, type=int, help='query_points_obj_topk')
-parser.add_argument('--clip_norm', default=0.1, type=float, help='gradient clipping max norm')
+parser.add_argument('--clip_norm', default=0.0, type=float, help='gradient clipping max norm')
 parser.add_argument('--decoder_normalization', default='layer', help='Which normalization method to use in decoder [layer or batch]')
 parser.add_argument('--light', action='store_true', help='Use light version of detector')
 
@@ -170,11 +170,11 @@ if DATASET == 'sunrgbd':
     TRAIN_DATASET = SunrgbdDetectionDataset_tfrecord('train', num_points=NUM_POINT,
         augment=True, shuffle=True, batch_size=BATCH_SIZE,
         use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
-        use_painted=use_painted, DC=DATASET_CONFIG)
+        use_painted=use_painted, use_repsurf=True, DC=DATASET_CONFIG)
     TEST_DATASET = SunrgbdDetectionDataset_tfrecord('val', num_points=NUM_POINT,
         augment=False,  shuffle=False, batch_size=BATCH_SIZE,
         use_color=FLAGS.use_color, use_height=(not FLAGS.no_height),
-        use_painted=use_painted, DC=DATASET_CONFIG)
+        use_painted=use_painted, use_repsurf=True, DC=DATASET_CONFIG)
 elif DATASET == 'scannet':
     sys.path.append(os.path.join(ROOT_DIR, 'scannet'))
     from scannet_detection_dataset import ScannetDetectionDataset, MAX_NUM_OBJ
@@ -194,10 +194,13 @@ elif DATASET == 'scannet':
     def my_worker_init_fn(worker_id):
         np.random.seed(np.random.get_state()[1][0] + worker_id)
 
+    def val_worker_init_fn(worker_id):
+        np.random.seed(2481757)
+
     train_ds = DataLoader(TRAIN_DATASET, batch_size=BATCH_SIZE,
         shuffle=True, num_workers=4, worker_init_fn=my_worker_init_fn, drop_last=True)
     test_ds =DataLoader(TEST_DATASET, batch_size=BATCH_SIZE,
-        shuffle=False, num_workers=4, worker_init_fn=my_worker_init_fn)
+        shuffle=False, num_workers=4, worker_init_fn=val_worker_init_fn)
 else:
     print('Unknown dataset %s. Exiting...'%(FLAGS.dataset))
     exit(-1)
@@ -239,10 +242,10 @@ criterion = loss_helper_tf.get_loss
 if FLAGS.optimizer == 'adamw':
     optimizer1 = tfa.optimizers.AdamW(learning_rate=FLAGS.learning_rate, weight_decay=FLAGS.weight_decay, epsilon=1e-08)
     optimizer2 = tfa.optimizers.AdamW(learning_rate=FLAGS.decoder_learning_rate, weight_decay=FLAGS.weight_decay, epsilon=1e-08)
-    # optimizer1.global_clipnorm = FLAGS.clip_norm
-    # optimizer2.global_clipnorm = FLAGS.clip_norm
-    # optimizer1 = tf.keras.optimizers.experimental.AdamW(learning_rate=FLAGS.learning_rate, weight_decay=FLAGS.weight_decay)
-    # optimizer2 = tf.keras.optimizers.experimental.AdamW(learning_rate=FLAGS.decoder_learning_rate, weight_decay=FLAGS.weight_decay)
+    if FLAGS.clip_norm > 0:
+        optimizer1.global_clipnorm = FLAGS.clip_norm
+        optimizer2.global_clipnorm = FLAGS.clip_norm  
+    
 else:
     optimizer1 = tf.keras.optimizers.Adam(learning_rate=FLAGS.learning_rate)
     optimizer2 = tf.keras.optimizers.Adam(learning_rate=FLAGS.decoder_learning_rate)
@@ -337,8 +340,10 @@ CONFIG_DICT = {'remove_empty_box':False, 'use_3d_nms':True,
     'per_class_proposal': True, 'conf_thresh':0.0,
     'dataset_config':DATASET_CONFIG}
 
-label_dict = {0:'point_cloud', 1:'center_label', 2:'heading_class_label', 3:'heading_residual_label', 4:'size_class_label',\
-    5:'size_residual_label', 6:'sem_cls_label', 7:'box_label_mask', 8:'point_obj_mask', 9:'point_instance_label', 10: 'max_gt_bboxes', 11: 'size_gts'}
+label_dict = {0:'point_cloud', 1:'center_label', 2:'heading_class_label', 3:'heading_residual_label', \
+              4:'size_class_label', 5:'size_residual_label', 6:'sem_cls_label', 7:'box_label_mask', \
+              8:'point_obj_mask', 9:'point_instance_label', 10: 'max_gt_bboxes', 11: 'size_gts', \
+              12:'repsurf_feature'}
 
 
 def torch_to_tf_data(batch_data):
@@ -354,14 +359,15 @@ def torch_to_tf_data(batch_data):
     point_instance_label = tf.convert_to_tensor(batch_data['point_instance_label'], tf.int64)
     max_gt_bboxes = tf.convert_to_tensor(np.zeros((BATCH_SIZE, 64, 8)), dtype=tf.float32) 
     size_gts = tf.convert_to_tensor(batch_data['size_gts'], dtype=tf.float32)
+    repsurf_feature = tf.convert_to_tensor(batch_data['repsurf_feature'], dtype=tf.float32)
     batch_data = point_clouds, center_label, heading_class_label, heading_residual_label, size_class_label, \
-        size_residual_label, sem_cls_label, box_label_mask, point_obj_mask, point_instance_label, max_gt_bboxes, size_gts                   
+        size_residual_label, sem_cls_label, box_label_mask, point_obj_mask, point_instance_label, max_gt_bboxes, size_gts, repsurf_feature    
 
     return batch_data
 
 # ------------------------------------------------------------------------- GLOBAL CONFIG END
 
-# @tf.function
+@tf.function
 def train_one_epoch(batch_data):     
 
     # For type match 
@@ -373,8 +379,9 @@ def train_one_epoch(batch_data):
     # Forward pass
     with tf.GradientTape() as tape:
 
-        point_cloud = batch_data[0]        
-        end_points = net(point_cloud, training=True)    
+        point_cloud = batch_data[0]
+        repsurf_feature = batch_data[-1]
+        end_points = net(point_cloud, repsurf_feature, training=True)    
                     
         # Compute loss and gradients, update parameters.
         for i, label in label_dict.items():
@@ -393,15 +400,6 @@ def train_one_epoch(batch_data):
                                      size_cls_agnostic=FLAGS.size_cls_agnostic)    
 
     grads = tape.gradient(loss, net.trainable_weights)
-    # grads = [tf.clip_by_norm(g, FLAGS.clip_norm) for g in grads]
-
-    # shapes = [g.shape for g in grads]
-    # grads_flatten = [tf.reshape(g, (-1,)) for g in grads]
-    # grads_flatten, global_norm = tf.clip_by_global_norm(grads_flatten, FLAGS.clip_norm)
-
-    # grads = []
-    # for g, s in zip(grads_flatten, shapes):                        
-    #     grads.append(tf.reshape(g, s))
 
     # DIfferent learning rate by layers
     varlist1, varlist2 = [], []
@@ -429,8 +427,9 @@ def evaluate_one_epoch(batch_data):
         tf.constant(DATASET_CONFIG.mean_size_arr, dtype=tf.float32)
     
     # Forward pass
-    point_cloud = batch_data[0]    
-    end_points = net(point_cloud, training=False)
+    point_cloud = batch_data[0]
+    repsurf_feature = batch_data[-1]
+    end_points = net(point_cloud, repsurf_feature, training=False)
 
     for i, label in label_dict.items():
         if label_dict[i] not in end_points:
@@ -533,12 +532,23 @@ def train(start_epoch):
         
         t_epoch = time.time() - start
         log_string("1 Epoch training time:" + str(t_epoch))        
-               
+        
+        
         # if EPOCH_CNT+1 >= 100 and (EPOCH_CNT % 10 == 9 or EPOCH_CNT == 0): # Eval every 10 epochs                                
         if (EPOCH_CNT % 10 == 9 or EPOCH_CNT == 0): # Eval every 10 epochs                                
             stat_dict = defaultdict(float) # collect statistics            
             ap_calculator = APCalculator(ap_iou_thresh=FLAGS.ap_iou_thresh,
                 class2type_map=DATASET_CONFIG.class2type)     
+
+            if 1+EPOCH_CNT == 150:
+                # Reset best mAP at 100 epochs
+                best_eval_mAP = 0.0 
+
+            stop_eval_early = False 
+            if 1+EPOCH_CNT < 150:
+                # at early stage of training, does not do the evaluation fully.
+                stop_eval_early = True
+
             for batch_idx, batch_data in enumerate(test_ds):                               
                 if DATASET == 'scannet':      
                     batch_data = torch_to_tf_data(batch_data)                          
@@ -546,7 +556,7 @@ def train(start_epoch):
                 if batch_idx % 10 == 0:
                     print('Eval batch: %d'%(batch_idx))
 
-                if 1+EPOCH_CNT < 100 and batch_idx * BATCH_SIZE >= 160:
+                if stop_eval_early and batch_idx * BATCH_SIZE >= 160:
                     break
                 
                 # curr_loss, end_points = distributed_eval_step(batch_data)
@@ -567,7 +577,7 @@ def train(start_epoch):
                                                                 CONFIG_DICT, 
                                                                 prefix='last_', 
                                                                 size_cls_agnostic=FLAGS.size_cls_agnostic)        
-                batch_gt_map_cls = parse_groundtruths(end_points, CONFIG_DICT)
+                batch_gt_map_cls = parse_groundtruths(end_points, CONFIG_DICT, size_cls_agnostic=FLAGS.size_cls_agnostic)
                 ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)    
 
 

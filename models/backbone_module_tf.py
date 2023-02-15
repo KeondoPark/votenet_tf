@@ -21,6 +21,7 @@ from pointnet2_modules_tf import PointnetSAModuleVotes, PointnetFPModule, Sampli
 from deeplab.deeplab import run_semantic_seg, run_semantic_seg_tflite
 from tf_ops.sampling import tf_sampling
 from tf_ops.grouping import tf_grouping
+import repsurf_utils_tf
 
 class Pointnet2Backbone(layers.Layer):
     r"""
@@ -39,6 +40,7 @@ class Pointnet2Backbone(layers.Layer):
         use_tflite = model_config['use_tflite']
         use_fp_mlp = model_config['use_fp_mlp']
         self.use_painted = model_config['use_painted']
+        self.umb_learner = repsurf_utils_tf.UmbrellaSurface_Learner(act=model_config['activation'])
 
         self.sa1 = PointnetSAModuleVotes(
                 npoint=2048,
@@ -48,6 +50,7 @@ class Pointnet2Backbone(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True,
                 model_config=model_config,
+                use_repsurf=True,
                 layer_name='sa1'
             )
 
@@ -59,6 +62,7 @@ class Pointnet2Backbone(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True,
                 model_config=model_config,
+                use_repsurf=True,
                 layer_name='sa2'
             )
 
@@ -70,6 +74,7 @@ class Pointnet2Backbone(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True,
                 model_config=model_config,
+                use_repsurf=True,
                 layer_name='sa3'
             )
 
@@ -81,6 +86,7 @@ class Pointnet2Backbone(layers.Layer):
                 use_xyz=True,
                 normalize_xyz=True,
                 model_config=model_config,
+                use_repsurf=True,
                 layer_name='sa4'
             )
 
@@ -97,7 +103,7 @@ class Pointnet2Backbone(layers.Layer):
         
         return xyz, features
 
-    def call(self, pointcloud, end_points=None, img=None, calib=None):
+    def call(self, pointcloud, repsurf_feature, end_points=None, img=None, calib=None):
         r"""
             Forward pass of the network
 
@@ -118,7 +124,9 @@ class Pointnet2Backbone(layers.Layer):
         """        
         if not end_points: end_points = {}
         xyz, features = self._break_up_pc(pointcloud)
-
+        
+        repsurf_feature = self.umb_learner(repsurf_feature)        
+        features = layers.Concatenate(axis=-1)([features, repsurf_feature])
 
         # --------- 4 SET ABSTRACTION LAYERS ---------
         #print("========================== SA1 ===============================")
@@ -191,42 +199,47 @@ class Pointnet2Backbone_p(layers.Layer):
 
         use_fp_mlp = model_config['use_fp_mlp']
         self.bfps_wght = model_config["bfps_wght"]
+        self.umb_learner = repsurf_utils_tf.UmbrellaSurface_Learner(act=model_config['activation'])
 
         self.sa1 = SamplingAndGrouping(
                 npoint=1024,
                 radius=0.2,
                 nsample=64,                
                 use_xyz=True,
-                normalize_xyz=True                
+                normalize_xyz=True,
+                return_polar=True
             )
-        self.sa1_mlp = PointnetMLP(mlp=[input_feature_dim, 64, 64, 128], nsample=64, model_config=model_config, add_logit_branch=True)        
+        self.sa1_mlp = SurfPointnetMLP(mlp=[input_feature_dim, 64, 64, 128], nsample=64, model_config=model_config)        
         
         self.sa2 = SamplingAndGrouping(
                 npoint=512,
                 radius=0.4,
                 nsample=32,                
                 use_xyz=True,
-                normalize_xyz=True                
+                normalize_xyz=True,
+                return_polar=True
             )
-        self.sa2_mlp = PointnetMLP(mlp=[128, 128, 128, 256], nsample=32, model_config=model_config)
+        self.sa2_mlp = SurfPointnetMLP(mlp=[128, 128, 128, 256], nsample=32, model_config=model_config)
 
         self.sa3 = SamplingAndGrouping(
                 npoint=256,
                 radius=0.8,
                 nsample=16,                
                 use_xyz=True,
-                normalize_xyz=True                
+                normalize_xyz=True,
+                return_polar=True
             )
-        self.sa3_mlp = PointnetMLP(mlp=[256, 128, 128, 256], nsample=16, model_config=model_config)
+        self.sa3_mlp = SurfPointnetMLP(mlp=[256, 128, 128, 256], nsample=16, model_config=model_config)
         
         self.sa4 = SamplingAndGrouping(
                 npoint=256,
                 radius=1.2,
                 nsample=16,                
                 use_xyz=True,
-                normalize_xyz=True                
+                normalize_xyz=True,
+                return_polar=True
             )
-        self.sa4_mlp = PointnetMLP(mlp=[256, 128, 128, 256], nsample=16, model_config=model_config)
+        self.sa4_mlp = SurfPointnetMLP(mlp=[256, 128, 128, 256], nsample=16, model_config=model_config)
 
         
         self.fp1 = PointnetFPModule(mlp=[256+256,256,256], m=512, model_config=model_config)
@@ -268,7 +281,7 @@ class Pointnet2Backbone_p(layers.Layer):
         return new_xyz, new_isPainted, new_features, mask
 
 
-    def call(self, pointcloud, end_points=None):
+    def call(self, pointcloud, repsurf_feature, end_points=None):
         r"""
             Forward pass of the network
 
@@ -289,6 +302,9 @@ class Pointnet2Backbone_p(layers.Layer):
         """        
         if not end_points: end_points = {}        
         xyz, isPainted, features = self._break_up_pc(pointcloud)
+        
+        repsurf_feature = self.umb_learner(repsurf_feature)        
+        features = layers.Concatenate(axis=-1)([features, repsurf_feature])
         
         # --------- 4 SET ABSTRACTION LAYERS ---------
         # ------------------------------- SA1-------------------------------                

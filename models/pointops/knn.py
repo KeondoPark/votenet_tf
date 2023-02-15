@@ -9,7 +9,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR)))
 
 sampling_module=tf.load_op_library(os.path.join(BASE_DIR, 'knn_so_server.so')) #For server
 
-def knn_sample(k, xyz, new_xyz, offset, new_offset):
+def knn_sample(xyz, new_xyz, offset, new_offset, k):
     '''
 input:
     k: int32
