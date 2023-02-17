@@ -1,5 +1,5 @@
 {    
-    "model_id": "rsgf_baseline2",
+    "model_id": "rsgf_baseline3",
     "dataset": "sunrgbd",
     "use_painted": false,   
     "two_way": false,       

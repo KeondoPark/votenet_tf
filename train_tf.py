@@ -381,6 +381,7 @@ def train_one_epoch(batch_data):
 
         point_cloud = batch_data[0]
         repsurf_feature = batch_data[-1]
+        
         end_points = net(point_cloud, repsurf_feature, training=True)    
                     
         # Compute loss and gradients, update parameters.

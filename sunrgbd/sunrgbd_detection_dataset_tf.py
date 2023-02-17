@@ -353,6 +353,12 @@ class SunrgbdDetectionDataset_tfrecord():
     
     def augment_tensor(self, point_cloud, bboxes, point_labels, n_valid_box, repsurf_feature):
         pi = 3.141592653589793
+
+        group_polar = repsurf_feature[:,:,:,0:3]
+        group_normal = repsurf_feature[:,:,:,3:6]
+        group_pos = repsurf_feature[:,:,:,6,None]
+        group_center = repsurf_feature[:,:,:,7:]
+
         # Flipping along the YZ plane
         if tf.random.uniform(shape=[]) > 0.5:        
         #if True:
@@ -360,7 +366,15 @@ class SunrgbdDetectionDataset_tfrecord():
             point_cloud = tf.concat((pc_flip, point_cloud[:,:,1:]), axis=-1)
             bboxes_flip = -1 * bboxes[:,:,0,None]
             bboxes_angle = pi -1 * bboxes[:,:,6,None]
-            bboxes = tf.concat((bboxes_flip, bboxes[:,:,1:6], bboxes_angle, bboxes[:,:,7:]), axis=-1)              
+            bboxes = tf.concat((bboxes_flip, bboxes[:,:,1:6], bboxes_angle, bboxes[:,:,7:]), axis=-1)
+            # RepSurf augmentation
+            polar_phi = tf.where(group_polar[:,:,:,2] > 0.5, 1.5 - group_polar[:,:,:,2], 0.5 - group_polar[:,:,:,2])
+            group_polar = tf.concat([group_polar[:,:,:,:2], tf.expand_dims(polar_phi,-1)], axis=-1)
+            normal_flip = -1 * group_normal[:,:,:,0,None]
+            group_normal = tf.concat([normal_flip, group_normal[:,:,:,1:]], axis=-1)
+            center_flip = -1 * group_center[:,:,:,0,None]
+            group_center = tf.concat([center_flip, group_center[:,:,:,1:]], axis=-1)
+
             
         pc_coords = point_cloud[:,:,0:3]    
         pc_height = point_cloud[:,:,-1,None]
@@ -376,7 +390,13 @@ class SunrgbdDetectionDataset_tfrecord():
         s = tf.math.sin(rot_angle)
         rot_mat = tf.transpose(tf.convert_to_tensor([[c, -s, 0], [s, c, 0], [0,0,1]]), [1,0])
         
-        pc_coords = tf.matmul(pc_coords, rot_mat)    
+        pc_coords = tf.matmul(pc_coords, rot_mat) 
+
+        polar_aug = group_polar[:,:,:,2] + rot_angle / (2 * pi)
+        group_polar = tf.concat([group_polar[:,:,:,:2], tf.expand_dims(polar_aug,-1)], axis=-1)
+        group_normal = tf.matmul(group_normal, rot_mat) 
+        group_center = tf.matmul(group_center, rot_mat) 
+        repsurf_feature = tf.concat([group_polar, group_normal, group_pos, group_center], axis=-1)
         
         bboxes_coords = tf.matmul(bboxes[:,:,0:3], rot_mat)
         bboxes_angle = bboxes[:,:,6,None] - rot_angle           
@@ -505,7 +525,7 @@ class SunrgbdDetectionDataset_tfrecord():
         point_instance_label = tf.constant(tf.cast(point_labels[:,:,-1],dtype=tf.int64), dtype=tf.int64)
         
         max_gt_bboxes = tf.constant(max_bboxes, dtype=tf.float32) 
-        repsurf_feature = tf.constant(point_cloud, dtype=tf.float32)
+        repsurf_feature = tf.constant(repsurf_feature, dtype=tf.float32)
         
         return point_cloud, center_label, heading_class_label, heading_residual_label, size_class_label, \
             size_residual_label, sem_cls_label, box_label_mask, point_obj_mask, point_instance_label, max_gt_bboxes, size_gts, repsurf_feature
@@ -515,7 +535,7 @@ class SunrgbdDetectionDataset_tfrecord():
 
         [point_cloud, center_label, heading_class_label, heading_residual_label, size_class_label, \
             size_residual_label, sem_cls_label, box_label_mask, point_obj_mask, point_instance_label, max_gt_bboxes, size_gts, repsurf_feature] \
-                = tf.py_function(func=self._get_output, inp=[point_cloud, bboxes, point_labels, n_valid_box],
+                = tf.py_function(func=self._get_output, inp=[point_cloud, bboxes, point_labels, n_valid_box, repsurf_feature],
                                  Tout= [tf.float32, tf.float32, tf.int64, tf.float32, tf.int64,  
                                         tf.float32, tf.int64, tf.float32, tf.int64, tf.int64,
                                         tf.float32, tf.float32, tf.float32])

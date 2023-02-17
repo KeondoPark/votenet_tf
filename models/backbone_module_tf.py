@@ -17,7 +17,7 @@ sys.path.append(ROOT_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 sys.path.append(os.path.join(ROOT_DIR, 'pointnet2'))
 
-from pointnet2_modules_tf import PointnetSAModuleVotes, PointnetFPModule, SamplingAndGrouping, PointnetMLP, SamplingAndAttention
+from pointnet2_modules_tf import PointnetSAModuleVotes, PointnetFPModule, SamplingAndGrouping, PointnetMLP, SurfPointnetMLP
 from deeplab.deeplab import run_semantic_seg, run_semantic_seg_tflite
 from tf_ops.sampling import tf_sampling
 from tf_ops.grouping import tf_grouping
@@ -316,8 +316,7 @@ class Pointnet2Backbone_p(layers.Layer):
 
         # Remove sampled points from xyz
         new_xyz, new_isPainted, new_features, mask = self._remove_sampled(xyz, sa1_inds1, isPainted, features)             
-        
-        sa1_obj_logits1, sa1_features1 = self.sa1_mlp(sa1_grp_feats1)        
+        sa1_features1 = self.sa1_mlp(sa1_grp_feats1)        
 
         time_record.append(("SA1 MLP 1:", time.time()))
         
@@ -325,8 +324,8 @@ class Pointnet2Backbone_p(layers.Layer):
             = self.sa1(new_xyz, new_isPainted, new_features, bg1=True, wght1=self.bfps_wght[0], 
                 xyz_ball=xyz, features_ball=features)        
         time_record.append(("SA1 sampling and grouping 2:", time.time()))        
-
-        sa1_obj_logits2, sa1_features2 = self.sa1_mlp(sa1_grp_feats2)          
+        
+        sa1_features2 = self.sa1_mlp(sa1_grp_feats2)          
         time_record.append(("SA1 MLP 2:", time.time()))     
 
         
@@ -334,12 +333,8 @@ class Pointnet2Backbone_p(layers.Layer):
         # end_points['sa1_painted2'] = sa1_painted2
 
         sa1_xyz = layers.Concatenate(axis=1)([sa1_xyz1, sa1_xyz2])
-        sa1_features = layers.Concatenate(axis=1)([sa1_features1, sa1_features2])
-        sa1_obj_logits = layers.Concatenate(axis=1)([sa1_obj_logits1, sa1_obj_logits2])
-        
-        sa1_painted = tf.cast(tf.keras.activations.relu(tf.sign(sa1_obj_logits)), tf.int32)
-        sa1_painted1 = sa1_painted[:,:1024]
-        sa1_painted2 = sa1_painted[:,1024:]
+        sa1_features = layers.Concatenate(axis=1)([sa1_features1, sa1_features2])        
+                
         
         # ------------------------------- SA2-------------------------------        
         sa2_xyz1, sa2_inds1, sa2_grp_feats1, sa2_painted1 \
@@ -429,7 +424,7 @@ class Pointnet2Backbone_p(layers.Layer):
         
         end_points['sa1_xyz'] = sa1_xyz        
         end_points['sa1_inds'] = sa1_inds        
-        end_points['sa1_obj_logits'] = sa1_obj_logits                     
+        
         
         end_points['fp2_inds'] = layers.Concatenate(axis=1)([seed_inds1, seed_inds2])      
         
