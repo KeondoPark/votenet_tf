@@ -16,6 +16,7 @@ from load_scannet_data import export, export_with_2dseg, export_2dseg_results
 import pdb
 import tensorflow as tf
 
+
 SCANNET_DIR = 'scans'
 EXPORTED_2D_DIR = 'frames_square'
 TRAIN_SCAN_NAMES = [line.rstrip() for line in open('meta_data/scannet_train.txt')]
@@ -23,9 +24,14 @@ LABEL_MAP_FILE = 'meta_data/scannetv2-labels.combined.tsv'
 DONOTCARE_CLASS_IDS = np.array([])
 OBJ_CLASS_IDS = np.array([3,4,5,6,7,8,9,10,11,12,14,16,24,28,33,34,36,39])
 MAX_NUM_POINT = 50000
-OUTPUT_FOLDER = './scannet_train_detection_data'
+OUTPUT_FOLDER = './rs_scannet_train_detection_data'
 #OUTPUT_FOLDER = './scannet_train_detection_data_painted'
 OUTPUT_2DSEG_FOLDER = './semantic_2d_results'
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.join(BASE_DIR, '../models'))
+import tensorflow as tf
+import repsurf_utils_tf
 
 def export_one_scan(scan_name, output_filename_prefix):    
     mesh_file = os.path.join(SCANNET_DIR, scan_name, scan_name + '_vh_clean_2.ply')
@@ -49,16 +55,38 @@ def export_one_scan(scan_name, output_filename_prefix):
     print('Num of care instances: ', instance_bboxes.shape[0])
 
     N = mesh_vertices.shape[0]
-    if N > MAX_NUM_POINT:
-        choices = np.random.choice(N, MAX_NUM_POINT, replace=False)
+    if N > MAX_NUM_POINT: 
+        num_point = MAX_NUM_POINT
+        choices = np.random.choice(N, num_point, replace=False)
+        choices = np.sort(choices)
         mesh_vertices = mesh_vertices[choices, :]
         semantic_labels = semantic_labels[choices]
         instance_labels = instance_labels[choices]
+
+        offset = tf.convert_to_tensor(np.arange(num_point // 2000)*2000 + 2000, dtype=tf.int32)
+        offset = tf.expand_dims(offset, axis=0)
+
+    elif N < MAX_NUM_POINT:
+        print(f"point cloud has {N} points!")
+        num_point = N        
+        rem = num_point % 2000
+        offset = np.arange(num_point // 2000)*2000 + 2000
+        offset[-1] += rem
+        offset = tf.convert_to_tensor(offset, dtype=tf.int32)
+        offset = tf.expand_dims(offset, axis=0)
+        
+    xyz = tf.convert_to_tensor(mesh_vertices[:, 0:3])
+    xyz = tf.expand_dims(xyz, axis=0)            
+
+    umb_extractor = repsurf_utils_tf.UmbrellaSurface_Extractor(k=9)
+    repsurf_feature = umb_extractor(xyz, offset)
+    repsurf_feature = np.squeeze(repsurf_feature.numpy(), axis=0)
 
     np.save(output_filename_prefix+'_vert.npy', mesh_vertices)
     np.save(output_filename_prefix+'_sem_label.npy', semantic_labels)
     np.save(output_filename_prefix+'_ins_label.npy', instance_labels)
     np.save(output_filename_prefix+'_bbox.npy', instance_bboxes)
+    np.save(output_filename_prefix+'_repsurf.npy', repsurf_feature)
 
 def export_one_scan_with_2dseg(scan_name, output_filename_prefix):    
     mesh_file = os.path.join(SCANNET_DIR, scan_name, scan_name + '_vh_clean_2.ply')
@@ -102,7 +130,7 @@ def batch_export():
         print('Creating new data folder: {}'.format(OUTPUT_FOLDER))                
         os.mkdir(OUTPUT_FOLDER)        
 
-    exported_scan_dir = os.path.join(EXPORTED_2D_DIR, scan_name)
+    # exported_scan_dir = os.path.join(EXPORTED_2D_DIR, scan_name)
         
     for scan_name in TRAIN_SCAN_NAMES:
         print('-'*20+'begin')
@@ -112,11 +140,9 @@ def batch_export():
         if os.path.isfile(output_filename_prefix+'_vert.npy'):
             print('File already exists. skipping.')
             print('-'*20+'done')
-            continue
-        try:            
-            export_one_scan(scan_name, output_filename_prefix)
-        except:
-            print('Failed export scan: %s'%(scan_name))                    
+            continue        
+        export_one_scan(scan_name, output_filename_prefix)
+        
         print('-'*20+'done')
 
 def save_2dsemantic_results():
@@ -151,5 +177,5 @@ def save_2dsemantic_results():
 
 if __name__=='__main__':    
     batch_export()
-    save_2dsemantic_results()
+    # save_2dsemantic_results()
 

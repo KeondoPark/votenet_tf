@@ -17,7 +17,7 @@ sys.path.append(ROOT_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 sys.path.append(os.path.join(ROOT_DIR, 'pointnet2'))
 
-from pointnet2_modules_tf import PointnetSAModuleVotes, PointnetFPModule, SamplingAndGrouping, PointnetMLP, SamplingAndAttention
+from pointnet2_modules_tf import PointnetSAModuleVotes, PointnetFPModule, SamplingAndGrouping, PointnetMLP, SurfPointnetMLP
 from deeplab.deeplab import run_semantic_seg, run_semantic_seg_tflite
 from tf_ops.sampling import tf_sampling
 from tf_ops.grouping import tf_grouping
@@ -41,6 +41,7 @@ class Pointnet2Backbone(layers.Layer):
         use_fp_mlp = model_config['use_fp_mlp']
         self.use_painted = model_config['use_painted']
         self.umb_learner = repsurf_utils_tf.UmbrellaSurface_Learner(act=model_config['activation'])
+        # self.umb_constructor = repsurf_utils_tf.UmbrellaSurfaceConstructor(k=9, out_channel=10, act=model_config['activation'])
 
         self.sa1 = PointnetSAModuleVotes(
                 npoint=2048,
@@ -126,6 +127,13 @@ class Pointnet2Backbone(layers.Layer):
         xyz, features = self._break_up_pc(pointcloud)
         
         repsurf_feature = self.umb_learner(repsurf_feature)        
+        # B = tf.shape(xyz)[0]
+        # N = tf.shape(xyz)[1]
+        
+        # offset = tf.cast(tf.range(N // 5000)*5000 + 5000, dtype=tf.int32)
+        # offset = tf.tile(tf.expand_dims(offset,0), [B,1])
+        # repsurf_feature = self.umb_constructor(xyz, offset)
+
         features = layers.Concatenate(axis=-1)([features, repsurf_feature])
 
         # --------- 4 SET ABSTRACTION LAYERS ---------
@@ -200,20 +208,21 @@ class Pointnet2Backbone_p(layers.Layer):
         use_fp_mlp = model_config['use_fp_mlp']
         self.bfps_wght = model_config["bfps_wght"]
         self.umb_learner = repsurf_utils_tf.UmbrellaSurface_Learner(act=model_config['activation'])
+        radius = model_config["radius"] if "radius" in model_config else [0.2,0.4,0.8,1.2]
 
         self.sa1 = SamplingAndGrouping(
                 npoint=1024,
-                radius=0.2,
+                radius=radius[0],
                 nsample=64,                
                 use_xyz=True,
                 normalize_xyz=True,
                 return_polar=True
             )
-        self.sa1_mlp = SurfPointnetMLP(mlp=[input_feature_dim, 64, 64, 128], nsample=64, model_config=model_config)        
+        self.sa1_mlp = SurfPointnetMLP(mlp=[input_feature_dim, 64, 64, 128], nsample=64, model_config=model_config, repsurf_channel=10)        
         
         self.sa2 = SamplingAndGrouping(
                 npoint=512,
-                radius=0.4,
+                radius=radius[1],
                 nsample=32,                
                 use_xyz=True,
                 normalize_xyz=True,
@@ -223,7 +232,7 @@ class Pointnet2Backbone_p(layers.Layer):
 
         self.sa3 = SamplingAndGrouping(
                 npoint=256,
-                radius=0.8,
+                radius=radius[2],
                 nsample=16,                
                 use_xyz=True,
                 normalize_xyz=True,
@@ -233,7 +242,7 @@ class Pointnet2Backbone_p(layers.Layer):
         
         self.sa4 = SamplingAndGrouping(
                 npoint=256,
-                radius=1.2,
+                radius=radius[3],
                 nsample=16,                
                 use_xyz=True,
                 normalize_xyz=True,
@@ -302,8 +311,15 @@ class Pointnet2Backbone_p(layers.Layer):
         """        
         if not end_points: end_points = {}        
         xyz, isPainted, features = self._break_up_pc(pointcloud)
+
+        # --------- RepSurf preprocessing ---------
         
-        repsurf_feature = self.umb_learner(repsurf_feature)        
+        B = tf.shape(xyz)[0]
+        # offset = tf.convert_to_tensor(np.arange(num_point // 5000)*5000 + 5000, dtype=tf.int32)
+        # offset = tf.tile(tf.expand_dims(offset,0), [B,1])
+        # repsurf_feature = self.umb_constructor(xyz, offset)
+
+        repsurf_feature = self.umb_learner(repsurf_feature)  
         features = layers.Concatenate(axis=-1)([features, repsurf_feature])
         
         # --------- 4 SET ABSTRACTION LAYERS ---------
@@ -317,7 +333,7 @@ class Pointnet2Backbone_p(layers.Layer):
         # Remove sampled points from xyz
         new_xyz, new_isPainted, new_features, mask = self._remove_sampled(xyz, sa1_inds1, isPainted, features)             
         
-        sa1_obj_logits1, sa1_features1 = self.sa1_mlp(sa1_grp_feats1)        
+        sa1_features1 = self.sa1_mlp(sa1_grp_feats1)        
 
         time_record.append(("SA1 MLP 1:", time.time()))
         
@@ -326,7 +342,7 @@ class Pointnet2Backbone_p(layers.Layer):
                 xyz_ball=xyz, features_ball=features)        
         time_record.append(("SA1 sampling and grouping 2:", time.time()))        
 
-        sa1_obj_logits2, sa1_features2 = self.sa1_mlp(sa1_grp_feats2)          
+        sa1_features2 = self.sa1_mlp(sa1_grp_feats2)          
         time_record.append(("SA1 MLP 2:", time.time()))     
 
         
@@ -335,11 +351,11 @@ class Pointnet2Backbone_p(layers.Layer):
 
         sa1_xyz = layers.Concatenate(axis=1)([sa1_xyz1, sa1_xyz2])
         sa1_features = layers.Concatenate(axis=1)([sa1_features1, sa1_features2])
-        sa1_obj_logits = layers.Concatenate(axis=1)([sa1_obj_logits1, sa1_obj_logits2])
+        # sa1_obj_logits = layers.Concatenate(axis=1)([sa1_obj_logits1, sa1_obj_logits2])
         
-        sa1_painted = tf.cast(tf.keras.activations.relu(tf.sign(sa1_obj_logits)), tf.int32)
-        sa1_painted1 = sa1_painted[:,:1024]
-        sa1_painted2 = sa1_painted[:,1024:]
+        # sa1_painted = tf.cast(tf.keras.activations.relu(tf.sign(sa1_obj_logits)), tf.int32)
+        # sa1_painted1 = sa1_painted[:,:1024]
+        # sa1_painted2 = sa1_painted[:,1024:]
         
         # ------------------------------- SA2-------------------------------        
         sa2_xyz1, sa2_inds1, sa2_grp_feats1, sa2_painted1 \
@@ -429,7 +445,7 @@ class Pointnet2Backbone_p(layers.Layer):
         
         end_points['sa1_xyz'] = sa1_xyz        
         end_points['sa1_inds'] = sa1_inds        
-        end_points['sa1_obj_logits'] = sa1_obj_logits                     
+        # end_points['sa1_obj_logits'] = sa1_obj_logits                     
         
         end_points['fp2_inds'] = layers.Concatenate(axis=1)([seed_inds1, seed_inds2])      
         
@@ -817,3 +833,4 @@ if __name__=='__main__':
     print(out)
     for key in sorted(out.keys()):
         print(key, '\t', out[key].shape)
+

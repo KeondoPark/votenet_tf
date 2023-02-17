@@ -22,5 +22,9 @@ returns:
     idx: B, M, k         int32
     dist: B, M, k        float32
     '''
+    B = tf.shape(xyz)[0]
+    # for i in range(B):
+    #     assert tf.math.equal(offset[i,-1], xyz.shape[1]), "The number of points in xyz should match the last element of offset"
+    #     assert tf.math.equal(new_offset[i,-1], new_xyz.shape[1]), "The number of points in new_xyz should match the last element of new_offset"
     return sampling_module.knn_sample(xyz, new_xyz, offset, new_offset, k)
 ops.NoGradient('KnnSample')

@@ -51,8 +51,10 @@ class PointnetSAModuleVotes(layers.Layer):
             sample_uniformly: bool = False,
             ret_unique_cnt: bool = False,
             model_config = None,
-            layer_name = 'sa1',
-            use_repsurf = True
+            layer_name: str = 'sa1',
+            use_repsurf: bool = True,
+            pos_channel: int = 6,
+            repsurf_channel: int = 0
     ):
         super().__init__()
 
@@ -69,7 +71,8 @@ class PointnetSAModuleVotes(layers.Layer):
         self.ret_unique_cnt = ret_unique_cnt
         self.layer_name = layer_name
         self.use_repsurf = use_repsurf
-        self.pos_channel = 6 # 3 (coords) + 3(polar coords)
+        self.pos_channel = pos_channel # 3 (coords) + 3(polar coords)
+        self.repsurf_channel = repsurf_channel
 
         if npoint is not None:
             self.grouper = pointnet2_utils_tf.QueryAndGroup(radius, nsample,
@@ -108,6 +111,10 @@ class PointnetSAModuleVotes(layers.Layer):
             self.mlp_f0 = layers.Conv2D(mlp_spec[1], 1)
             self.bn_l0 = layers.BatchNormalization(axis=-1)
             self.bn_f0 = layers.BatchNormalization(axis=-1)
+
+            if repsurf_channel > 0:
+                self.mlp_rf0 = layers.Conv2D(mlp_spec[1], 1)
+                self.bn_rf0 = layers.BatchNormalization(axis=-1)
             
             maxval = 6 if act == 'relu6' else None           
             self.relu0 = layers.ReLU(maxval)
@@ -182,11 +189,23 @@ class PointnetSAModuleVotes(layers.Layer):
             time_record.append((f"{self.layer_name} Runtime for Sampling and Grouping:", time.time()))
 
             if self.use_repsurf:
-                loc = grouped_features[:,:,:,:self.pos_channel]
-                feat = grouped_features[:,:,:,self.pos_channel:]        
-
+                loc = grouped_features[:,:,:,:self.pos_channel]                
                 loc = self.bn_l0(self.mlp_l0(loc))
-                feat = self.bn_f0(self.mlp_f0(feat))
+
+                # feat = grouped_features[:,:,:,self.pos_channel:]        
+                # feat = self.bn_f0(self.mlp_f0(feat))
+
+                if self.repsurf_channel > 0:
+                    feat = grouped_features[:,:,:,self.pos_channel:-self.repsurf_channel]
+                    feat = self.bn_f0(self.mlp_f0(feat))
+                    repsurf_feat = grouped_features[:,:,:,-self.repsurf_channel:]
+                    repsurf_feat = self.bn_rf0(self.mlp_rf0(repsurf_feat))
+                    grouped_features = loc + feat + repsurf_feat            
+
+                else:
+                    feat = grouped_features[:,:,:,self.pos_channel:]
+                    feat = self.bn_f0(self.mlp_f0(feat))
+                    grouped_features = loc + feat  
 
                 grouped_features = loc + feat
                 grouped_features = self.relu0(grouped_features)
@@ -292,28 +311,28 @@ class SamplingAndGrouping(layers.Layer):
                 xyz, inds
             ) if self.npoint is not None else None
 
-            if self.return_polar:
-                xyz_polar = repsurf_utils_tf.xyz2sphere(xyz)
-                # new_xyz_polar = tf_sampling.gather_point(
-                #     xyz_polar, inds
-                # ) if self.npoint is not None else None
-
-                features = layers.Concatenate(axis=-1)([xyz_polar, features])
-
         if not self.ret_unique_cnt:      
             if xyz_ball is None and features_ball is None:
+                if self.return_polar:
+                    xyz_polar = repsurf_utils_tf.xyz2sphere(xyz)
+
+                    features = layers.Concatenate(axis=-1)([xyz_polar, features])
+
                 grouped_features = self.grouper(
                     xyz, new_xyz, features, ball_inds=ball_inds            
                 )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)
             else:
+                if self.return_polar:
+                    xyz_polar = repsurf_utils_tf.xyz2sphere(xyz_ball)
+                    features_ball = layers.Concatenate(axis=-1)([xyz_polar, features_ball])
+
                 grouped_features = self.grouper(
                     xyz_ball, new_xyz, features_ball, ball_inds=ball_inds        
                 )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)
         else:
             grouped_features, unique_cnt = self.grouper(            
                 xyz, new_xyz, features
-            )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)
-        
+            )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)        
 
         if not self.ret_unique_cnt:            
             return new_xyz, inds, grouped_features, isPainted
@@ -385,13 +404,16 @@ class SurfPointnetMLP(layers.Layer):
             use_xyz: bool = True,                                    
             mlp: List[int], 
             bn: bool = True, 
-            model_config = None            
+            model_config = None,
+            pos_channel: int = 6,
+            repsurf_channel: int = 0
     ):
         super().__init__()
 
         self.nsample = nsample        
         self.npoint = npoint
-        self.pos_channel = 6 # euclidean + polar coordinates
+        self.pos_channel = pos_channel # euclidean + polar coordinates
+        self.repsurf_channel = repsurf_channel
 
         mlp_spec = mlp
         if use_xyz and len(mlp_spec)>0:
@@ -402,11 +424,14 @@ class SurfPointnetMLP(layers.Layer):
         self.mlp_f0 = layers.Conv2D(mlp_spec[1], 1)
         self.bn_l0 = layers.BatchNormalization(axis=-1)
         self.bn_f0 = layers.BatchNormalization(axis=-1)
+        if repsurf_channel > 0:
+            self.mlp_rf0 = layers.Conv2D(mlp_spec[1], 1)
+            self.bn_rf0 = layers.BatchNormalization(axis=-1)
         
         maxval = 6 if act == 'relu6' else None           
         self.relu0 = layers.ReLU(maxval)
 
-        self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=bn, activation=act, input_shape=[npoint, nsample, mlp_spec[0]], add_logit_branch=add_logit_branch)        
+        self.mlp_module = tf_utils.SharedMLP(mlp_spec, bn=bn, activation=act, input_shape=[npoint, nsample, mlp_spec[0]])        
         self.max_pool = layers.MaxPooling2D(pool_size=(1, 16), strides=(1,16), data_format="channels_last")
         self.max_pool2 = layers.MaxPooling2D(pool_size=(1, int(self.nsample/16)), strides=(1,int(self.nsample/16)), data_format="channels_last")        
 
@@ -414,14 +439,21 @@ class SurfPointnetMLP(layers.Layer):
     def call(self, features):
 
         loc = features[:,:,:,:self.pos_channel]
-        feat = features[:,:,:,self.pos_channel:]        
-
         loc = self.bn_l0(self.mlp_l0(loc))
-        feat = self.bn_f0(self.mlp_f0(feat))
 
-        grouped_features = loc + feat
+        if self.repsurf_channel > 0:
+            feat = features[:,:,:,self.pos_channel:-self.repsurf_channel]
+            feat = self.bn_f0(self.mlp_f0(feat))
+            repsurf_feat = features[:,:,:,-self.repsurf_channel:]
+            repsurf_feat = self.bn_rf0(self.mlp_rf0(repsurf_feat))
+            grouped_features = loc + feat + repsurf_feat            
+
+        else:
+            feat = features[:,:,:,self.pos_channel:]
+            feat = self.bn_f0(self.mlp_f0(feat))
+            grouped_features = loc + feat            
+        
         grouped_features = self.relu0(grouped_features)
-
         new_features = self.mlp_module(grouped_features)
 
         if self.nsample == 16:

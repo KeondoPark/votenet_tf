@@ -105,6 +105,9 @@ __global__ void knnquery_cuda_kernel(int b,
         else
             start = offset[bt_idx - 1];
         int end = offset[bt_idx];
+        if (end > n){
+            end = n;
+        }
 
         float new_x = new_xyz[j*3 + 0];
         float new_y = new_xyz[j*3 + 1];

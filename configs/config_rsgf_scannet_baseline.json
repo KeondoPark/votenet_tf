@@ -1,0 +1,13 @@
+{    
+    "model_id": "rsgf_scannet_baseline4",
+    "dataset": "scannet",
+    "use_painted": false,   
+    "two_way": false,       
+    "use_fp_mlp": true, 
+    "q_gran": "layer",
+    "activation":"relu",
+    "use_tflite": false,
+    "tflite_folder": "tflite/tflite_models/rsgf_scannet_baseline",    
+    "use_edgetpu": false,        
+    "use_multiThr": false
+}
