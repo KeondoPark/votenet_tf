@@ -342,8 +342,8 @@ CONFIG_DICT = {'remove_empty_box':False, 'use_3d_nms':True,
 
 label_dict = {0:'point_cloud', 1:'center_label', 2:'heading_class_label', 3:'heading_residual_label', \
               4:'size_class_label', 5:'size_residual_label', 6:'sem_cls_label', 7:'box_label_mask', \
-              8:'point_obj_mask', 9:'point_instance_label', 10: 'max_gt_bboxes', 11: 'size_gts', \
-              12:'repsurf_feature'}
+              8:'point_obj_mask', 9:'point_instance_label', 10: 'max_gt_bboxes', 11: 'size_gts', }\
+            #   12:'repsurf_feature'}
 
 
 def torch_to_tf_data(batch_data):

@@ -139,14 +139,14 @@ def group_by_umbrella_v2(xyz, new_xyz, offset, new_offset, k=9):
     :return: [N', K-1, 3, 3]
     """
     M = new_xyz.shape[1]
-    group_idx, _ = knn_sample(xyz, new_xyz, offset, new_offset, k)  # (B, M, K)        
+    group_idx, _ = knn_sample(xyz, new_xyz, offset, new_offset, k)  # (B, M, K)            
     group_idx = group_idx[:,:,1:]# prevent the center point itself is included in the group    
     # xyz_tile = tf.tile(tf.expand_dims(xyz, -3), [1,M,1,1])
     
     
     #axis: xyz_tile's shape, batch_dims: indices's shape
     # group_xyz = tf.gather(xyz, axis=-2, indices=group_idx, batch_dims=-1) #(B, M, K, 3)     
-    group_xyz = tf_grouping.group_point(xyz, group_idx)    
+    group_xyz = tf_grouping.group_point(xyz, group_idx)        
     
     group_xyz_norm = group_xyz - tf.tile(tf.expand_dims(new_xyz, axis=-2),[1,1,k-1,1]) #(B, M, K, 3)
     group_phi = xyz2sphere(_fixed_rotate(group_xyz_norm))[..., 2]  # (B, M, K)
@@ -309,7 +309,7 @@ class UmbrellaSurfaceConstructor(layers.Layer):
     Umbrella Surface Representation Constructor
     """
 
-    def __init__(self, k, out_channel, random_inv=True, sort='fix', act='relu'):
+    def __init__(self, k=9, out_channel=10, random_inv=True, sort='fix', act='relu'):
         super(UmbrellaSurfaceConstructor, self).__init__()
         self.k = k
         self.random_inv = random_inv
@@ -412,11 +412,11 @@ class UmbrellaSurface_Extractor(layers.Layer):
         '''
         center: poincloud (B, N, 3)
         offset: secion in pointcloud (int) (B, S)
-        '''
+        '''        
         # umbrella surface reconstruction
         group_xyz = self.sort_func(center, center, offset, offset, k=self.k)  # [N, K-1, 3 (points), 3 (coord.)]
         # (B, M, K, 3, 3)
-
+        
         # normal
         group_normal = cal_normal(group_xyz, random_inv=self.random_inv, is_group=True)
         # (B, M, K, 3)

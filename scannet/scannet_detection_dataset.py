@@ -40,7 +40,7 @@ class ScannetDetectionDataset(Dataset):
         #if self.use_painted:
         #    self.data_path = os.path.join(BASE_DIR, 'scannet_train_detection_data_painted')
         #else:
-        self.data_path = os.path.join(BASE_DIR, 'scannet_train_detection_data')
+        self.data_path = os.path.join(BASE_DIR, 'rs_scannet_train_detection_data')
         all_scan_names = list(set([os.path.basename(x)[0:12] \
             for x in os.listdir(self.data_path) if x.startswith('scene')]))
         if split_set=='all':            
@@ -64,23 +64,27 @@ class ScannetDetectionDataset(Dataset):
         instance_labels_list = []
         semantic_labels_list = []
         instance_bboxes_list = []
+        repsurf_feature_list = []
         for scan_name in self.scan_names:
             mesh_vertices = np.load(os.path.join(self.data_path, scan_name) + '_vert.npy')
             instance_labels = np.load(os.path.join(self.data_path, scan_name) + '_ins_label.npy')
             semantic_labels = np.load(os.path.join(self.data_path, scan_name) + '_sem_label.npy')
             instance_bboxes = np.load(os.path.join(self.data_path, scan_name) + '_bbox.npy')
+            # repsurf_feature = np.load(os.path.join(self.data_path, scan_name) + '_repsurf.npy')
             mesh_vertices_list.append(mesh_vertices)
             instance_labels_list.append(instance_labels)
             semantic_labels_list.append(semantic_labels)
             instance_bboxes_list.append(instance_bboxes)
+            # repsurf_feature_list.append(repsurf_feature)
 
         self.mesh_vertices_list = mesh_vertices_list
         self.instance_labels_list = instance_labels_list
         self.semantic_labels_list = semantic_labels_list
         self.instance_bboxes_list = instance_bboxes_list
+        # self.repsurf_feature_list = repsurf_feature_list
         
-        self.seed = 1111
-        
+        if split_set == 'val':
+            self.seed = 2481757        
         
         self.num_points = num_points
         self.use_color = use_color        
@@ -112,7 +116,9 @@ class ScannetDetectionDataset(Dataset):
         instance_labels = self.instance_labels_list[idx]
         semantic_labels = self.semantic_labels_list[idx]
         instance_bboxes = self.instance_bboxes_list[idx]   
+        # repsurf_feature = self.repsurf_feature_list[idx]
         scan_name = self.scan_names[idx]
+        repsurf_feature = np.load(os.path.join(self.data_path, scan_name) + '_repsurf.npy')
 
         if not self.use_color:
             point_cloud = mesh_vertices[:,0:3]  #[:,0:3] # do not use color for now
@@ -138,9 +144,10 @@ class ScannetDetectionDataset(Dataset):
         size_gts = np.zeros((MAX_NUM_OBJ, 3))
         
         point_cloud, choices = pc_util.random_sampling(point_cloud,
-            self.num_points, return_choices=True, seed=self.seed)        
+            self.num_points, return_choices=True)        
         instance_labels = instance_labels[choices]
         semantic_labels = semantic_labels[choices]
+        repsurf_feature = repsurf_feature[choices]
 
         # ------------------------------- POINT PAINTING ------------------------------        
         # Load scene axis alignment matrix
@@ -263,21 +270,40 @@ class ScannetDetectionDataset(Dataset):
         
         # ------------------------------- DATA AUGMENTATION ------------------------------        
         if self.augment:
+            #RepSurf: group_polar, group_normal, group_pos, group_center (N, K, 3+3+1+3)
+            group_polar = repsurf_feature[:,:,0:3]
+            group_normal = repsurf_feature[:,:,3:6]
+            group_pos = repsurf_feature[:,:,6,None]
+            group_center = repsurf_feature[:,:,7:]
+
             if np.random.random() > 0.5:
                 # Flipping along the YZ plane
                 point_cloud[:,0] = -1 * point_cloud[:,0]
-                target_bboxes[:,0] = -1 * target_bboxes[:,0]                
-                
+                target_bboxes[:,0] = -1 * target_bboxes[:,0]   
+                # poalr cooridnates are assumed to be normalized
+                group_polar[:,:,2] = 0.5 - group_polar[:,:,2] + (group_polar[:,:,2] > 0.5).astype(np.float32)
+                group_normal[:,:,0] =  -1 * group_normal[:,:,0]
+                group_center[:,:,0] =  -1 * group_center[:,:,0]
+
             if np.random.random() > 0.5:
                 # Flipping along the XZ plane
                 point_cloud[:,1] = -1 * point_cloud[:,1]
-                target_bboxes[:,1] = -1 * target_bboxes[:,1]                                
+                target_bboxes[:,1] = -1 * target_bboxes[:,1]                            
+                group_polar[:,:,2] = -1 * group_polar[:,:,2]
+                group_normal[:,:,1] =  -1 * group_normal[:,:,1]
+                group_center[:,:,1] =  -1 * group_center[:,:,1]
             
             # Rotation along up-axis/Z-axis
             rot_angle = (np.random.random()*np.pi/18) - np.pi/36 # -5 ~ +5 degree
             rot_mat = pc_util.rotz(rot_angle)
             point_cloud[:,0:3] = np.dot(point_cloud[:,0:3], np.transpose(rot_mat))
             target_bboxes = rotate_aligned_boxes(target_bboxes, rot_mat)
+            # poalr cooridnates are assumed to be normalized
+            group_polar[:,:,2] += rot_angle / (2*np.pi)
+            group_normal = np.dot(group_normal, np.transpose(rot_mat))
+            group_center = np.dot(group_center, np.transpose(rot_mat))
+
+            repsurf_feature = np.concatenate([group_polar, group_normal, group_pos, group_center], axis=-1)
 
         gt_centers = target_bboxes[:, 0:3]
         gt_centers[instance_bboxes.shape[0]:, :] += 1000.0  # padding centers with a large number
@@ -325,6 +351,7 @@ class ScannetDetectionDataset(Dataset):
         ret_dict['point_instance_label'] = point_instance_label.astype(np.int64)
         ret_dict['size_gts'] = size_gts.astype(np.float32)
         ret_dict['scan_idx'] = np.array(idx).astype(np.int64)
+        ret_dict['repsurf_feature'] = repsurf_feature.astype(np.float32)
         #ret_dict['pcl_color'] = pcl_color
         return ret_dict
         

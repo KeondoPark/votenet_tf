@@ -37,7 +37,7 @@ def random_sampling(pc, num_sample, replace=None, return_choices=False, seed=Non
     """    
     if seed is not None:
         np.random.seed(seed)
-    if replace is None: replace = (pc.shape[0]<num_sample)
+    if replace is None: replace = (pc.shape[0]<num_sample)    
     choices = np.random.choice(pc.shape[0], num_sample, replace=replace)
     if return_choices:
         return pc[choices], choices

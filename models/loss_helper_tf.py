@@ -379,7 +379,8 @@ def get_loss(end_points, config, num_decoder_layers,
         query_points_generation_loss = 0.0
 
     if 'sa1_obj_logits' in end_points.keys():
-        sa1_obj_loss, end_points = compute_sa1_obj_loss_hard_topk(end_points, query_points_obj_topk)        
+        # sa1_obj_loss, end_points = compute_sa1_obj_loss_hard_topk(end_points, query_points_obj_topk)        
+        sa1_obj_loss = 0.0
         end_points['sa1_obj_loss'] = sa1_obj_loss
     else:
         sa1_obj_loss = 0.0
