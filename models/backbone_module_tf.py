@@ -52,7 +52,8 @@ class Pointnet2Backbone(layers.Layer):
                 normalize_xyz=True,
                 model_config=model_config,
                 use_repsurf=True,
-                layer_name='sa1'
+                layer_name='sa1',
+                repsurf_channel=10
             )
 
         self.sa2 = PointnetSAModuleVotes(
@@ -210,6 +211,10 @@ class Pointnet2Backbone_p(layers.Layer):
         self.umb_learner = repsurf_utils_tf.UmbrellaSurface_Learner(act=model_config['activation'])
         radius = model_config["radius"] if "radius" in model_config else [0.2,0.4,0.8,1.2]
 
+        self.random_split = False
+        if "random_split" in model_config:
+            self.random_split =  model_config["random_split"]
+
         self.sa1 = SamplingAndGrouping(
                 npoint=1024,
                 radius=radius[0],
@@ -310,17 +315,44 @@ class Pointnet2Backbone_p(layers.Layer):
                 XXX-inds: int64 Tensor of shape (B,K) values in [0,N-1]
         """        
         if not end_points: end_points = {}        
+
+        B = tf.shape(pointcloud)[0]
+        N = tf.shape(pointcloud)[1]
+
+        repsurf_feature = self.umb_learner(repsurf_feature)  
+        
+
+        if self.random_split:            
+            all_indices = tf.random.shuffle(tf.range(N))
+            choice_indices1 = all_indices[:N//2]
+            choice_indices1 = tf.tile(tf.expand_dims(choice_indices1,0), [B,1])
+            choice_indices2 = all_indices[N//2:]
+            choice_indices2 = tf.tile(tf.expand_dims(choice_indices2,0), [B,1])
+            
+            pointcloud1 = tf.gather(pointcloud, indices=choice_indices1, axis=1, batch_dims=1)
+            pointcloud2 = tf.gather(pointcloud, indices=choice_indices2, axis=1, batch_dims=1)
+            repsurf_feature1 = tf.gather(repsurf_feature, indices=choice_indices1, axis=1, batch_dims=1)
+            repsurf_feature2 = tf.gather(repsurf_feature, indices=choice_indices2, axis=1, batch_dims=1)
+
+            xyz1, isPainted1, features1 = self._break_up_pc(pointcloud1)
+            xyz2, isPainted2, features2 = self._break_up_pc(pointcloud2)
+
+            features1 = layers.Concatenate(axis=-1)([features1, repsurf_feature1])
+            features2 = layers.Concatenate(axis=-1)([features2, repsurf_feature2])
+
+            xyz, isPainted, features = xyz1, isPainted1, features1
+
+        else:
+            xyz, isPainted, features = self._break_up_pc(pointcloud) 
+            features = layers.Concatenate(axis=-1)([features, repsurf_feature])
+
+
         xyz, isPainted, features = self._break_up_pc(pointcloud)
 
         # --------- RepSurf preprocessing ---------
-        
-        B = tf.shape(xyz)[0]
         # offset = tf.convert_to_tensor(np.arange(num_point // 5000)*5000 + 5000, dtype=tf.int32)
         # offset = tf.tile(tf.expand_dims(offset,0), [B,1])
-        # repsurf_feature = self.umb_constructor(xyz, offset)
-
-        repsurf_feature = self.umb_learner(repsurf_feature)  
-        features = layers.Concatenate(axis=-1)([features, repsurf_feature])
+        # repsurf_feature = self.umb_constructor(xyz, offset)        
         
         # --------- 4 SET ABSTRACTION LAYERS ---------
         # ------------------------------- SA1-------------------------------                
@@ -330,8 +362,13 @@ class Pointnet2Backbone_p(layers.Layer):
         sa1_xyz1, sa1_inds1, sa1_grp_feats1, sa1_painted1 = self.sa1(xyz, isPainted, features, bg1=True, wght1=1)
         time_record.append(("SA1 sampling and grouping 1:", time.time()))        
 
-        # Remove sampled points from xyz
-        new_xyz, new_isPainted, new_features, mask = self._remove_sampled(xyz, sa1_inds1, isPainted, features)             
+        if self.random_split:
+            new_xyz, new_isPainted, new_features = xyz2, isPainted2, features2
+            xyz = tf.concat([xyz1, xyz2], axis=1)            
+            features = tf.concat([features1, features2], axis=1)            
+        else:
+            # Remove sampled points from xyz
+            new_xyz, new_isPainted, new_features, mask = self._remove_sampled(xyz, sa1_inds1, isPainted, features)            
         
         sa1_features1 = self.sa1_mlp(sa1_grp_feats1)        
 

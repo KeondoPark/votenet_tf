@@ -1,5 +1,5 @@
 {    
-    "model_id": "rsgf_scannet_1way_fp2",
+    "model_id": "rsgf_scannet_1way3",
     "dataset": "scannet",
     "use_painted": true,   
     "two_way": false,       
