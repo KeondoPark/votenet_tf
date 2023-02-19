@@ -1,5 +1,5 @@
 {    
-    "model_id": "rsgf_2way3", 
+    "model_id": "rsgf_2way_random_split", 
     "dataset": "sunrgbd",
     "use_painted": true,   
     "two_way": true,       
@@ -11,5 +11,6 @@
     "tflite_folder": "tflite/tflite_models/rsgf_2way",    
     "use_edgetpu": false,    
     "use_multiThr": false,
-    "bfps_wght": [4,4,1,1]
+    "bfps_wght": [1,1,1,1],
+    "random_split": true
 }
