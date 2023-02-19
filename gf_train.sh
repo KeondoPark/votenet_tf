@@ -55,9 +55,9 @@ CUDA_VISIBLE_DEVICES=1 python train_tf.py --config_path configs/config_gf_scanne
                        
 
 # scannet 1way
-CUDA_VISIBLE_DEVICES=1 python train_tf.py --config_path configs/config_rsgf_scannet_1way.json \
+CUDA_VISIBLE_DEVICES=0 python train_tf.py --config_path configs/config_rsgf_scannet_1way.json \
                        --num_point 50000 --num_decoder_layers 6 --size_delta 0.1111111111 --center_delta 0.04 \
-                       --learning_rate 0.006 --decoder_learning_rate 0.0006 --weight_decay 0.0005 --optimizer adamw \
+                       --learning_rate 0.006 --decoder_learning_rate 0.0006 --weight_decay 0.0003 --optimizer adamw \
                        --lr_decay_rates 0.1,0.1 --lr_decay_steps 210,255 \
                        --decoder_lr_decay_rates 0.1,0.1 --decoder_lr_decay_steps 210,255 --batch_size 8
 
@@ -65,7 +65,7 @@ CUDA_VISIBLE_DEVICES=1 python train_tf.py --config_path configs/config_rsgf_scan
 # scannet 2way
 CUDA_VISIBLE_DEVICES=2 python train_tf.py --config_path configs/config_rsgf_scannet_2way.json \
                        --num_point 50000 --num_decoder_layers 6 --size_delta 0.1111111111 --center_delta 0.04 \
-                       --learning_rate 0.006 --decoder_learning_rate 0.0006 --weight_decay 0.0005 --optimizer adamw \
+                       --learning_rate 0.006 --decoder_learning_rate 0.0006 --weight_decay 0.0003 --optimizer adamw \
                        --lr_decay_rates 0.1,0.1 --lr_decay_steps 150,255 \
                        --decoder_lr_decay_rates 0.1,0.1 --decoder_lr_decay_steps 150,255 --batch_size 8
 
