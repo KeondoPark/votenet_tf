@@ -192,10 +192,7 @@ class PointnetSAModuleVotes(layers.Layer):
                 loc = grouped_features[:,:,:,:self.pos_channel]                
                 loc = self.bn_l0(self.mlp_l0(loc))
 
-                # feat = grouped_features[:,:,:,self.pos_channel:]        
-                # feat = self.bn_f0(self.mlp_f0(feat))
-
-                if self.repsurf_channel > 0:
+                if self.repsurf_channel > 0:                
                     feat = grouped_features[:,:,:,self.pos_channel:-self.repsurf_channel]
                     feat = self.bn_f0(self.mlp_f0(feat))
                     repsurf_feat = grouped_features[:,:,:,-self.repsurf_channel:]
@@ -206,8 +203,7 @@ class PointnetSAModuleVotes(layers.Layer):
                     feat = grouped_features[:,:,:,self.pos_channel:]
                     feat = self.bn_f0(self.mlp_f0(feat))
                     grouped_features = loc + feat  
-
-                grouped_features = loc + feat
+                
                 grouped_features = self.relu0(grouped_features)
 
             new_features = self.mlp_module(

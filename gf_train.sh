@@ -28,7 +28,7 @@ CUDA_VISIBLE_DEVICES=2 python train_tf.py --config_path configs/config_rsgf_1way
                        --query_points_generator_loss_coef 0.2 --obj_loss_coef 0.4 --optimizer adamw 
 
 # sunrgbd 2way
-CUDA_VISIBLE_DEVICES=1 python train_tf.py --config_path configs/config_rsgf_2way.json \
+CUDA_VISIBLE_DEVICES=2 python train_tf.py --config_path configs/config_rsgf_2way.json \
                        --max_epoch 300 --lr_decay_steps 150,240,270 --lr_decay_rates 0.1,0.1,0.1 \
                        --decoder_lr_decay_steps 150,240,270 --decoder_lr_decay_rates 0.1,0.1,0.1 \
                        --size_cls_agnostic --size_delta 0.0625 --heading_delta 0.04 --center_delta 0.1111111111111 \
