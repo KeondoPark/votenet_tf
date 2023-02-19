@@ -344,13 +344,7 @@ class Pointnet2Backbone_p(layers.Layer):
 
         else:
             xyz, isPainted, features = self._break_up_pc(pointcloud) 
-            features = layers.Concatenate(axis=-1)([features, repsurf_feature])
-
-
-        # --------- RepSurf preprocessing ---------
-        # offset = tf.convert_to_tensor(np.arange(num_point // 5000)*5000 + 5000, dtype=tf.int32)
-        # offset = tf.tile(tf.expand_dims(offset,0), [B,1])
-        # repsurf_feature = self.umb_constructor(xyz, offset)        
+            features = layers.Concatenate(axis=-1)([features, repsurf_feature])    
         
         # --------- 4 SET ABSTRACTION LAYERS ---------
         # ------------------------------- SA1-------------------------------                
@@ -376,7 +370,7 @@ class Pointnet2Backbone_p(layers.Layer):
             = self.sa1(new_xyz, new_isPainted, new_features, bg1=True, wght1=self.bfps_wght[0], 
                 xyz_ball=xyz, features_ball=features)        
         time_record.append(("SA1 sampling and grouping 2:", time.time()))        
-
+        
         sa1_features2 = self.sa1_mlp(sa1_grp_feats2)          
         time_record.append(("SA1 MLP 2:", time.time()))     
 
@@ -385,12 +379,8 @@ class Pointnet2Backbone_p(layers.Layer):
         # end_points['sa1_painted2'] = sa1_painted2
 
         sa1_xyz = layers.Concatenate(axis=1)([sa1_xyz1, sa1_xyz2])
-        sa1_features = layers.Concatenate(axis=1)([sa1_features1, sa1_features2])
-        # sa1_obj_logits = layers.Concatenate(axis=1)([sa1_obj_logits1, sa1_obj_logits2])
-        
-        # sa1_painted = tf.cast(tf.keras.activations.relu(tf.sign(sa1_obj_logits)), tf.int32)
-        # sa1_painted1 = sa1_painted[:,:1024]
-        # sa1_painted2 = sa1_painted[:,1024:]
+        sa1_features = layers.Concatenate(axis=1)([sa1_features1, sa1_features2])        
+                
         
         # ------------------------------- SA2-------------------------------        
         sa2_xyz1, sa2_inds1, sa2_grp_feats1, sa2_painted1 \
@@ -440,17 +430,6 @@ class Pointnet2Backbone_p(layers.Layer):
             = self.sa4(sa3_xyz, sa3_painted, sa3_features, bg1=True, wght1=self.bfps_wght[3])
         sa4_features = self.sa4_mlp(sa4_grp_feats)
 
-        # end_points['sa1_grouped_features1'] = sa1_grouped_features1
-        # end_points['sa1_grouped_features2'] = sa1_grouped_features2
-
-        # end_points['sa2_grouped_features1'] = sa2_grouped_features1
-        # end_points['sa2_grouped_features2'] = sa2_grouped_features2
-       
-        # end_points['sa3_grouped_features1'] = sa3_grouped_features1
-        # end_points['sa3_grouped_features2'] = sa3_grouped_features2
-
-        # end_points['sa4_grouped_features'] = sa4_grouped_features
-
         # --------- 2 FEATURE UPSAMPLING LAYERS --------
         #print("========================== FP1 ===============================")
         fp1_features, fp1_grp_feats = self.fp1(sa3_xyz, sa4_xyz, sa3_features, sa4_features)
@@ -482,12 +461,12 @@ class Pointnet2Backbone_p(layers.Layer):
             seed_inds2 = tf.gather(rem_inds, indices=sa1_2_inds2, batch_dims=1)        
 
             sa1_inds2_from_orig = tf.gather(rem_inds, indices=sa1_inds2, batch_dims=1)         
-            sa1_inds = layers.Concatenate(axis=1)([sa1_inds1, sa1_inds2_from_orig])
+            sa1_inds = layers.Concatenate(axis=1)([sa1_inds1, sa1_inds2_from_orig])       
 
         
         end_points['sa1_xyz'] = sa1_xyz        
         end_points['sa1_inds'] = sa1_inds        
-        # end_points['sa1_obj_logits'] = sa1_obj_logits                     
+        
         
         end_points['fp2_inds'] = layers.Concatenate(axis=1)([seed_inds1, seed_inds2])      
         

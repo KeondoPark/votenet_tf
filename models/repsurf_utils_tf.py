@@ -462,9 +462,9 @@ class UmbrellaSurface_Learner(layers.Layer):
 
     def call(self, feature):
         '''
-        center: poincloud (B, N, 3)
-        offset: secion in pointcloud (int) (B, S)
+        feature: (B, M, K, 10)
         '''      
+
         # mapping
         new_feature = self.conv2(self.relu1(self.bn1(self.conv1(feature))))        
         # (B, M, K, 10)

@@ -285,10 +285,7 @@ else:
 
 manager = tf.train.CheckpointManager(ckpt, CHECKPOINT_PATH, max_to_keep=3)
 print("Start epoch:", ckpt.epoch)
-
-    
-
-
+  
         
 # Decay Batchnorm momentum from 0.5 to 0.001
 # note: pytorch's BN momentum (default 0.1)= 1 - tensorflow's BN momentum
@@ -342,8 +339,8 @@ CONFIG_DICT = {'remove_empty_box':False, 'use_3d_nms':True,
 
 label_dict = {0:'point_cloud', 1:'center_label', 2:'heading_class_label', 3:'heading_residual_label', \
               4:'size_class_label', 5:'size_residual_label', 6:'sem_cls_label', 7:'box_label_mask', \
-              8:'point_obj_mask', 9:'point_instance_label', 10: 'max_gt_bboxes', 11: 'size_gts', }\
-            #   12:'repsurf_feature'}
+              8:'point_obj_mask', 9:'point_instance_label', 10: 'max_gt_bboxes', 11: 'size_gts', \
+              12:'repsurf_feature'}
 
 
 def torch_to_tf_data(batch_data):
@@ -360,8 +357,10 @@ def torch_to_tf_data(batch_data):
     max_gt_bboxes = tf.convert_to_tensor(np.zeros((BATCH_SIZE, 64, 8)), dtype=tf.float32) 
     size_gts = tf.convert_to_tensor(batch_data['size_gts'], dtype=tf.float32)
     repsurf_feature = tf.convert_to_tensor(batch_data['repsurf_feature'], dtype=tf.float32)
-    batch_data = point_clouds, center_label, heading_class_label, heading_residual_label, size_class_label, \
-        size_residual_label, sem_cls_label, box_label_mask, point_obj_mask, point_instance_label, max_gt_bboxes, size_gts, repsurf_feature    
+    batch_data = point_clouds, center_label, heading_class_label, heading_residual_label, \
+        size_class_label, size_residual_label, sem_cls_label, box_label_mask, \
+        point_obj_mask, point_instance_label, max_gt_bboxes, size_gts, \
+        repsurf_feature    
 
     return batch_data
 
@@ -381,6 +380,7 @@ def train_one_epoch(batch_data):
 
         point_cloud = batch_data[0]
         repsurf_feature = batch_data[-1]
+        
         end_points = net(point_cloud, repsurf_feature, training=True)    
                     
         # Compute loss and gradients, update parameters.
