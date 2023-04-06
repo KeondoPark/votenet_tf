@@ -274,9 +274,13 @@ def evaluate_one_epoch(batch_data):
 def run_eval():
     stat_dict = defaultdict(int) # collect statistics            
 
-    all_prefix = 'all_layers_'
+    # all_prefix = 'all_layers_'
     _prefixes = ['last_', 'proposal_']
     _prefixes += [f'{i}head_' for i in range(FLAGS.num_decoder_layers - 1)]
+    prefixes = _prefixes.copy() + ['all_layers_']
+
+    batch_pred_map_cls_dict = {k: [] for k in prefixes}
+    batch_gt_map_cls_dict = {k: [] for k in prefixes}
 
     ap_calculator_list = [APCalculator(iou_thresh, DATASET_CONFIG.class2type) \
         for iou_thresh in AP_IOU_THRESHOLDS]
@@ -287,7 +291,7 @@ def run_eval():
     start = time.time()    
     total_start = start
     for batch_idx, batch_data in enumerate(test_ds):        
-        # if batch_idx*BATCH_SIZE >= 400: break
+        # if batch_idx*BATCH_SIZE >= 100: break
         if DATASET == 'scannet':                
             batch_data = torch_to_tf_data(batch_data)
 
@@ -308,47 +312,43 @@ def run_eval():
                 else:
                     stat_dict[key] += end_points[key].numpy()
 
-        batch_pred_map_cls, pred_mask = parse_predictions(end_points, 
-                                                                CONFIG_DICT, 
-                                                                # prefix='0head_', 
-                                                                prefix='last_', 
-                                                                size_cls_agnostic=FLAGS.size_cls_agnostic) 
-
         batch_gt_map_cls = parse_groundtruths(end_points, 
                                             CONFIG_DICT, 
                                             size_cls_agnostic=FLAGS.size_cls_agnostic) 
 
-
-
-        for ap_calculator in ap_calculator_list:
-            ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)                 
-     
-        end_points[f'{all_prefix}center'] = tf.concat([end_points[f'{ppx}center']
-                                                    for ppx in _prefixes], 1)
-        end_points[f'{all_prefix}heading_scores'] = tf.concat([end_points[f'{ppx}heading_scores']
-                                                            for ppx in _prefixes], 1)
-        end_points[f'{all_prefix}heading_residuals'] = tf.concat([end_points[f'{ppx}heading_residuals']
-                                                                for ppx in _prefixes], 1)
-        if FLAGS.size_cls_agnostic:
-            end_points[f'{all_prefix}pred_size'] = tf.concat([end_points[f'{ppx}pred_size']
-                                                            for ppx in _prefixes], 1)
-        else:
-            end_points[f'{all_prefix}size_scores'] = tf.concat([end_points[f'{ppx}size_scores']
-                                                            for ppx in _prefixes], 1)
-            end_points[f'{all_prefix}size_residuals'] = tf.concat([end_points[f'{ppx}size_residuals']
-                                                                for ppx in _prefixes], 1)
-        end_points[f'{all_prefix}sem_cls_scores'] = tf.concat([end_points[f'{ppx}sem_cls_scores']
-                                                            for ppx in _prefixes], 1)
-        end_points[f'{all_prefix}objectness_scores'] = tf.concat([end_points[f'{ppx}objectness_scores']
-                                                                for ppx in _prefixes], 1)
-
-        all_batch_pred_map_cls, all_pred_mask = parse_predictions(end_points, 
-                                                                CONFIG_DICT, 
-                                                                prefix=all_prefix, 
-                                                                size_cls_agnostic=FLAGS.size_cls_agnostic) 
+        for prefix in prefixes:                          
         
-        for ap_calculator in all_ap_calculator_list:
-            ap_calculator.step(all_batch_pred_map_cls, batch_gt_map_cls)
+            if prefix == 'all_layers_':
+                end_points[f'{prefix}center'] = tf.concat([end_points[f'{ppx}center']
+                                                            for ppx in _prefixes], 1)
+                end_points[f'{prefix}heading_scores'] = tf.concat([end_points[f'{ppx}heading_scores']
+                                                                    for ppx in _prefixes], 1)
+                end_points[f'{prefix}heading_residuals'] = tf.concat([end_points[f'{ppx}heading_residuals']
+                                                                        for ppx in _prefixes], 1)
+                if FLAGS.size_cls_agnostic:
+                    end_points[f'{prefix}pred_size'] = tf.concat([end_points[f'{ppx}pred_size']
+                                                                    for ppx in _prefixes], 1)
+                else:
+                    end_points[f'{prefix}size_scores'] = tf.concat([end_points[f'{ppx}size_scores']
+                                                                    for ppx in _prefixes], 1)
+                    end_points[f'{prefix}size_residuals'] = tf.concat([end_points[f'{ppx}size_residuals']
+                                                                        for ppx in _prefixes], 1)
+                end_points[f'{prefix}sem_cls_scores'] = tf.concat([end_points[f'{ppx}sem_cls_scores']
+                                                                    for ppx in _prefixes], 1)
+                end_points[f'{prefix}objectness_scores'] = tf.concat([end_points[f'{ppx}objectness_scores']
+                                                                        for ppx in _prefixes], 1)                
+
+            batch_pred_map_cls, pred_mask = parse_predictions(end_points, 
+                                                                    CONFIG_DICT, 
+                                                                    # prefix='0head_', 
+                                                                    prefix=prefix, 
+                                                                    size_cls_agnostic=FLAGS.size_cls_agnostic) 
+
+            batch_pred_map_cls_dict[prefix].append(batch_pred_map_cls)
+            batch_gt_map_cls_dict[prefix].append(batch_gt_map_cls)
+
+            # for ap_calculator in ap_calculator_list:
+            #     ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)  
 
         # Dump evaluation results for visualization
         # if batch_idx == 0:
@@ -357,24 +357,33 @@ def run_eval():
     # Log statistics
     #TEST_VISUALIZER.log_scalars({key:stat_dict[key]/float(batch_idx+1) for key in stat_dict},
     #    EPOCH_CNT*len(TRAIN_DATASET)*BATCH_SIZE)
+
     for key in sorted(stat_dict.keys()):
-        log_string('eval mean %s: %f'%(key, stat_dict[key]/(float(batch_idx+1))))
+            log_string('eval mean %s: %f'%(key, stat_dict[key]/(float(batch_idx+1))))
 
-    # Evaluate average precision
-    for i, ap_calculator in enumerate(ap_calculator_list):
-        print('-'*10, 'iou_thresh: %f'%(AP_IOU_THRESHOLDS[i]), '-'*10)
-        metrics_dict = ap_calculator.compute_metrics()
-        for key in metrics_dict:
-            log_string('eval %s: %f'%(key, metrics_dict[key]))
+    for prefix in prefixes:
+        
+        for (batch_pred_map_cls, batch_gt_map_cls) in zip(batch_pred_map_cls_dict[prefix],
+                                                          batch_gt_map_cls_dict[prefix]):
+            for ap_calculator in ap_calculator_list:
+                ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)        
 
-    log_string('---------- Eval All Layers ----------')
+        # Evaluate average precision
+        for i, ap_calculator in enumerate(ap_calculator_list):
+            log_string(f'===================> {prefix} IOU THRESH: {AP_IOU_THRESHOLDS[i]}<==================')
+            # print('-'*10, 'iou_thresh: %f'%(AP_IOU_THRESHOLDS[i]), '-'*10)
+            metrics_dict = ap_calculator.compute_metrics()
+            for key in metrics_dict:
+                log_string('eval %s: %f'%(key, metrics_dict[key]))
 
-    # Evaluate average precision: All layers
-    for i, ap_calculator in enumerate(all_ap_calculator_list):
-        print('-'*10, 'iou_thresh: %f'%(AP_IOU_THRESHOLDS[i]), '-'*10)
-        metrics_dict = ap_calculator.compute_metrics()
-        for key in metrics_dict:
-            log_string('eval %s: %f'%(key, metrics_dict[key]))
+        #     log_string('---------- Eval All Layers ----------')
+
+        # # Evaluate average precision: All layers
+        # for i, ap_calculator in enumerate(all_ap_calculator_list):
+        #     print('-'*10, 'iou_thresh: %f'%(AP_IOU_THRESHOLDS[i]), '-'*10)
+        #     metrics_dict = ap_calculator.compute_metrics()
+        #     for key in metrics_dict:
+        #         log_string('eval %s: %f'%(key, metrics_dict[key]))
 
     mean_loss = stat_dict['loss']/float(batch_idx+1)
     log_string('total eval time: '+ str(time.time() - total_start))
