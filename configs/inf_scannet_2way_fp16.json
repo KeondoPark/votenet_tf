@@ -9,6 +9,6 @@
     "use_tflite": true,
     "tflite_folder": "tflite/tflite_models/scannet_2way_fp16",        
     "use_edgetpu": false,    
-    "use_multiThr": false,
+    "use_multiThr": true,
     "bfps_wght": [4,4,1,1]
 }

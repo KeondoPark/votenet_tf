@@ -8,7 +8,7 @@
     "activation": "relu6",
     "q_gran": "semantic",
     "tflite_folder": "tflite/tflite_models/2way",    
-    "use_edgetpu": true,    
+    "use_edgetpu": false,    
     "use_multiThr": true,
     "bfps_wght": [4,4,1,1]
 }
