@@ -950,14 +950,14 @@ if __name__=='__main__':
         if args.include_person:
             train_data_idx_file = 'train_data_idx_person.txt'
             val_data_idx_file = 'val_data_idx_person.txt'            
-            output_folder_train = 'sunrgbd_pc_train_painted_tf_person2'
-            output_folder_val = 'sunrgbd_pc_val_painted_tf_person2'
+            output_folder_train = 'sunrgbd_pc_train_painted_tf_person'
+            output_folder_val = 'sunrgbd_pc_val_painted_tf_person'
         
         else:
             train_data_idx_file = 'train_data_idx.txt'
             val_data_idx_file = 'val_data_idx.txt'
-            output_folder_train = 'sunrgbd_pc_train_painted_tf4'
-            output_folder_val = 'sunrgbd_pc_val_painted_tf4'
+            output_folder_train = 'sunrgbd_pc_train_painted_tf'
+            output_folder_val = 'sunrgbd_pc_val_painted_tf'
 
         if args.include_small:
             output_folder_train += '_sm'

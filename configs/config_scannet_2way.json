@@ -7,7 +7,7 @@
     "q_gran": "semantic",
     "activation": "relu",
     "use_tflite": false,
-    "tflite_folder": "tflite/tflite_models/scannet_2way_fp16",        
+    "tflite_folder": "tflite/tflite_models/scannet_2way",        
     "use_multiThr": false,
-    "bfps_wght": [4,4,1,1]
+    "bfps_wght": [1,1,1,1]
 }

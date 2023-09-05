@@ -33,12 +33,7 @@ import json
 environ_file = os.path.join(ROOT_DIR,'configs','environ.json')
 environ = json.load(open(environ_file))['environ']
 
-#DATA_DIR = os.path.dirname(ROOT_DIR)
-if environ == 'server':    
-    DATA_DIR = '/home/aiot/data'
-
-elif environ in ['server2', 'jetson']:    
-    DATA_DIR = '/data'
+DATA_DIR = os.path.join(BASE_DIR, 'data_dir')
     
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
@@ -251,9 +246,9 @@ class SunrgbdDetectionVotesDataset_tfrecord():
             self.dim_features = 3 + (self.num_class) + 1 + 1 # xyz + num_class + 1(background) + 1(isPainted)
 
         if DC.include_person:
-            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf_person2'%(split_set))
+            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf_person'%(split_set))
         elif self.use_painted:
-            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf4'%(split_set))
+            self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_painted_tf'%(split_set))
         else:
             self.data_path = os.path.join(DATA_DIR,'sunrgbd_pc_%s_tf'%(split_set))
 
@@ -263,7 +258,7 @@ class SunrgbdDetectionVotesDataset_tfrecord():
         print(self.data_path)
 
         if split_set == 'val':
-            tf.random.set_seed(1234)
+            tf.random.set_seed(12345)
 
         self.raw_data_path = os.path.join(ROOT_DIR, 'sunrgbd/sunrgbd_trainval')
         self.num_points = num_points
@@ -334,7 +329,9 @@ class SunrgbdDetectionVotesDataset_tfrecord():
     def sample_points(self, point_cloud, bboxes, point_votes, n_valid_box):        
         n_pc = point_cloud.shape[1]        
 
-        choice_indices = tf.random.uniform([self.num_points], minval=0, maxval=n_pc, dtype=tf.int64)
+        # choice_indices = tf.random.uniform([self.num_points], minval=0, maxval=n_pc, dtype=tf.int64)
+        all_indices = tf.random.shuffle(tf.range(n_pc))
+        choice_indices = all_indices[:self.num_points]
         choice_indices = tf.tile(tf.expand_dims(choice_indices,0), [tf.shape(point_cloud)[0],1])
         
         point_cloud = tf.gather(point_cloud, choice_indices, axis=1, batch_dims=1)
