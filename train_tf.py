@@ -24,12 +24,6 @@ from datetime import datetime
 import argparse
 import importlib
 
-#import torch
-#import torch.nn as nn
-#import torch.optim as optim
-#from torch.optim import lr_scheduler
-#from torch.utils.data import DataLoader
-
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
@@ -176,7 +170,6 @@ else:
     exit(-1)
 
 # Init the model and optimzier
-#device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 num_input_channel = int(FLAGS.use_color)*3 + int(not FLAGS.no_height)*1
 
 ### Point Paiting : Sementation score is appended at the end of point cloud
@@ -225,10 +218,6 @@ with mirrored_strategy.scope():
         start_epoch = ckpt.epoch.numpy()
     else:
         print("Initializing from scratch.")
-
-        #net.load_weights(CHECKPOINT_PATH)    
-        #log_string("-> loaded checkpoint %s"%(CHECKPOINT_PATH))
-
 
 # Decay Batchnorm momentum from 0.5 to 0.001
 # note: pytorch's BN momentum (default 0.1)= 1 - tensorflow's BN momentum
@@ -387,9 +376,7 @@ def train(start_epoch):
                 if point_cloud.shape[0] < BATCH_SIZE: continue
             
 
-            train_loss += distributed_train_step(batch_data)
-            
-            #train_loss += train_one_epoch(batch_data)            
+            train_loss += distributed_train_step(batch_data)            
             
             # Accumulate statistics and print out
             #for key in end_points:
@@ -452,8 +439,6 @@ def train(start_epoch):
 
 
             # Log statistics
-            #TEST_VISUALIZER.log_scalars({key:stat_dict[key]/float(batch_idx+1) for key in stat_dict},
-            #    EPOCH_CNT*len(TRAIN_DATASET)*BATCH_SIZE)
             for key in sorted(stat_dict.keys()):
                 log_string('eval mean %s: %f'%(key, stat_dict[key]/(float(batch_idx+1))))
 

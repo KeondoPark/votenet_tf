@@ -46,7 +46,7 @@ class VoteNet(tf.keras.Model):
 
     def __init__(self, num_class, num_heading_bin, num_size_cluster, mean_size_arr,
         model_config,
-        input_feature_dim=0, num_proposal=128, vote_factor=1, sampling='vote_fps'):
+        input_feature_dim=0, num_proposal=128, vote_factor=1, sampling='vote_fps', run_cpu=False):
         super().__init__()
 
         self.num_class = num_class
@@ -64,22 +64,28 @@ class VoteNet(tf.keras.Model):
         if two_way:
             if self.use_tflite:
                 # inference only, pipelining is implemented here.
-                self.backbone_net = Pointnet2Backbone_tflite(input_feature_dim=self.input_feature_dim, model_config=model_config, num_class=num_class)
+                self.backbone_net = Pointnet2Backbone_tflite(input_feature_dim=self.input_feature_dim, 
+                                                            model_config=model_config, 
+                                                            num_class=num_class,
+                                                            run_cpu=run_cpu)
             else:
                 # 2-way set abstraction + no pointnnet in feature propagation
-                self.backbone_net = Pointnet2Backbone_p(input_feature_dim=self.input_feature_dim, model_config=model_config)
+                self.backbone_net = Pointnet2Backbone_p(input_feature_dim=self.input_feature_dim, 
+                                                        model_config=model_config)
         else:
             # Original votenet architecture
-            self.backbone_net = Pointnet2Backbone(input_feature_dim=self.input_feature_dim, model_config=model_config)
+            self.backbone_net = Pointnet2Backbone(input_feature_dim=self.input_feature_dim, 
+                                                  model_config=model_config, 
+                                                  run_cpu=run_cpu)
             
         # Hough voting
         self.vgen = VotingModule(self.vote_factor, seed_feature_dim=256, \
-            model_config=model_config)            
+                                model_config=model_config)            
 
         # Vote aggregation and detection
         self.pnet = ProposalModule(num_class, num_heading_bin, num_size_cluster,
-            mean_size_arr, num_proposal, sampling, seed_feat_dim=256, \
-            model_config=model_config)
+                                    mean_size_arr, num_proposal, sampling, seed_feat_dim=256, \
+                                    model_config=model_config)
             
 
     def call(self, point_cloud, imgs=None, calibs=None, deeplab_tflite_file=None):

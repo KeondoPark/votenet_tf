@@ -134,11 +134,11 @@ elif DATASET == 'scannet':
         use_painted=use_painted)
 
     # Init datasets and dataloaders 
-    def my_worker_init_fn(worker_id):
-        np.random.seed(np.random.get_state()[1][0] + worker_id)
+    def val_worker_init_fn(worker_id):
+        np.random.seed(2481757)
     
     test_ds =DataLoader(TEST_DATASET, batch_size=BATCH_SIZE,
-        shuffle=True, num_workers=4, worker_init_fn=my_worker_init_fn)
+        shuffle=True, num_workers=4, worker_init_fn=val_worker_init_fn)
 
 else:
     print('Unknown dataset %s. Exiting...'%(DATASET))
@@ -208,7 +208,7 @@ def evaluate_one_epoch():
     start = time.time()    
     total_start = start
     for batch_idx, batch_data in enumerate(test_ds):        
-        # if batch_idx*BATCH_SIZE >= 400: break
+        # if batch_idx*BATCH_SIZE >= 100: break
         if DATASET == 'scannet':                
             point_clouds = tf.convert_to_tensor(batch_data['point_clouds'], dtype=tf.float32)
             center_label = tf.convert_to_tensor(batch_data['center_label'], dtype=tf.float32)

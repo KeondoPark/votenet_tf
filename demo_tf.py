@@ -20,6 +20,7 @@ parser.add_argument('--checkpoint_path', default=None, help='Model checkpoint pa
 parser.add_argument('--gpu_mem_limit', type=int, default=0, help='GPU memory usage')
 parser.add_argument('--inf_time_file', default=None, help='Record inference time')
 parser.add_argument('--config_path', default=None, required=True, help='Model configuration path')
+parser.add_argument('--run_point_cpu', action='store_true', help='Whether to use CPU for point operations(FPS, Ball query, ..)')
 FLAGS = parser.parse_args()
 
 import tensorflow as tf
@@ -41,6 +42,8 @@ from votenet_tf import dump_results
 from PIL import Image
 from deeplab.deeplab import run_semantic_seg, run_semantic_seg_tflite
 import json
+from psutil import Process
+
 
 model_config = json.load(open(FLAGS.config_path))
 DEFAULT_CHECKPOINT_PATH = os.path.join('tf_ckpt', model_config['model_id'])
@@ -56,9 +59,7 @@ def preprocess_point_cloud(point_cloud):
         point_cloud = point_cloud[:,0:3] # do not use color for now
     floor_height = np.percentile(point_cloud[:,2],0.99)
     height = point_cloud[:,2] - floor_height
-    point_cloud = np.concatenate([point_cloud, np.expand_dims(height, 1)],1) # (N,4) or (N,7)
-    #if point_cloud.shape[0] > num_point:
-    #point_cloud = random_sampling(point_cloud, num_point)
+    point_cloud = np.concatenate([point_cloud, np.expand_dims(height, 1)],1) # (N,4) or (N,7)    
     pc = np.expand_dims(point_cloud.astype(np.float32), 0) # (1,20000,4)
     return pc
 
@@ -73,6 +74,8 @@ if __name__=='__main__':
                 [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=FLAGS.gpu_mem_limit)])
                 logical_gpus = tf.config.experimental.list_logical_devices('GPU')
                 print(len(gpus), "Physical GPUs", len(logical_gpus), "Logical GPUs")
+                print("-"*10, "Process memory info, GPU setting", Process().memory_info().rss)
+                
             except RuntimeError as e:
                 print(e)
 
@@ -93,16 +96,18 @@ if __name__=='__main__':
         dataset = sunrgbd_object(os.path.join(DATA_DIR,'sunrgbd_trainval'), 'training', use_v1=True)
         point_cloud = dataset.get_depth(data_idx)  
         img = dataset.get_image2(data_idx)
-        calib = dataset.get_calibration(data_idx)    
-        deeplab_tflite_file = 'sunrgbd_COCO_15_quant_edgetpu.tflite'
+        calib = dataset.get_calibration(data_idx)
+        if model_config['use_edgetpu']:
+            deeplab_tflite_file = 'sunrgbd_COCO_15_quant_edgetpu.tflite'
+        else:
+            deeplab_tflite_file = 'sunrgbd_COCO_15_quant.tflite'
         deeplab_pb = 'sunrgbd_COCO_15.pb'
         img_input_size = (513,513)
         imgs = [img]
         calibs = [calib]
         
     elif DATASET == 'scannet':
-        sys.path.append(os.path.join(ROOT_DIR, 'scannet'))
-        from scannet_detection_dataset import DC # dataset config
+        sys.path.append(os.path.join(ROOT_DIR, 'scannet'))        
         from model_util_scannet import ScannetDatasetConfig, scannet_object
         DATASET_CONFIG = ScannetDatasetConfig()        
         checkpoint_path = FLAGS.checkpoint_path if FLAGS.checkpoint_path is not None else DEFAULT_CHECKPOINT_PATH
@@ -112,31 +117,37 @@ if __name__=='__main__':
         imgs, poses, depth_nps = dataset.get_image_and_pose(data_idx, num_img=3)        
         calibs = [dataset.get_calibration(data_idx, pose, depth_np) for pose, depth_np in zip(poses, depth_nps)]        
         point_cloud = dataset.get_pointcloud(data_idx)
-        deeplab_tflite_file = 'scannet_5_quant_edgetpu.tflite'
-        deeplab_pb = 'scannet_3.pb'
+        if model_config['use_edgetpu']:
+            deeplab_tflite_file = 'scannet_5_quant_edgetpu.tflite'
+        else:
+            deeplab_tflite_file = 'scannet_5_quant.tflite'
+        deeplab_pb = 'scannet_5.pb'
         img_input_size = (321,321)
 
     else:
         print('Unkown dataset. Exiting.')
         exit(-1)
 
+    print("-"*10, "Process memory info, data preparation", Process().memory_info().rss)
+
     eval_config_dict = {'remove_empty_box': True, 'use_3d_nms': True, 'nms_iou': 0.25,
         'use_old_type_nms': False, 'cls_nms': False, 'per_class_proposal': False,
         'conf_thresh': 0.5, 'dataset_config': DATASET_CONFIG}
 
     # Init the model and optimzier    
-    net = votenet_tf.VoteNet(num_proposal=256, input_feature_dim=1, vote_factor=1,
-        #sampling='seed_fps', num_class=DC.num_class,
+    net = votenet_tf.VoteNet(num_proposal=256, input_feature_dim=1, vote_factor=1,        
         sampling='vote_fps', num_class=DATASET_CONFIG.num_class,
         num_heading_bin=DATASET_CONFIG.num_heading_bin,
         num_size_cluster=DATASET_CONFIG.num_size_cluster,
         mean_size_arr=DATASET_CONFIG.mean_size_arr,
-        model_config=model_config)
-    print('Constructed model.')
+        model_config=model_config,
+        run_cpu=FLAGS.run_point_cpu)
+
+    print('Constructed model.')    
+    print("-"*10, "Process memory info, model construction", Process().memory_info().rss)
         
     if model_config['use_tflite']:          
-        restore_list = []  
-        
+        restore_list = []
         for layer in restore_list:
             new_root = tf.train.Checkpoint(net=layer)
             new_root.restore(tf.train.latest_checkpoint(checkpoint_path)).expect_partial()
@@ -159,42 +170,51 @@ if __name__=='__main__':
     point_cloud_sampled = random_sampling(point_cloud[:,0:3], NUM_POINT)
     pc = preprocess_point_cloud(point_cloud_sampled)    
 
-    time_record.append(('Votenet data preprocessing time:', time.time()))
+    time_record.append(('Votenet data preprocessing time:', time.time()))    
 
     inputs = {'point_clouds': tf.convert_to_tensor(pc)}
+    print("-"*10, "Process memory info, data preprocessing", Process().memory_info().rss)
    
-    # Model inference, 4 times  
-    for ii in range(4):
+    num_inference = 1
+    # Model inference, multiple times  
+    for ii in range(num_inference):
+        print("="*20, "Inference", ii, "="*20)
         if model_config['use_painted']:                       
             if model_config['use_multiThr']:
-                end_points = net(inputs['point_clouds'], training=False, imgs=imgs, calibs=calibs, deeplab_tflite_file=deeplab_tflite_file)        
+                end_points = net(inputs['point_clouds'], training=False, imgs=imgs, calibs=calibs, 
+                                 deeplab_tflite_file=deeplab_tflite_file)        
             else:            
-                if model_config['use_edgetpu']:                    
-                    
-                    pred_prob_list = run_semantic_seg_tflite(imgs, tflite_file=deeplab_tflite_file, save_result=False)                
+                if model_config['use_tflite']:
+                    pred_prob_list, _ = run_semantic_seg_tflite(imgs, tflite_file=deeplab_tflite_file,
+                                                            save_result=False, edgetpu=model_config['use_edgetpu']) 
                 else:     
                     pred_prob_list, _ = run_semantic_seg(imgs, graph_file=deeplab_pb, input_size=img_input_size, save_result=False)                  
                 
                 time_record.append(('Deeplab inference time:', time.time()))
-                painted_pc = np.zeros((pc.shape[1], 3 + 1 + 1 + (DATASET_CONFIG.num_class + 1))) #Coords + height + isPainted + 
-                painted_pc[:,0:3] = pc[0,:,0:3]
-                painted_pc[:,-1] = pc[0,:,-1]
-                for pred_prob, calib in zip(pred_prob_list, calibs):
-                    uv,d, filter_idx = calib.project_upright_depth_to_image(painted_pc[:,0:3]) #uv: (N, 2)
-                    uv = np.rint(uv - 1)
+
+                painted_pc = np.zeros((pc.shape[1], 3 + 1 + 1 + (DATASET_CONFIG.num_class + 1)), np.float32) #Coords + height + isPainted +                 
+                features = np.zeros((pc.shape[1], DATASET_CONFIG.num_class+1), dtype=np.float32)
+                isPainted = np.zeros((pc.shape[1]), dtype=np.int32)
+
+                for pred_prob, calib in zip(pred_prob_list, calibs):                       
+                    uv,d, filter_idx = calib.project_upright_depth_to_image(pc[0,:,0:3]) #uv: (N, 2)
+                    uv = np.rint(uv - 1)                    
                     
                     pred_prob = pred_prob[uv[:,1].astype(np.int), uv[:,0].astype(np.int)] # (npoint, num_class + 1 + 1 )
                     projected_class = np.argmax(pred_prob, axis=-1) # (npoint, 1) 
-                    isPainted = np.where(projected_class > 0, 1, 0) # Point belongs to background?                    
-                    #isPainted = np.expand_dims(isPainted, axis=-1)
+                    _isPainted = np.where(projected_class > 0, 1, 0) # Point belongs to background?                    
+                    
 
                     # 0 is background class, deeplab is trained with "person" included, (height, width, num_class)
                     pred_prob = pred_prob[:,:(DATASET_CONFIG.num_class+1)] #(npoint, num_class)
-                    painted_pc[filter_idx, 3] = isPainted
-                    painted_pc[filter_idx, 4:-1] = pred_prob/255
-
-                #pointcloud = np.concatenate([xyz, isPainted, pred_prob, pc[0,:,3:]], axis=-1)
-                time_record.append(('Pointpainting time:', time.time()))
+                    isPainted[filter_idx] = _isPainted
+                    features[filter_idx] = pred_prob/255                        
+                
+                painted_pc[:,0:3] = pc[0,:,0:3]                
+                painted_pc[:,-1] = pc[0,:,-1]
+                painted_pc[:,3] = isPainted
+                painted_pc[:,4:-1] = features
+                time_record.append(('Pointpainting time:', time.time()))                
 
                 inputs['point_clouds'] = tf.convert_to_tensor(np.expand_dims(painted_pc, axis=0))
                 del painted_pc
@@ -202,15 +222,15 @@ if __name__=='__main__':
                 
                 end_points = net(inputs['point_clouds'], training=False)        
             
-        else:                
-            print("Inference", ii)
+        else:                            
             end_points = net(inputs['point_clouds'], training=False)                
     
         time_record += end_points['time_record']
         time_record = time_record + [('Voting and Proposal time:', time.time())]
+        print("-"*10, "Process memory info, end of inference", Process().memory_info().rss)
     
     print(net.summary())
-    
+
     time_dict = {}
 
     if FLAGS.inf_time_file:
@@ -248,7 +268,7 @@ if __name__=='__main__':
             
             # print(desc, t - prev_time)
             prev_time = t
-        print("*" * 20, "Time to inference 4 times", "*"*20)
+        print("*" * 20, f"Time to inference {num_inference} times", "*"*20)
         for k, v in time_dict.items():
             print(k, v)
 
@@ -270,6 +290,7 @@ if __name__=='__main__':
     
     print("All processes", time.time() - start_all)
     print('Finished detection. %d object detected.'%(len(pred_map_cls[0][0])))
+    print("-"*10, "Process memory info, end of code", Process().memory_info().rss)
   
     dump_dir = os.path.join(demo_dir, '%s_results'%(DATASET))
     if not os.path.exists(dump_dir): os.mkdir(dump_dir) 

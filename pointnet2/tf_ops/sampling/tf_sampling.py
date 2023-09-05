@@ -32,12 +32,7 @@ returns:
     '''
     return sampling_module.prob_sample(inp,inpr)
 ops.NoGradient('ProbSample')
-# TF1.0 API requires set shape in C++
-#@tf.RegisterShape('ProbSample')
-#def _prob_sample_shape(op):
-#    shape1=op.inputs[0].get_shape().with_rank(2)
-#    shape2=op.inputs[1].get_shape().with_rank(2)
-#    return [tf.TensorShape([shape2.dims[0],shape2.dims[1]])]
+
 def gather_point(inp,idx):
     '''
 input:
@@ -47,39 +42,82 @@ returns:
     batch_size * npoints * 3    float32
     '''
     return sampling_module.gather_point(inp,idx)
-#@tf.RegisterShape('GatherPoint')
-#def _gather_point_shape(op):
-#    shape1=op.inputs[0].get_shape().with_rank(3)
-#    shape2=op.inputs[1].get_shape().with_rank(2)
-#    return [tf.TensorShape([shape1.dims[0],shape2.dims[1],shape1.dims[2]])]
+
 @tf.RegisterGradient('GatherPoint')
 def _gather_point_grad(op,out_g):
     inp=op.inputs[0]
     idx=op.inputs[1]
-    return [sampling_module.gather_point_grad(inp,idx,out_g),None]
+    return [sampling_module.gather_point_grad(inp,idx,out_g), None]
+
+
+def gather_point_cpu(inp,idx):
+    '''
+input:
+    batch_size * ndataset * 3   float32
+    batch_size * npoints        int32
+returns:
+    batch_size * npoints * 3    float32
+    '''
+    return sampling_module.gather_point_cpu(inp,idx)
+
+@tf.RegisterGradient('GatherPointCpu')
+def _gather_point_cpu_grad(op,out_g):
+    inp=op.inputs[0]
+    idx=op.inputs[1]
+    return [sampling_module.gather_point_cpu_grad(inp,idx,out_g), None]
+
 
 def farthest_point_sample(npoint,inp):
     '''
 input:
-    int32
-    batch_size * ndataset * 3   float32
+    npoint: int32
+    inp: batch_size * ndataset * 4   float32
 returns:
-    batch_size * npoint         int32
+    idx: batch_size * npoint         int32
     '''
     return sampling_module.farthest_point_sample(inp, npoint)
 ops.NoGradient('FarthestPointSample')
 
+
+def farthest_point_sample_cpu(npoint,inp):
+    '''
+input:
+    npoint: int32
+    inp: batch_size * ndataset * 4   float32
+returns:
+    idx: batch_size * npoint         int32
+    '''
+    return sampling_module.farthest_point_sample_cpu(inp, npoint)
+ops.NoGradient('FarthestPointSampleCpu')
+
 def farthest_point_sample_bg(npoint, inp, isPainted, weight=1):
     '''
 input:
-    int32
-    batch_size * ndataset * 4   float32
-    wegiht: weight for painted points' distance
+    npoint: int32
+    inp: batch_size * ndataset * 4   float32
+    isPainted: batch_size * ndataset   int32
+    weight: weight for painted points' distance
 returns:
-    batch_size * npoint         int32
+    idx: batch_size * npoint         int32
+    isPainted: batch_size * npoint         int32
     '''
     return sampling_module.farthest_point_sample_bg(inp, isPainted, npoint, weight)
 ops.NoGradient('FarthestPointSampleBg')
+
+def farthest_point_sample_bg_cpu(npoint, inp, isPainted, weight=1):
+    '''
+input:
+    npoint: int32
+    inp: batch_size * ndataset * 4   float32
+    isPainted: batch_size * ndataset   int32
+    weight: weight for painted points' distance
+returns:
+    idx: batch_size * npoint         int32
+    isPainted: batch_size * npoint         int32
+    '''
+    return sampling_module.farthest_point_sample_bg_cpu(inp, isPainted, npoint, weight)
+ops.NoGradient('FarthestPointSampleBgCpu')
+
 
 
 def farthest_point_sample_bg2(npoint, inp, isPainted, weight1=1, weight2=1):
@@ -100,6 +138,7 @@ ops.NoGradient('FarthestPointSampleBg2')
 
 if __name__=='__main__':
     import numpy as np
+    import time
     np.random.seed(100)
     npoint = 4
     N = 16
@@ -114,13 +153,44 @@ if __name__=='__main__':
 
     inputs = np.vstack([cos_x, sin_x, z_coord])
     inputs = inputs.transpose()    
+    # inputs = np.random.random([2,50000,3])*100
     print(inputs.shape)
     print(isPainted.shape)
     inputs = np.expand_dims(inputs, axis=0)
     isPainted = np.expand_dims(isPainted, axis=0)
-    res = farthest_point_sample_bg(npoint, inputs, isPainted, 4)
+    
+    # start = time.time()
+    # res = farthest_point_sample(npoint, inputs)
+    # print("GPU runtime", time.time() - start)
+
+    # start = time.time()
+    # res_cpu = farthest_point_sample_cpu(npoint, inputs)
+    # print("CPU runtime", time.time() - start)
+
+    start = time.time()
+    res, _ = farthest_point_sample_bg(npoint, inputs, isPainted, 4)
+    print("FPS GPU runtime", time.time() - start)
+
+    start = time.time()
+    res_cpu, _ = farthest_point_sample_bg_cpu(npoint, inputs, isPainted, 4)    
+    print("FPS CPU runtime", time.time() - start)
+
+    # setA = set(list(res[0].numpy()))
+    # setB = set(list(res_cpu[0].numpy()))
+
+    # print(setA.difference(setB))
+    # print(setB.difference(setA))
+
+    start = time.time()
+    gather_cpu = gather_point_cpu(inputs, res_cpu)
+    print("Gather CPU runtime", time.time() - start)
+
+    start = time.time()
+    gather_gpu = gather_point(inputs, res_cpu)
+    print("Gather GPU runtime", time.time() - start)
+
     #res = farthest_point_sample_bg2(npoint, inputs, isPainted, 0.01, 100)
-    print(res)
+    print(gather_cpu - gather_gpu)
     
 
     """

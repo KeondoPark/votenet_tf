@@ -29,8 +29,6 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--checkpoint_path', default=None, help='Model checkpoint path [default: None]')
 parser.add_argument('--out_dir', default=None, help='Folder name where output tflite files are saved')
 parser.add_argument('--gpu_mem_limit', type=int, default=0, help='GPU memory usage')
-parser.add_argument('--use_rep_data', action='store_true', help='When iterating representative dataset, use saved data')
-parser.add_argument('--rep_data_dir', default='tflite/tflite_rep_data', help='Saved representative data directory')
 parser.add_argument('--config_path', default=None, required=True, help='Model configuration path')
 parser.add_argument('--dataset', default='sunrgbd', help='Dataset name. sunrgbd or scannet. [default: sunrgbd]')
 parser.add_argument('--q_gran', default='semantic', help='Quantization granularity(Channelwise, Groupwise, Semanticwise). [default: semantic]')
@@ -62,38 +60,38 @@ else:
 #Use separate layer for coordinates in voting and va layer
 q_gran = 'semantic' if 'q_gran' not in model_config else model_config['q_gran']
 
-if not FLAGS.use_rep_data:
-    if DATASET == 'sunrgbd':
-        if 'include_person' in model_config and model_config['include_person']:
-            DATASET_CONFIG = SunrgbdDatasetConfig(include_person=True)
-        else:
-            DATASET_CONFIG = SunrgbdDatasetConfig()
-        NUM_POINT = 20000
-        TRAIN_DATASET = SunrgbdDetectionVotesDataset_tfrecord('train', num_points=NUM_POINT,
-            augment=False, shuffle=True, batch_size=BATCH_SIZE,
+
+if DATASET == 'sunrgbd':
+    if 'include_person' in model_config and model_config['include_person']:
+        DATASET_CONFIG = SunrgbdDatasetConfig(include_person=True)
+    else:
+        DATASET_CONFIG = SunrgbdDatasetConfig()
+    NUM_POINT = 20000
+    TRAIN_DATASET = SunrgbdDetectionVotesDataset_tfrecord('train', num_points=NUM_POINT,
+        augment=False, shuffle=True, batch_size=BATCH_SIZE,
+        use_color=False, use_height=True,
+        use_painted=use_painted, DC=DATASET_CONFIG)
+
+    ds = TRAIN_DATASET.preprocess()
+    ds = ds.prefetch(BATCH_SIZE)
+elif DATASET == 'scannet':
+    sys.path.append(os.path.join(ROOT_DIR, 'scannet'))
+    from scannet_detection_dataset import ScannetDetectionDataset, MAX_NUM_OBJ
+    from model_util_scannet import ScannetDatasetConfig
+    DATASET_CONFIG = ScannetDatasetConfig()
+    NUM_POINT = 40000
+
+    TRAIN_DATASET = ScannetDetectionDataset('train', num_points=NUM_POINT,
+            augment=True,
             use_color=False, use_height=True,
-            use_painted=use_painted, DC=DATASET_CONFIG)
+            use_painted=use_painted)
 
-        ds = TRAIN_DATASET.preprocess()
-        ds = ds.prefetch(BATCH_SIZE)
-    elif DATASET == 'scannet':
-        sys.path.append(os.path.join(ROOT_DIR, 'scannet'))
-        from scannet_detection_dataset import ScannetDetectionDataset, MAX_NUM_OBJ
-        from model_util_scannet import ScannetDatasetConfig
-        DATASET_CONFIG = ScannetDatasetConfig()
-        NUM_POINT = 40000
-
-        TRAIN_DATASET = ScannetDetectionDataset('train', num_points=NUM_POINT,
-                augment=True,
-                use_color=False, use_height=True,
-                use_painted=use_painted)
-
-        # Init datasets and dataloaders 
-        def my_worker_init_fn(worker_id):
-            np.random.seed(np.random.get_state()[1][0] + worker_id)
-        
-        ds = DataLoader(TRAIN_DATASET, batch_size=BATCH_SIZE,
-            shuffle=True, num_workers=4, worker_init_fn=my_worker_init_fn, drop_last=True)
+    # Init datasets and dataloaders 
+    def my_worker_init_fn(worker_id):
+        np.random.seed(np.random.get_state()[1][0] + worker_id)
+    
+    ds = DataLoader(TRAIN_DATASET, batch_size=BATCH_SIZE,
+        shuffle=True, num_workers=4, worker_init_fn=my_worker_init_fn, drop_last=True)
 
 if not use_painted:
     num_input_channel = 1

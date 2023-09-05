@@ -1,18 +1,20 @@
 # Introduction
-This is the code archive for the paper "PointSplit: A Holistic Approach for On-device 3DObject Detection"
-The model is based on VoteNet architecture(https://github.com/facebookresearch/votenet).
+This is the code archive for the paper ["PointSplit: Towards On-device 3D Object Detection with Heterogeneous Low-power Accelerators"](https://dl.acm.org/doi/abs/10.1145/3583120.3587045) (IPSN 2023)
+The model is based on VoteNet architecture. (https://github.com/facebookresearch/votenet).
+
+![image](figs/Fig3.png)
 
 # Installation
 To run this code, you need both PyTorch and Tensorflow. The model is mainly built in Tensorflow 2.5.0, but some PyTroch utils (v.1.8) are also utilized. You also need access to GPUs and MATLAB is required to prepare SUN RGB-D dataset.
 
-To install required package, create an anaconda environment using requirement file.
+To install required package, create an anaconda environment using requirement file. A new anaconda environment named "pointsplit" is created.
 ```
-conda create --name <env> --file requirements.txt
+conda env create -f requirements.yaml
 ```
 
 One needs to compile the Tensorflow custom operations that are used in backbone network. 
 - Go to `pointent2/tf_ops/sampling`
-- run `bash tf_sampling_compile.sh`
+- run `bash tf_sampling_compile.sh` (Change `CUDA_ROOT` as appropriate in the script)
 - Repeat for `pointent2/tf_ops/interpolation`, `pointent2/tf_ops/grouping`
 
 # Training
@@ -32,17 +34,17 @@ Pretrained **DeeplabV3+** for *pointpainting* is located under `deeplab/saved_mo
 ## Description of configuration
 Some sample config files are included in `configs` folder. The prefix *config_* imples the config files for training and *inf_* prefix implies the config files for inference.
 ```
-model-id: Unique model id
-dataset: The dataset used for training or inference, sunrgbd or scannet
-use_painted: Whether or not to use pointpainting
-two_way: Whether or not to use 2-way set abstraction layer
-use_fp_mlp: Whether or not to use PointNet(SharedMLP) in FP Layers
-q_gran: Quantization granularity. semantic/channel/group/layer
-activation: Which activation to use, relu or relu6
-use_tflite: Whether or not to use tflite for inference
-tfltie_folder: If use tflite, in which folder tflite files are located
-use_edgetpu: If use tflite, run it on edgetpu or cpu
-use_multiThr: If use tflite and 2-way set abstraction, whether or not to use pipelining for inference
+- model-id: Unique model id
+- dataset: The dataset used for training or inference, sunrgbd or scannet, default: sunrgbd
+- use_painted: Whether or not to use pointpainting
+- two_way: Whether or not to use 2-way set abstraction layer
+- use_fp_mlp: Whether or not to use PointNet(SharedMLP) in FP Layers (Original votenet used FP MLP, but PointSplit does not)
+- q_gran: Quantization granularity. semantic/channel/group/layer
+- activation: Which activation to use, relu or relu6
+- use_tflite: Whether or not to use tflite for inference (Inference only)
+- tfltie_folder: If use tflite, in which folder tflite files are located (Inference only)
+- use_edgetpu: If use tflite, run it on edgetpu or cpu (Inference only)
+- use_multiThr: If use tflite and 2-way set abstraction, whether or not to use pipelining for inference (Inference only)
 ```
 
 # Converting to tflite model (Quantization)
@@ -54,7 +56,7 @@ python create_tflite_p.py --config_path config/file/path
 `q_gran` option in config file could be used to select the quantization granularity option for the last layers of voting and proposal module. 'semantic' option corresponds to role-based groupwise quantization. 'layer','group' or 'channel' option could be used for different quantization granularity. The converted tflite files are saved under `tflite/tflite_models` folder.
 
 # Measure inference latency
-Inference latency is measured on NVIDIA Jetson Nano equipped with Google Coral EdgeTPU. To reproduce the results in our paper, one needs to prepare the settings. 
+Inference latency is measured on NVIDIA Jetson Nano (4GB) equipped with Google Coral EdgeTPU. To reproduce the results in our paper, one needs to prepare the devices and settings. 
 - To install drivers necessary to use EdgeTPU on Jetson Nano, one can refer to this url: https://coral.ai/docs/m2/get-started/#4-run-a-model-on-the-edge-tpu 
 
 - To install Tensorflow on Jetson Nano, follow the steps described in this url: https://docs.nvidia.com/deeplearning/frameworks/install-tf-jetson-platform/index.html
@@ -65,3 +67,6 @@ Once the environment setting is completed as explained above, one can run the in
 ```
 python demo_tf.py --config_path config/file/path
 ```
+
+# Other 3D object detection baseline models
+Please see other branches (groupfree2, repsurf) for implementation with other 3D object detection baseline models.

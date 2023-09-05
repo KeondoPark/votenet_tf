@@ -48,7 +48,8 @@ class PointnetSAModuleVotes(layers.Layer):
             sample_uniformly: bool = False,
             ret_unique_cnt: bool = False,
             model_config = None,
-            layer_name = 'sa1'
+            layer_name: str = 'sa1',
+            run_cpu: bool = False
     ):
         super().__init__()
 
@@ -64,6 +65,7 @@ class PointnetSAModuleVotes(layers.Layer):
         self.normalize_xyz = normalize_xyz
         self.ret_unique_cnt = ret_unique_cnt
         self.layer_name = layer_name
+        self.run_cpu = run_cpu
 
         if npoint is not None:
             self.grouper = pointnet2_utils_tf.QueryAndGroup(radius, nsample,
@@ -121,28 +123,39 @@ class PointnetSAModuleVotes(layers.Layer):
         """        
         if inds is None:           
             if bg:
-                isPainted = tf.cast(features[:,:,0], dtype=tf.int32) 
-                inds, isPainted = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, isPainted, weight=1)
+                isPainted = tf.cast(features[:,:,0], dtype=tf.int32)
+                if self.run_cpu:
+                    inds, isPainted = tf_sampling.farthest_point_sample_bg_cpu(self.npoint, xyz, isPainted, wght1)
+                else:
+                    inds, isPainted = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, isPainted, weight=1)
                 xyz = xyz[:,:,:3]
             else:
-                inds = tf_sampling.farthest_point_sample(self.npoint, xyz)                            
+                if self.run_cpu:
+                    inds = tf_sampling.farthest_point_sample_cpu(self.npoint, xyz)
+                else:
+                    inds = tf_sampling.farthest_point_sample(self.npoint, xyz)
         else:
             assert(inds.shape[1] == self.npoint)   
 
         
-        new_xyz = tf_sampling.gather_point(
-            xyz, inds
-        ) if self.npoint is not None else None
+
         
-        
+        if self.run_cpu:
+            new_xyz = tf_sampling.gather_point_cpu(
+                xyz, inds
+            ) if self.npoint is not None else None
+        else:
+            new_xyz = tf_sampling.gather_point(
+                xyz, inds
+            ) if self.npoint is not None else None       
 
         if not self.ret_unique_cnt:            
             grouped_features= self.grouper(
-                xyz, new_xyz, features                
+                xyz, new_xyz, features, run_cpu=self.run_cpu
             )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)
         else:
             grouped_features, unique_cnt = self.grouper(            
-                xyz, new_xyz, features
+                xyz, new_xyz, features, run_cpu=self.run_cpu
             )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)        
        
          
@@ -198,7 +211,8 @@ class SamplingAndGrouping(layers.Layer):
             use_xyz: bool = True,                        
             normalize_xyz: bool = False, # noramlize local XYZ with radius
             sample_uniformly: bool = False,
-            ret_unique_cnt: bool = False
+            ret_unique_cnt: bool = False,
+            run_cpu: bool = False
     ):
         super().__init__()
 
@@ -209,6 +223,7 @@ class SamplingAndGrouping(layers.Layer):
         self.use_xyz = use_xyz                
         self.normalize_xyz = normalize_xyz
         self.ret_unique_cnt = ret_unique_cnt
+        self.run_cpu = run_cpu
 
         if npoint is not None:
             self.grouper = pointnet2_utils_tf.QueryAndGroup(radius, nsample,
@@ -217,7 +232,8 @@ class SamplingAndGrouping(layers.Layer):
         else:
             self.grouper = pointnet2_utils_tf.GroupAll(use_xyz, ret_grouped_xyz=True)
         
-    def call(self, xyz, isPainted, features, inds=None, new_xyz=None, ball_inds=None, bg1=False, bg2=False, wght1=1, wght2=1, xyz_ball=None, features_ball=None):    
+    def call(self, xyz, isPainted, features, inds=None, new_xyz=None, 
+            ball_inds=None, bg1=False, wght1=1, xyz_ball=None, features_ball=None):
         r"""
         Parameters
         ----------
@@ -229,8 +245,7 @@ class SamplingAndGrouping(layers.Layer):
         ball_inds: If points are already ball-queried outside this module, it can be input
         bg1: Use Biased sampling
         bg2: Use Biased sampling, sample 2 point sets in one operation
-        wght1: Biased sampling weight
-        wght2: Biased sampling weight for second point set, only used when bg2 is True
+        wght1: Biased sampling weight        
         xyz_ball: To use ball query points other than input xyz, use this
         features_ball: To use ball query features other than input xyz, use this
 
@@ -243,28 +258,37 @@ class SamplingAndGrouping(layers.Layer):
         """
         
         if inds is None:                        
-            if bg2:                                                    
-                inds, isPainted = tf_sampling.farthest_point_sample_bg2(self.npoint, xyz, isPainted, wght1, wght2)                                                          
-            elif bg1:
-                inds, isPainted = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, isPainted, wght1)
+            if bg1:
+                if self.run_cpu:
+                    inds, isPainted = tf_sampling.farthest_point_sample_bg_cpu(self.npoint, xyz, isPainted, wght1)
+                else:
+                    inds, isPainted = tf_sampling.farthest_point_sample_bg(self.npoint, xyz, isPainted, wght1)
             else:
-                inds = tf_sampling.farthest_point_sample(self.npoint, xyz)     
+                if self.run_cpu:
+                    inds = tf_sampling.farthest_point_sample_cpu(self.npoint, xyz)     
+                else:
+                    inds = tf_sampling.farthest_point_sample(self.npoint, xyz)     
         else:
             assert(inds.shape[1] == self.npoint)   
         
         if new_xyz is None:
-            new_xyz = tf_sampling.gather_point(
-                xyz, inds
-            ) if self.npoint is not None else None
+            if self.run_cpu:
+                new_xyz = tf_sampling.gather_point_cpu(
+                    xyz, inds
+                ) if self.npoint is not None else None
+            else:
+                new_xyz = tf_sampling.gather_point(
+                    xyz, inds
+                ) if self.npoint is not None else None
 
         if not self.ret_unique_cnt:      
             if xyz_ball is None and features_ball is None:
                 grouped_features = self.grouper(
-                    xyz, new_xyz, features, ball_inds=ball_inds            
+                    xyz, new_xyz, features, ball_inds=ball_inds, run_cpu=self.run_cpu            
                 )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)
             else:
                 grouped_features = self.grouper(
-                    xyz_ball, new_xyz, features_ball, ball_inds=ball_inds        
+                    xyz_ball, new_xyz, features_ball, ball_inds=ball_inds, run_cpu=self.run_cpu 
                 )  # (B, npoint, nsample, C+3), (B,npoint,nsample), (B,npoint,nsample,3)
         else:
             grouped_features, unique_cnt = self.grouper(            
@@ -327,10 +351,12 @@ class PointnetFPModule(layers.Layer):
     model_config: if model_config['use_fp_mlp'] == False, do not run sharedMLP in this module
     """
 
-    def __init__(self, *, mlp: List[int], bn: bool = True, m: int, model_config = None, layer_name = 'fp1'):
+    def __init__(self, *, mlp: List[int], bn: bool = True, m: int, model_config = None, layer_name = 'fp1',
+                 run_cpu = False):
         super().__init__()
         self.use_fp_mlp = model_config['use_fp_mlp']
         self.use_tflite = model_config['use_tflite']
+        self.run_cpu = run_cpu
         
         if self.use_fp_mlp:
             if self.use_tflite:
@@ -375,15 +401,22 @@ class PointnetFPModule(layers.Layer):
             (B, n, mlp[-1]) tensor of the features of the unknown features
         """
 
-        if known is not None:                    
-            dist, idx = tf_interpolate.three_nn(unknown, known)
+        if known is not None:  
+            if self.run_cpu:                  
+                dist, idx = tf_interpolate.three_nn(unknown, known)
+            else:
+                dist, idx = tf_interpolate.three_nn_gpu(unknown, known)
             dist_recip = tf.divide(tf.constant(1.0, dtype=tf.float32), (dist + 1e-8))
             norm = tf.reduce_sum(dist_recip, axis=2, keepdims=True)
             weight = tf.divide(dist_recip, norm)  # (B, n, 3)
-            
-            interpolated_feats = tf_interpolate.three_interpolate(
-                known_feats, idx, weight
-            )            
+            if self.run_cpu:                  
+                interpolated_feats = tf_interpolate.three_interpolate(
+                    known_feats, idx, weight
+                )            
+            else:
+                interpolated_feats = tf_interpolate.three_interpolate_gpu(
+                    known_feats, idx, weight
+                )            
 
         else:
             interpolated_feats = tf.tile(known_feats, [1, tf.shape(unknow_feats)[1] / tf.shape(known_feats)[1], 1])
