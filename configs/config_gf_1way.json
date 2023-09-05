@@ -1,5 +1,5 @@
 {    
-    "model_id": "gf_1way_fp_test6", 
+    "model_id": "gf_1way", 
     "dataset": "sunrgbd",
     "use_painted": true,   
     "two_way": false,       
@@ -7,7 +7,7 @@
     "activation":"relu6",
     "q_gran": "layer",
     "use_tflite": false,
-    "tflite_folder": "tflite/tflite_models/gf_1way_fp",    
+    "tflite_folder": "tflite/tflite_models/gf_1way",    
     "use_edgetpu": false,        
     "use_multiThr": false
 }
