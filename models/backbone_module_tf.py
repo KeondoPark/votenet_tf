@@ -40,8 +40,7 @@ class Pointnet2Backbone(layers.Layer):
         use_tflite = model_config['use_tflite']
         use_fp_mlp = model_config['use_fp_mlp']
         self.use_painted = model_config['use_painted']
-        self.umb_learner = repsurf_utils_tf.UmbrellaSurface_Learner(act=model_config['activation'])
-        # self.umb_constructor = repsurf_utils_tf.UmbrellaSurfaceConstructor(k=9, out_channel=10, act=model_config['activation'])
+        self.umb_learner = repsurf_utils_tf.UmbrellaSurface_Learner(act=model_config['activation'])        
 
         self.sa1 = PointnetSAModuleVotes(
                 npoint=2048,
@@ -127,13 +126,7 @@ class Pointnet2Backbone(layers.Layer):
         if not end_points: end_points = {}
         xyz, features = self._break_up_pc(pointcloud)
         
-        repsurf_feature = self.umb_learner(repsurf_feature)        
-        # B = tf.shape(xyz)[0]
-        # N = tf.shape(xyz)[1]
-        
-        # offset = tf.cast(tf.range(N // 5000)*5000 + 5000, dtype=tf.int32)
-        # offset = tf.tile(tf.expand_dims(offset,0), [B,1])
-        # repsurf_feature = self.umb_constructor(xyz, offset)
+        repsurf_feature = self.umb_learner(repsurf_feature)                
 
         features = layers.Concatenate(axis=-1)([features, repsurf_feature])
 

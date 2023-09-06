@@ -68,9 +68,3 @@ CUDA_VISIBLE_DEVICES=2 python train_tf.py --config_path configs/config_rsgf_scan
                        --learning_rate 0.006 --decoder_learning_rate 0.0006 --weight_decay 0.0003 --optimizer adamw \
                        --lr_decay_rates 0.1,0.1 --lr_decay_steps 150,255 \
                        --decoder_lr_decay_rates 0.1,0.1 --decoder_lr_decay_steps 150,255 --batch_size 8
-
-# Tuning
-CUDA_VISIBLE_DEVICES=0 python train_tf.py --config_path configs/config_gf_scannet_2way_nofp_sep.json \
-                       --num_point 50000 --num_decoder_layers 6 --size_delta 0.1111111111 --center_delta 0.04 --max_epoch 50 \
-                       --learning_rate 0.0006 --decoder_learning_rate 0.00006 --weight_decay 0.0005 --optimizer adamw \
-                       --lr-scheduler cosine --cosine_alpha 0.01 --load_from tf_ckpt/gf_scannet_2way_nofp_sep_test16

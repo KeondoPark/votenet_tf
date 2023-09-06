@@ -4,9 +4,9 @@
 
 2. Extract point clouds and annotations (class, v2 2D -- xmin,ymin,xmax,ymax, and 3D bounding boxes -- centroids, size, 2D heading) by running `extract_split.m`, `extract_rgbd_data_v2.m` and `extract_rgbd_data_v1.m` under the `matlab` folder.
 
-3. Prepare data by running `python sunrgbd_data.py --tfrecord` for non-painted point cloud
+3. Prepare data by running `python sunrgbd_data.py --tfrecord` for non-painted point cloud with RepSurf features.
 
-4. Prepare data by running `python sunrgbd_data.py --tfrecord --painted` for painted point cloud with deeplabv3+, trained deeplab models are under `deeplab/saved_model` folder
+4. Prepare data by running `python sunrgbd_data.py --tfrecord --painted` for painted point cloud with deeplabv3+  with RepSurf features, trained deeplab models are under `deeplab/saved_model` folder.
 
 
 NOTE: SUNRGBDtoolbox.zip should have MD5 hash `18d22e1761d36352f37232cba102f91f` (you can check the hash with `md5 SUNRGBDtoolbox.zip` on Mac OS or `md5sum SUNRGBDtoolbox.zip` on Linux)
