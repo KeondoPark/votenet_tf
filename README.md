@@ -50,3 +50,10 @@ Some sample config files are included in `configs` folder. The prefix *config_* 
 # Converting to tflite model (Quantization) / Measure inference latency
 GroupFree / RepSurf baseline models are not intended to be deployed to Jetson Nano, and no tflite version are created.
 Inference latency on jetson nano is not measured either.
+
+# Pre-trained models
+Please download from the following link for tensorflow checkpoints. You need to create a folder named `tf_ckpt` and extract the downloaded files inside `tf_ckpt` folder. `model_id`  in config files should be consistent with the checkpoint folder name to restore the model.
+| Model \ Dataset | SUN RGB-D | Scannet V2 |
+|:---------------:|:---------:|:----------:|
+|     baseline    | [link](https://mysnu-my.sharepoint.com/:u:/g/personal/gundo0102_seoul_ac_kr/Ed_DCaPz4NJMqbLLV5Gw0iwBDJfCatEbja7x5ZyY0kzDOw?e=KuLaa0)      | [link](https://mysnu-my.sharepoint.com/:u:/g/personal/gundo0102_seoul_ac_kr/Ec2_PiT7DQNAqEIhGEpKPbIBQC4JzlIxJ4Y196KpcCtidA?e=QHvZBk)       |
+|    _PointSplit_ | [link](https://mysnu-my.sharepoint.com/:u:/g/personal/gundo0102_seoul_ac_kr/EekkhWr-NDFJuqz_2jkM_NEBi_l3ZwkPEqApThqkOqQj4w?e=I21phR)      | [link](https://mysnu-my.sharepoint.com/:u:/g/personal/gundo0102_seoul_ac_kr/EeZxveuqLTJJsyo9xN80EpQBCPbCL6zc8tmzc2BXr3Y16g?e=oXaFWO)       |
