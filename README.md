@@ -47,6 +47,14 @@ Some sample config files are included in `configs` folder. The prefix *config_* 
 - use_multiThr: If use tflite and 2-way set abstraction, whether or not to use pipelining for inference (Inference only)
 ```
 
+# Pre-trained models
+Please download from the following link for tensorflow checkpoints. You need to create a folder named `tf_ckpt` and extract the downloaded files inside `tf_ckpt` folder. `model_id`  in config files should be consistent with the checkpoint folder name to restore the model.
+| Model \ Dataset | SUN RGB-D | Scannet V2 |
+|:---------------:|:---------:|:----------:|
+|     baseline    | [link](https://mysnu-my.sharepoint.com/:u:/g/personal/gundo0102_seoul_ac_kr/EVZHxRQo2YVKuDKSdu288-gBExp8zsaUijckQCMs8nIFtw?e=dTez3D)      | [link](https://mysnu-my.sharepoint.com/:u:/g/personal/gundo0102_seoul_ac_kr/ERZ_zouUxHtEiCPTvCxXFE0Bxe6P35MLvPm1VvMQV0WB0A?e=3hcpph)       |
+|    _PointSplit_ | [link](https://mysnu-my.sharepoint.com/:u:/g/personal/gundo0102_seoul_ac_kr/ETiJi4nn9-BLltzvz3ybfcwBU8jgdtfTFkCc1-eEMWP34Q?e=UYCA0W)      | [link](https://mysnu-my.sharepoint.com/:u:/g/personal/gundo0102_seoul_ac_kr/ERZ_zouUxHtEiCPTvCxXFE0Bxe6P35MLvPm1VvMQV0WB0A?e=3hcpph)       |
+
+
 # Converting to tflite model (Quantization)
 Related files are located under `tflite` folder. To convert any trained model into tflite models in *post-training quantization* way, use following command:
 ```
